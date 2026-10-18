@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792358115831,
+  "lastUpdate": 1792358117042,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5677,6 +5677,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 152728,
             "range": "± 3650",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "da1e1ef5113823274aef95d3b6bf97af47783558",
+          "message": "Merge pull request #136 from tellus-rs/fix/review-error-containment\n\nfix: contain panics in logged and dropped errors",
+          "timestamp": "2026-10-19T00:11:46+03:00",
+          "tree_id": "a8ea553a6a83bc301e443bfd78d39686616fd9d5",
+          "url": "https://github.com/tellus-rs/tellus/commit/da1e1ef5113823274aef95d3b6bf97af47783558"
+        },
+        "date": 1792358116836,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2493874,
+            "range": "± 44811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2480278,
+            "range": "± 5792",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1136282,
+            "range": "± 3588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 147955,
+            "range": "± 3187",
             "unit": "ns/iter"
           }
         ]
