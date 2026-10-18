@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792353059403,
+  "lastUpdate": 1792353061319,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5245,6 +5245,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 149809,
             "range": "± 3637",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b7e840e2fc7deb79c54869801f117c34d3f07c4",
+          "message": "Merge pull request #132 from tellus-rs/ci/comparison-latest\n\nci: publish a latest comparison run and restyle the report pages",
+          "timestamp": "2026-10-18T22:47:34+03:00",
+          "tree_id": "3104d3bc9a5b9d1f5cba4724504a2ee7bf0987da",
+          "url": "https://github.com/tellus-rs/tellus/commit/5b7e840e2fc7deb79c54869801f117c34d3f07c4"
+        },
+        "date": 1792353060705,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3023564,
+            "range": "± 24623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3031870,
+            "range": "± 19454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1701651,
+            "range": "± 5763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 216562,
+            "range": "± 7994",
             "unit": "ns/iter"
           }
         ]
