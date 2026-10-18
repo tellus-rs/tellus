@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792360322663,
+  "lastUpdate": 1792360806262,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -3239,6 +3239,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3877141,
             "range": "± 20845",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "12f55bb9e1d58537d114453b8d014b675d04c3a6",
+          "message": "Merge pull request #137 from tellus-rs/release-plz-2026-10-18T21-13-03Z\n\nchore: release",
+          "timestamp": "2026-10-19T00:56:38+03:00",
+          "tree_id": "065b34f663cfa493e383cb95179202145315f12a",
+          "url": "https://github.com/tellus-rs/tellus/commit/12f55bb9e1d58537d114453b8d014b675d04c3a6"
+        },
+        "date": 1792360805637,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14810854,
+            "range": "± 940266",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13122761,
+            "range": "± 762690",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 695648,
+            "range": "± 12058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 800145,
+            "range": "± 4590",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4893797,
+            "range": "± 86297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3900649,
+            "range": "± 34184",
             "unit": "ns/iter"
           }
         ]
