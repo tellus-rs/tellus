@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792360320805,
+  "lastUpdate": 1792360322663,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5785,6 +5785,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 147955,
             "range": "± 3187",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6db08e0bd7730acb12cd5353c9ed3d89c4fc9b56",
+          "message": "Merge pull request #138 from tellus-rs/fix/cooperative-run-loop\n\nfix: yield the worker from busy actors via the cooperative budget",
+          "timestamp": "2026-10-19T00:48:32+03:00",
+          "tree_id": "8d16ef582f7c50b03e23fdae0188740e47ca58eb",
+          "url": "https://github.com/tellus-rs/tellus/commit/6db08e0bd7730acb12cd5353c9ed3d89c4fc9b56"
+        },
+        "date": 1792360322205,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3643097,
+            "range": "± 254547",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3542385,
+            "range": "± 204151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1634126,
+            "range": "± 9771",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 213302,
+            "range": "± 5042",
             "unit": "ns/iter"
           }
         ]
