@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tellus comparison benchmarks (tellus-v0.3.3)</title>
+<style>
+:root { color-scheme: light dark; --fg: #111; --muted: #555; --bg: #fff; --line: #ddd; --bar: #4f7cff; --warn-bg: #fff8e1; --warn-line: #e6c200; }
+@media (prefers-color-scheme: dark) {
+  :root { --fg: #e6e6e6; --muted: #a0a0a0; --bg: #14161a; --line: #333; --bar: #6d92ff; --warn-bg: #2a2413; --warn-line: #7a6a1a; }
+}
+* { box-sizing: border-box; }
+body { margin: 0 auto; padding: 2rem 1rem; max-width: 60rem; background: var(--bg); color: var(--fg);
+  font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; }
+h1 { font-size: 1.6rem; margin: 0 0 .25rem; }
+h2 { font-size: 1.15rem; margin: 2.5rem 0 .75rem; }
+a { color: inherit; }
+.sub { color: var(--muted); margin: 0 0 1.5rem; }
+.meta { display: grid; grid-template-columns: max-content 1fr; gap: .25rem 1rem; padding: 1rem;
+  border: 1px solid var(--line); border-radius: 8px; font-size: .9rem; }
+.meta dt { color: var(--muted); }
+.meta dd { margin: 0; overflow-wrap: anywhere; }
+.caveats { margin: 1.5rem 0; padding: 1rem 1rem 1rem 1.25rem; background: var(--warn-bg);
+  border-left: 4px solid var(--warn-line); border-radius: 4px; font-size: .92rem; }
+.caveats h2 { margin: 0 0 .5rem; font-size: 1rem; }
+.caveats ol { margin: 0; padding-left: 1.1rem; }
+.caveats li { margin: .4rem 0; }
+.scroll { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .92rem; }
+th, td { text-align: left; padding: .45rem .6rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.bar { display: block; height: .55rem; background: var(--bar); border-radius: 3px; min-width: 2px; }
+td.barcell { width: 40%; }
+footer { margin-top: 3rem; color: var(--muted); font-size: .85rem; }
+</style>
+</head>
+<body>
+<h1>tellus comparison benchmarks</h1>
+<p class="sub">Messaging throughput of <strong>tellus</strong> against kameo and ractor, higher is better.</p>
+
+<dl class="meta">
+<dt>Tag</dt><dd>tellus-v0.3.3</dd>
+<dt>Commit</dt><dd>8d8d90b42c2ce55c33258ce9f11ac3460d4490e8</dd>
+<dt>Date</dt><dd>2026-10-18T18:57:37Z</dd>
+<dt>Versions</dt><dd>kameo 0.22.2, ractor 0.16.5, tellus 0.3.3</dd>
+<dt>CPU</dt><dd>AMD EPYC 9V45 96-Core Processor (4 cores)</dd>
+<dt>OS</dt><dd>Linux 6.17.0-1022-azure</dd>
+<dt>Toolchain</dt><dd>rustc 1.99.0 (b940084d7 2026-09-28)</dd>
+</dl>
+
+<div class="caveats">
+<h2>Read this before drawing conclusions</h2>
+<ol>
+<li><strong>tellus's <code>receive</code> is synchronous; kameo's and ractor's handlers are <code>async fn</code>.</strong>
+tellus therefore avoids allocating and polling a future per message, but cannot await inside <code>receive</code>.
+This is a capability difference, not only a speed difference, and it favours tellus on exactly these microbenchmarks.</li>
+<li><strong>tellus's mailbox is statically typed; the others erase message types</strong>, costing an allocation
+and a dynamic dispatch per message that tellus does not pay.</li>
+<li><strong>Competitors are configured for speed, not defaults.</strong> kameo runs without <code>tracing</code>
+and ractor without <code>message_span_propogation</code>, both of which add per-message instrumentation that
+tellus has no equivalent of. This biases the setup in the competitors' favour.</li>
+<li><strong>Messaging microbenchmarks only.</strong> Nothing here speaks to supervision, distribution,
+ergonomics, memory use or production readiness. kameo and ractor are mature, feature-rich frameworks; tellus is
+under active development and does far less.</li>
+<li><strong>On CI these run on a shared 2-core runner</strong>, so absolute figures are not representative of real
+deployments. Only the relative comparison within a single run is meaningful.</li>
+<li><strong>Written and run by tellus's maintainer.</strong> The full methodology and benchmark source are in the
+repository; corrections are welcome.</li>
+</ol>
+</div>
+<h2>fan_out (8)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">7.840 ms</td><td class="num">12.76 M/s</td><td class="num">0.38x</td><td class="barcell"><span class="bar" style="width:37.9%"></span></td></tr><tr><td>ractor</td><td class="num">6.350 ms</td><td class="num">15.75 M/s</td><td class="num">0.47x</td><td class="barcell"><span class="bar" style="width:46.8%"></span></td></tr><tr><td>tellus</td><td class="num">2.970 ms</td><td class="num">33.67 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>fan_out (32)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">7.263 ms</td><td class="num">13.77 M/s</td><td class="num">0.37x</td><td class="barcell"><span class="bar" style="width:37.2%"></span></td></tr><tr><td>ractor</td><td class="num">5.645 ms</td><td class="num">17.72 M/s</td><td class="num">0.48x</td><td class="barcell"><span class="bar" style="width:47.9%"></span></td></tr><tr><td>tellus</td><td class="num">2.705 ms</td><td class="num">36.97 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>flood</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">22.176 ms</td><td class="num">4.51 M/s</td><td class="num">0.35x</td><td class="barcell"><span class="bar" style="width:34.6%"></span></td></tr><tr><td>ractor</td><td class="num">13.478 ms</td><td class="num">7.42 M/s</td><td class="num">0.57x</td><td class="barcell"><span class="bar" style="width:56.9%"></span></td></tr><tr><td>tellus</td><td class="num">7.669 ms</td><td class="num">13.04 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>ping_pong (1)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">0.932 ms</td><td class="num">2.14 M/s</td><td class="num">0.58x</td><td class="barcell"><span class="bar" style="width:58.4%"></span></td></tr><tr><td>ractor</td><td class="num">0.787 ms</td><td class="num">2.54 M/s</td><td class="num">0.69x</td><td class="barcell"><span class="bar" style="width:69.2%"></span></td></tr><tr><td>tellus</td><td class="num">0.545 ms</td><td class="num">3.67 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>ping_pong (8)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">1.480 ms</td><td class="num">10.81 M/s</td><td class="num">0.67x</td><td class="barcell"><span class="bar" style="width:66.8%"></span></td></tr><tr><td>ractor</td><td class="num">1.392 ms</td><td class="num">11.50 M/s</td><td class="num">0.71x</td><td class="barcell"><span class="bar" style="width:71.0%"></span></td></tr><tr><td>tellus</td><td class="num">0.989 ms</td><td class="num">16.18 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+
+<footer>
+Generated from criterion results. See the
+<a href="../../dev/bench/">tellus regression benchmarks</a> for throughput over time.
+</footer>
+</body>
+</html>

@@ -1,0 +1,168 @@
+{
+  "metadata": {
+    "tag": "tellus-v0.3.3",
+    "commit": "8d8d90b42c2ce55c33258ce9f11ac3460d4490e8",
+    "date": "2026-10-18T18:57:37Z",
+    "os": "Linux 6.17.0-1022-azure",
+    "cpu": "AMD EPYC 9V45 96-Core Processor",
+    "cores": 4,
+    "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
+    "versions": {
+      "kameo": "0.22.2",
+      "ractor": "0.16.5",
+      "tellus": "0.3.3"
+    }
+  },
+  "measurements": [
+    {
+      "group": "fan_out",
+      "framework": "kameo",
+      "parameter": "8",
+      "elements": 100000,
+      "mean_ns": 7839719.960735657,
+      "lower_ns": 7772095.603656664,
+      "upper_ns": 7908034.75145433,
+      "elements_per_second": 12755557.660329526
+    },
+    {
+      "group": "fan_out",
+      "framework": "ractor",
+      "parameter": "8",
+      "elements": 100000,
+      "mean_ns": 6349788.675793537,
+      "lower_ns": 6319840.755944405,
+      "upper_ns": 6380336.324528143,
+      "elements_per_second": 15748555.59858501
+    },
+    {
+      "group": "fan_out",
+      "framework": "tellus",
+      "parameter": "8",
+      "elements": 100000,
+      "mean_ns": 2969952.3670687852,
+      "lower_ns": 2944979.227122478,
+      "upper_ns": 2993616.8223172855,
+      "elements_per_second": 33670573.6795017
+    },
+    {
+      "group": "fan_out",
+      "framework": "kameo",
+      "parameter": "32",
+      "elements": 100000,
+      "mean_ns": 7262728.974609215,
+      "lower_ns": 7195930.061329056,
+      "upper_ns": 7324529.528907119,
+      "elements_per_second": 13768929.055401064
+    },
+    {
+      "group": "fan_out",
+      "framework": "ractor",
+      "parameter": "32",
+      "elements": 100000,
+      "mean_ns": 5644863.174288673,
+      "lower_ns": 5607306.57194774,
+      "upper_ns": 5685904.05469791,
+      "elements_per_second": 17715221.23963639
+    },
+    {
+      "group": "fan_out",
+      "framework": "tellus",
+      "parameter": "32",
+      "elements": 100000,
+      "mean_ns": 2705120.131183744,
+      "lower_ns": 2685796.495394286,
+      "upper_ns": 2723197.98684143,
+      "elements_per_second": 36966934.97905419
+    },
+    {
+      "group": "flood",
+      "framework": "kameo",
+      "parameter": null,
+      "elements": 100000,
+      "mean_ns": 22176383.178000007,
+      "lower_ns": 22002969.224,
+      "upper_ns": 22365073.7491,
+      "elements_per_second": 4509301.593381765
+    },
+    {
+      "group": "flood",
+      "framework": "ractor",
+      "parameter": null,
+      "elements": 100000,
+      "mean_ns": 13478179.842655323,
+      "lower_ns": 13292671.03051492,
+      "upper_ns": 13677612.264622068,
+      "elements_per_second": 7419399.441720099
+    },
+    {
+      "group": "flood",
+      "framework": "tellus",
+      "parameter": null,
+      "elements": 100000,
+      "mean_ns": 7669132.289603144,
+      "lower_ns": 7600826.8303459855,
+      "upper_ns": 7736437.75787339,
+      "elements_per_second": 13039284.78787197
+    },
+    {
+      "group": "ping_pong",
+      "framework": "kameo",
+      "parameter": "1",
+      "elements": 2000,
+      "mean_ns": 932446.4046355118,
+      "lower_ns": 926681.839419905,
+      "upper_ns": 938545.5659783126,
+      "elements_per_second": 2144895.395657393
+    },
+    {
+      "group": "ping_pong",
+      "framework": "ractor",
+      "parameter": "1",
+      "elements": 2000,
+      "mean_ns": 787393.8432379845,
+      "lower_ns": 781012.677532642,
+      "upper_ns": 796659.9742645511,
+      "elements_per_second": 2540024.940727805
+    },
+    {
+      "group": "ping_pong",
+      "framework": "tellus",
+      "parameter": "1",
+      "elements": 2000,
+      "mean_ns": 544646.3504492464,
+      "lower_ns": 539721.6329592844,
+      "upper_ns": 549944.2842935722,
+      "elements_per_second": 3672107.594864666
+    },
+    {
+      "group": "ping_pong",
+      "framework": "kameo",
+      "parameter": "8",
+      "elements": 16000,
+      "mean_ns": 1479888.4071509729,
+      "lower_ns": 1471197.033868637,
+      "upper_ns": 1489308.6992032926,
+      "elements_per_second": 10811626.013614511
+    },
+    {
+      "group": "ping_pong",
+      "framework": "ractor",
+      "parameter": "8",
+      "elements": 16000,
+      "mean_ns": 1391538.9434087267,
+      "lower_ns": 1383097.326098455,
+      "upper_ns": 1400673.783914616,
+      "elements_per_second": 11498061.247791061
+    },
+    {
+      "group": "ping_pong",
+      "framework": "tellus",
+      "parameter": "8",
+      "elements": 16000,
+      "mean_ns": 988668.1623137586,
+      "lower_ns": 985069.9078073472,
+      "upper_ns": 992839.5868271485,
+      "elements_per_second": 16183387.52059695
+    }
+  ]
+}
