@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792348860352,
+  "lastUpdate": 1792348861794,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5029,6 +5029,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 151938,
             "range": "± 2307",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4893ce23ffdb54aa73c08e58944e5804af81685d",
+          "message": "Merge pull request #130 from tellus-rs/docs/tutorial-getting-started\n\ndocs: unify the examples into a getting started tutorial",
+          "timestamp": "2026-10-18T21:37:37+03:00",
+          "tree_id": "b459381be11390a1580cdda86f9297f22869828f",
+          "url": "https://github.com/tellus-rs/tellus/commit/4893ce23ffdb54aa73c08e58944e5804af81685d"
+        },
+        "date": 1792348861515,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3054471,
+            "range": "± 34519",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3021041,
+            "range": "± 11259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1697217,
+            "range": "± 9821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 212163,
+            "range": "± 5207",
             "unit": "ns/iter"
           }
         ]
