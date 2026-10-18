@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792355438493,
+  "lastUpdate": 1792355441156,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5461,6 +5461,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 150923,
             "range": "± 5970",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8906113a360f99d2d8d141884c1f3736f20161de",
+          "message": "Merge pull request #135 from tellus-rs/feat/pipe-to-self\n\nfeat: add ActorContext::pipe_to_self",
+          "timestamp": "2026-10-18T23:26:53+03:00",
+          "tree_id": "560baec0e36f9a0ca98a7ccadf5a35e43b8646f2",
+          "url": "https://github.com/tellus-rs/tellus/commit/8906113a360f99d2d8d141884c1f3736f20161de"
+        },
+        "date": 1792355440704,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3283196,
+            "range": "± 12942",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3256985,
+            "range": "± 18437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1443734,
+            "range": "± 6930",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 175087,
+            "range": "± 2646",
             "unit": "ns/iter"
           }
         ]
