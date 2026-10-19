@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792391717146,
+  "lastUpdate": 1792391719210,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6001,6 +6001,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 215323,
             "range": "± 7145",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd9028000c845726aaec956de3974772c9a1d0ed",
+          "message": "Merge pull request #139 from tellus-rs/test/fix-flaky-tracing-subscriber\n\ntest: fix flaky error formatting assertions with a global subscriber",
+          "timestamp": "2026-10-19T09:31:57+03:00",
+          "tree_id": "8ec12b8c657c94be6134c1705b31cd291fa3698d",
+          "url": "https://github.com/tellus-rs/tellus/commit/bd9028000c845726aaec956de3974772c9a1d0ed"
+        },
+        "date": 1792391718598,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2911958,
+            "range": "± 141739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2791166,
+            "range": "± 189888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1124358,
+            "range": "± 2961",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 132664,
+            "range": "± 5068",
             "unit": "ns/iter"
           }
         ]
