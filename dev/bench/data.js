@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792398710045,
+  "lastUpdate": 1792398711802,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6109,6 +6109,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 132664,
             "range": "± 5068",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e7c5a13474b10380f8c63e92a6615cd1f5edbe0",
+          "message": "Merge pull request #142 from tellus-rs/docs/event-sourced-tutorial-and-how-tos\n\ndocs: add event-sourced tutorial, how-tos and explanation examples",
+          "timestamp": "2026-10-19T11:28:18+03:00",
+          "tree_id": "ad10146b584236a8b2d393cf6d405252dba3117c",
+          "url": "https://github.com/tellus-rs/tellus/commit/5e7c5a13474b10380f8c63e92a6615cd1f5edbe0"
+        },
+        "date": 1792398711383,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2580614,
+            "range": "± 93458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2535180,
+            "range": "± 103456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1198103,
+            "range": "± 12054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 135728,
+            "range": "± 4513",
             "unit": "ns/iter"
           }
         ]
