@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792404823178,
+  "lastUpdate": 1792404824640,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6433,6 +6433,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 157510,
             "range": "± 5736",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "06cb22c1f323b951e89ff6ca686d7e37f0787dd4",
+          "message": "Merge pull request #144 from tellus-rs/release-plz-2026-10-19T09-53-56Z\n\nchore: release",
+          "timestamp": "2026-10-19T13:10:17+03:00",
+          "tree_id": "6abd4bcaa7cbb3ac6ec979e61172058001ea325c",
+          "url": "https://github.com/tellus-rs/tellus/commit/06cb22c1f323b951e89ff6ca686d7e37f0787dd4"
+        },
+        "date": 1792404824383,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3736900,
+            "range": "± 214591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3704547,
+            "range": "± 215150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1632511,
+            "range": "± 8187",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 201299,
+            "range": "± 9209",
             "unit": "ns/iter"
           }
         ]
