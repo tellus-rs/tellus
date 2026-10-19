@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792360808299,
+  "lastUpdate": 1792391717146,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -3299,6 +3299,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3900649,
             "range": "± 34184",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bd9028000c845726aaec956de3974772c9a1d0ed",
+          "message": "Merge pull request #139 from tellus-rs/test/fix-flaky-tracing-subscriber\n\ntest: fix flaky error formatting assertions with a global subscriber",
+          "timestamp": "2026-10-19T09:31:57+03:00",
+          "tree_id": "8ec12b8c657c94be6134c1705b31cd291fa3698d",
+          "url": "https://github.com/tellus-rs/tellus/commit/bd9028000c845726aaec956de3974772c9a1d0ed"
+        },
+        "date": 1792391716130,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9585858,
+            "range": "± 1042555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 11755226,
+            "range": "± 1290483",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 527986,
+            "range": "± 3004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 620312,
+            "range": "± 2667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3933513,
+            "range": "± 144643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3095008,
+            "range": "± 21214",
             "unit": "ns/iter"
           }
         ]
