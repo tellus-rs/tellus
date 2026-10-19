@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792391719210,
+  "lastUpdate": 1792398710045,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -3359,6 +3359,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3095008,
             "range": "± 21214",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e7c5a13474b10380f8c63e92a6615cd1f5edbe0",
+          "message": "Merge pull request #142 from tellus-rs/docs/event-sourced-tutorial-and-how-tos\n\ndocs: add event-sourced tutorial, how-tos and explanation examples",
+          "timestamp": "2026-10-19T11:28:18+03:00",
+          "tree_id": "ad10146b584236a8b2d393cf6d405252dba3117c",
+          "url": "https://github.com/tellus-rs/tellus/commit/5e7c5a13474b10380f8c63e92a6615cd1f5edbe0"
+        },
+        "date": 1792398709365,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 8757854,
+            "range": "± 369721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9610419,
+            "range": "± 432213",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 637862,
+            "range": "± 8918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 563186,
+            "range": "± 4534",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3992586,
+            "range": "± 93122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3023146,
+            "range": "± 38111",
             "unit": "ns/iter"
           }
         ]
