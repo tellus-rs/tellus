@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792420095133,
+  "lastUpdate": 1792420098282,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6757,6 +6757,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 207719,
             "range": "± 8015",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ce3e66f852572bb3240e772fc940e4f1d6988a56",
+          "message": "Merge pull request #147 from tellus-rs/docs/restart-count-wording\n\ndocs: describe restarts by their count instead of a streak",
+          "timestamp": "2026-10-19T17:24:48+03:00",
+          "tree_id": "4d20f10e3df63d1e2f315a33b27f1fb02927755a",
+          "url": "https://github.com/tellus-rs/tellus/commit/ce3e66f852572bb3240e772fc940e4f1d6988a56"
+        },
+        "date": 1792420096605,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2930952,
+            "range": "± 189050",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2799654,
+            "range": "± 124722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1083431,
+            "range": "± 4331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 142642,
+            "range": "± 3584",
             "unit": "ns/iter"
           }
         ]
