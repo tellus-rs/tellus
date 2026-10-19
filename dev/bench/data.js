@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792403742177,
+  "lastUpdate": 1792403745025,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6325,6 +6325,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 198375,
             "range": "± 9383",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3601d5c26f096d66cbfbb91c3aee1c1cbfee4d74",
+          "message": "Merge pull request #143 from tellus-rs/chore/crate-metadata-for-search\n\nchore: add crate keywords and categories for search",
+          "timestamp": "2026-10-19T12:51:58+03:00",
+          "tree_id": "a43414e4ea1283a0fb86ac125899ad4a45dedd29",
+          "url": "https://github.com/tellus-rs/tellus/commit/3601d5c26f096d66cbfbb91c3aee1c1cbfee4d74"
+        },
+        "date": 1792403744389,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3822679,
+            "range": "± 284934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3676373,
+            "range": "± 192516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1260505,
+            "range": "± 38722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 157510,
+            "range": "± 5736",
             "unit": "ns/iter"
           }
         ]
