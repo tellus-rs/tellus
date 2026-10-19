@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792414304324,
+  "lastUpdate": 1792420095133,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -3719,6 +3719,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3895743,
             "range": "± 22523",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ce3e66f852572bb3240e772fc940e4f1d6988a56",
+          "message": "Merge pull request #147 from tellus-rs/docs/restart-count-wording\n\ndocs: describe restarts by their count instead of a streak",
+          "timestamp": "2026-10-19T17:24:48+03:00",
+          "tree_id": "4d20f10e3df63d1e2f315a33b27f1fb02927755a",
+          "url": "https://github.com/tellus-rs/tellus/commit/ce3e66f852572bb3240e772fc940e4f1d6988a56"
+        },
+        "date": 1792420094091,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9530489,
+            "range": "± 1012557",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 10131767,
+            "range": "± 1280515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 543989,
+            "range": "± 2981",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 612868,
+            "range": "± 4515",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4048892,
+            "range": "± 116120",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3115490,
+            "range": "± 16718",
             "unit": "ns/iter"
           }
         ]
