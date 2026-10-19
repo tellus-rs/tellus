@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792421598551,
+  "lastUpdate": 1792421600522,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6973,6 +6973,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 138187,
             "range": "± 1744",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4af7cf6204ceab0b50181f159662dd95c1627887",
+          "message": "Merge pull request #149 from tellus-rs/docs/agents-site-pin\n\ndocs: note the site pin after every release in AGENTS.md",
+          "timestamp": "2026-10-19T17:49:49+03:00",
+          "tree_id": "8d68d07f47ecc7a12adc334f43603ac1f9f4fda5",
+          "url": "https://github.com/tellus-rs/tellus/commit/4af7cf6204ceab0b50181f159662dd95c1627887"
+        },
+        "date": 1792421600245,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3782664,
+            "range": "± 235366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3898313,
+            "range": "± 231191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1634639,
+            "range": "± 13893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 206410,
+            "range": "± 6366",
             "unit": "ns/iter"
           }
         ]
