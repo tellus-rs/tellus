@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792413605494,
+  "lastUpdate": 1792413608005,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6541,6 +6541,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 201299,
             "range": "± 9209",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f96d609841d67ac82bbd3d030e7aa25421c25dfa",
+          "message": "Merge pull request #145 from tellus-rs/docs/example-anchors-for-site\n\ndocs: add example anchors for the site and rename the cellar device",
+          "timestamp": "2026-10-19T15:36:22+03:00",
+          "tree_id": "3198208959a95e711056fce45dd362e0281bc018",
+          "url": "https://github.com/tellus-rs/tellus/commit/f96d609841d67ac82bbd3d030e7aa25421c25dfa"
+        },
+        "date": 1792413607595,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3873277,
+            "range": "± 184820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3969098,
+            "range": "± 161962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1334954,
+            "range": "± 7006",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 163029,
+            "range": "± 3017",
             "unit": "ns/iter"
           }
         ]
