@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>tellus comparison benchmarks (tellus-v0.3.7)</title>
+<title>tellus comparison benchmarks (tellus-v0.3.8)</title>
 <link rel="icon" href="https://tellus.rs/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://tellus.rs/dashboards.css">
 </head>
@@ -13,16 +13,16 @@
 <nav class="nav" aria-label="Main"><a href="https://tellus.rs/docs/">Docs</a><a href="https://tellus.rs/tellus/comparison/" aria-current="page">Comparison</a><a href="https://tellus.rs/tellus/dev/bench/">Regression benchmarks</a><a href="https://github.com/tellus-rs/tellus">GitHub</a></nav>
 </div></header>
 <main class="wrap">
-<p class="eyebrow">Comparison benchmarks, tellus-v0.3.7</p>
+<p class="eyebrow">Comparison benchmarks, tellus-v0.3.8</p>
 <h1>tellus against kameo and ractor</h1>
 <p class="lede">Messaging throughput, higher is better.</p>
 
 <dl class="meta">
-<dt>Tag</dt><dd>tellus-v0.3.7</dd>
-<dt>Commit</dt><dd>40004066e024b069786689c7f0ba66b8e8f4d270</dd>
-<dt>Date</dt><dd>2026-10-19T10:19:13Z</dd>
-<dt>Versions</dt><dd>kameo 0.22.2, ractor 0.16.5, tellus 0.3.7</dd>
-<dt>CPU</dt><dd>AMD EPYC 9V74 80-Core Processor (4 cores)</dd>
+<dt>Tag</dt><dd>tellus-v0.3.8</dd>
+<dt>Commit</dt><dd>4b9fb1374521e91fa784f79c1ef97bdcce43a3b3</dd>
+<dt>Date</dt><dd>2026-10-19T12:57:40Z</dd>
+<dt>Versions</dt><dd>kameo 0.22.2, ractor 0.16.5, tellus 0.3.8</dd>
+<dt>CPU</dt><dd>AMD EPYC 7763 64-Core Processor (4 cores)</dd>
 <dt>OS</dt><dd>Linux 6.17.0-1022-azure</dd>
 <dt>Toolchain</dt><dd>rustc 1.99.0 (b940084d7 2026-09-28)</dd>
 </dl>
@@ -50,27 +50,27 @@ repository; corrections are welcome.</li>
 <h2>fan_out (8)</h2>
 <div class="scroll"><table>
 <thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
-<tbody><tr><td>kameo</td><td class="num">8.627 ms</td><td class="num">11.59 M/s</td><td class="num">0.40x</td><td class="barcell"><span class="bar" style="width:40.3%"></span></td></tr><tr><td>ractor</td><td class="num">6.417 ms</td><td class="num">15.58 M/s</td><td class="num">0.54x</td><td class="barcell"><span class="bar" style="width:54.2%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">3.480 ms</td><td class="num">28.74 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+<tbody><tr><td>kameo</td><td class="num">9.430 ms</td><td class="num">10.60 M/s</td><td class="num">0.51x</td><td class="barcell"><span class="bar" style="width:50.6%"></span></td></tr><tr><td>ractor</td><td class="num">7.563 ms</td><td class="num">13.22 M/s</td><td class="num">0.63x</td><td class="barcell"><span class="bar" style="width:63.1%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">4.770 ms</td><td class="num">20.97 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
 </table></div>
 <h2>fan_out (32)</h2>
 <div class="scroll"><table>
 <thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
-<tbody><tr><td>kameo</td><td class="num">7.611 ms</td><td class="num">13.14 M/s</td><td class="num">0.42x</td><td class="barcell"><span class="bar" style="width:42.1%"></span></td></tr><tr><td>ractor</td><td class="num">6.360 ms</td><td class="num">15.72 M/s</td><td class="num">0.50x</td><td class="barcell"><span class="bar" style="width:50.3%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">3.201 ms</td><td class="num">31.24 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+<tbody><tr><td>kameo</td><td class="num">8.867 ms</td><td class="num">11.28 M/s</td><td class="num">0.47x</td><td class="barcell"><span class="bar" style="width:47.0%"></span></td></tr><tr><td>ractor</td><td class="num">7.531 ms</td><td class="num">13.28 M/s</td><td class="num">0.55x</td><td class="barcell"><span class="bar" style="width:55.3%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">4.165 ms</td><td class="num">24.01 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
 </table></div>
 <h2>flood</h2>
 <div class="scroll"><table>
 <thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
-<tbody><tr><td>kameo</td><td class="num">20.788 ms</td><td class="num">4.81 M/s</td><td class="num">0.48x</td><td class="barcell"><span class="bar" style="width:48.0%"></span></td></tr><tr><td>ractor</td><td class="num">15.503 ms</td><td class="num">6.45 M/s</td><td class="num">0.64x</td><td class="barcell"><span class="bar" style="width:64.3%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">9.974 ms</td><td class="num">10.03 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+<tbody><tr><td>kameo</td><td class="num">26.528 ms</td><td class="num">3.77 M/s</td><td class="num">0.49x</td><td class="barcell"><span class="bar" style="width:48.6%"></span></td></tr><tr><td>ractor</td><td class="num">19.901 ms</td><td class="num">5.02 M/s</td><td class="num">0.65x</td><td class="barcell"><span class="bar" style="width:64.8%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">12.888 ms</td><td class="num">7.76 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
 </table></div>
 <h2>ping_pong (1)</h2>
 <div class="scroll"><table>
 <thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
-<tbody><tr><td>kameo</td><td class="num">0.906 ms</td><td class="num">2.21 M/s</td><td class="num">0.66x</td><td class="barcell"><span class="bar" style="width:65.9%"></span></td></tr><tr><td>ractor</td><td class="num">0.870 ms</td><td class="num">2.30 M/s</td><td class="num">0.69x</td><td class="barcell"><span class="bar" style="width:68.6%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">0.597 ms</td><td class="num">3.35 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+<tbody><tr><td>kameo</td><td class="num">1.037 ms</td><td class="num">1.93 M/s</td><td class="num">0.69x</td><td class="barcell"><span class="bar" style="width:68.7%"></span></td></tr><tr><td>ractor</td><td class="num">1.045 ms</td><td class="num">1.91 M/s</td><td class="num">0.68x</td><td class="barcell"><span class="bar" style="width:68.1%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">0.712 ms</td><td class="num">2.81 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
 </table></div>
 <h2>ping_pong (8)</h2>
 <div class="scroll"><table>
 <thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
-<tbody><tr><td>kameo</td><td class="num">1.683 ms</td><td class="num">9.51 M/s</td><td class="num">0.72x</td><td class="barcell"><span class="bar" style="width:72.1%"></span></td></tr><tr><td>ractor</td><td class="num">1.647 ms</td><td class="num">9.72 M/s</td><td class="num">0.74x</td><td class="barcell"><span class="bar" style="width:73.7%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">1.213 ms</td><td class="num">13.19 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+<tbody><tr><td>kameo</td><td class="num">2.069 ms</td><td class="num">7.73 M/s</td><td class="num">0.76x</td><td class="barcell"><span class="bar" style="width:75.5%"></span></td></tr><tr><td>ractor</td><td class="num">2.154 ms</td><td class="num">7.43 M/s</td><td class="num">0.73x</td><td class="barcell"><span class="bar" style="width:72.5%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">1.562 ms</td><td class="num">10.24 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
 </table></div>
 
 <div class="foot"><span>Generated from criterion results.</span><span><a href="../">All runs</a> &middot; <a href="../../dev/bench/">Regression benchmarks</a></span></div>
