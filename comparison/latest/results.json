@@ -1,16 +1,16 @@
 {
   "metadata": {
-    "tag": "tellus-v0.3.6",
-    "commit": "94a24e161f9d30142fc7f76b5e1e065d439a7d72",
-    "date": "2026-10-19T08:46:43Z",
+    "tag": "tellus-v0.3.7",
+    "commit": "40004066e024b069786689c7f0ba66b8e8f4d270",
+    "date": "2026-10-19T10:19:13Z",
     "os": "Linux 6.17.0-1022-azure",
-    "cpu": "AMD EPYC 7763 64-Core Processor",
+    "cpu": "AMD EPYC 9V74 80-Core Processor",
     "cores": 4,
     "rustc": "rustc 1.99.0 (b940084d7 2026-09-28)",
     "versions": {
       "kameo": "0.22.2",
       "ractor": "0.16.5",
-      "tellus": "0.3.6"
+      "tellus": "0.3.7"
     }
   },
   "measurements": [
@@ -19,150 +19,150 @@
       "framework": "kameo",
       "parameter": "8",
       "elements": 100000,
-      "mean_ns": 9407401.401263695,
-      "lower_ns": 9359930.224575035,
-      "upper_ns": 9455007.423892854,
-      "elements_per_second": 10629928.046502514
+      "mean_ns": 8626696.440538362,
+      "lower_ns": 8577906.33194315,
+      "upper_ns": 8675753.059081517,
+      "elements_per_second": 11591922.897632336
     },
     {
       "group": "fan_out",
       "framework": "ractor",
       "parameter": "8",
       "elements": 100000,
-      "mean_ns": 7620167.777500245,
-      "lower_ns": 7586827.7356294785,
-      "upper_ns": 7657116.202436795,
-      "elements_per_second": 13123070.635697272
+      "mean_ns": 6417329.861221254,
+      "lower_ns": 6390855.052838707,
+      "upper_ns": 6443674.219246932,
+      "elements_per_second": 15582805.023672173
     },
     {
       "group": "fan_out",
       "framework": "tellus",
       "parameter": "8",
       "elements": 100000,
-      "mean_ns": 4719457.882042253,
-      "lower_ns": 4665680.536172244,
-      "upper_ns": 4770896.693526358,
-      "elements_per_second": 21188874.336712368
+      "mean_ns": 3479565.380710894,
+      "lower_ns": 3455503.5044672065,
+      "upper_ns": 3502175.513872862,
+      "elements_per_second": 28739221.442526672
     },
     {
       "group": "fan_out",
       "framework": "kameo",
       "parameter": "32",
       "elements": 100000,
-      "mean_ns": 8737903.055898422,
-      "lower_ns": 8662039.983788127,
-      "upper_ns": 8821872.964057941,
-      "elements_per_second": 11444393.39281707
+      "mean_ns": 7610530.628247777,
+      "lower_ns": 7578057.842799855,
+      "upper_ns": 7641631.654169696,
+      "elements_per_second": 13139688.266785633
     },
     {
       "group": "fan_out",
       "framework": "ractor",
       "parameter": "32",
       "elements": 100000,
-      "mean_ns": 7491955.241745094,
-      "lower_ns": 7457738.398192181,
-      "upper_ns": 7530238.1139812255,
-      "elements_per_second": 13347650.482854072
+      "mean_ns": 6360144.240417362,
+      "lower_ns": 6320564.050463444,
+      "upper_ns": 6399129.076918598,
+      "elements_per_second": 15722913.855399897
     },
     {
       "group": "fan_out",
       "framework": "tellus",
       "parameter": "32",
       "elements": 100000,
-      "mean_ns": 3993749.349724645,
-      "lower_ns": 3972217.8234923617,
-      "upper_ns": 4014596.198876983,
-      "elements_per_second": 25039127.70762508
+      "mean_ns": 3201264.6858724607,
+      "lower_ns": 3180867.590569369,
+      "upper_ns": 3224135.971297183,
+      "elements_per_second": 31237654.431172527
     },
     {
       "group": "flood",
       "framework": "kameo",
       "parameter": null,
       "elements": 100000,
-      "mean_ns": 25174731.191111103,
-      "lower_ns": 24799721.65327777,
-      "upper_ns": 25566264.720777772,
-      "elements_per_second": 3972237.0515443203
+      "mean_ns": 20787732.512,
+      "lower_ns": 20463431.226600006,
+      "upper_ns": 21117418.065400004,
+      "elements_per_second": 4810529.476568628
     },
     {
       "group": "flood",
       "framework": "ractor",
       "parameter": null,
       "elements": 100000,
-      "mean_ns": 19574666.536,
-      "lower_ns": 19136136.114100005,
-      "upper_ns": 20034111.734400004,
-      "elements_per_second": 5108643.8594542
+      "mean_ns": 15503312.204615382,
+      "lower_ns": 15275919.025115378,
+      "upper_ns": 15754966.391615383,
+      "elements_per_second": 6450234.54860373
     },
     {
       "group": "flood",
       "framework": "tellus",
       "parameter": null,
       "elements": 100000,
-      "mean_ns": 12571442.97469198,
-      "lower_ns": 12335932.411598936,
-      "upper_ns": 12803989.37724158,
-      "elements_per_second": 7954536.340920733
+      "mean_ns": 9974476.328914909,
+      "lower_ns": 9569320.158650393,
+      "upper_ns": 10397743.44883526,
+      "elements_per_second": 10025588.983565083
     },
     {
       "group": "ping_pong",
       "framework": "kameo",
       "parameter": "1",
       "elements": 2000,
-      "mean_ns": 980531.3577838928,
-      "lower_ns": 970698.6980081846,
-      "upper_ns": 993325.113240805,
-      "elements_per_second": 2039710.3918432726
+      "mean_ns": 905679.0912718388,
+      "lower_ns": 902315.067085858,
+      "upper_ns": 909133.4209560608,
+      "elements_per_second": 2208287.702867706
     },
     {
       "group": "ping_pong",
       "framework": "ractor",
       "parameter": "1",
       "elements": 2000,
-      "mean_ns": 992076.1091838842,
-      "lower_ns": 982927.034146264,
-      "upper_ns": 1001120.438012464,
-      "elements_per_second": 2015974.3607224536
+      "mean_ns": 870375.5713387751,
+      "lower_ns": 865358.0276919084,
+      "upper_ns": 875280.9690721422,
+      "elements_per_second": 2297858.6093859277
     },
     {
       "group": "ping_pong",
       "framework": "tellus",
       "parameter": "1",
       "elements": 2000,
-      "mean_ns": 660047.0415767805,
-      "lower_ns": 656778.145612517,
-      "upper_ns": 663330.8368330236,
-      "elements_per_second": 3030087.060495291
+      "mean_ns": 597030.1176236069,
+      "lower_ns": 592057.9422038583,
+      "upper_ns": 602081.573702039,
+      "elements_per_second": 3349914.7546537756
     },
     {
       "group": "ping_pong",
       "framework": "kameo",
       "parameter": "8",
       "elements": 16000,
-      "mean_ns": 2093601.7013279628,
-      "lower_ns": 2088365.322031616,
-      "upper_ns": 2098823.6283647097,
-      "elements_per_second": 7642332.345188326
+      "mean_ns": 1682751.7408696176,
+      "lower_ns": 1669093.3471047727,
+      "upper_ns": 1704836.5387088696,
+      "elements_per_second": 9508235.594949657
     },
     {
       "group": "ping_pong",
       "framework": "ractor",
       "parameter": "8",
       "elements": 16000,
-      "mean_ns": 2202419.763278691,
-      "lower_ns": 2170787.281257583,
-      "upper_ns": 2251133.3342848485,
-      "elements_per_second": 7264736.843889002
+      "mean_ns": 1646858.6325666674,
+      "lower_ns": 1643512.3263652746,
+      "upper_ns": 1650360.245790088,
+      "elements_per_second": 9715466.575940175
     },
     {
       "group": "ping_pong",
       "framework": "tellus",
       "parameter": "8",
       "elements": 16000,
-      "mean_ns": 1590872.5521614188,
-      "lower_ns": 1587045.1306075482,
-      "upper_ns": 1594859.8430348777,
-      "elements_per_second": 10057373.846988436
+      "mean_ns": 1213274.300973019,
+      "lower_ns": 1202694.122541129,
+      "upper_ns": 1224381.4066320166,
+      "elements_per_second": 13187454.796634492
     }
   ]
 }
