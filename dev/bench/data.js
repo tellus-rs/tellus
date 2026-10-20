@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792534775444,
+  "lastUpdate": 1792534777571,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7297,6 +7297,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 137099,
             "range": "± 5016",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7008b72d419086c467dd7d502306ecfe052b29fd",
+          "message": "Merge pull request #160 from tellus-rs/fix/webpki-advisories\n\nfix(deps): bump rustls-webpki and webpki-roots for emSign advisories",
+          "timestamp": "2026-10-21T01:15:34+03:00",
+          "tree_id": "b6a1abe5b23dd5700d16b19b6c42766d46b5fc63",
+          "url": "https://github.com/tellus-rs/tellus/commit/7008b72d419086c467dd7d502306ecfe052b29fd"
+        },
+        "date": 1792534776995,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3668530,
+            "range": "± 227559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3593211,
+            "range": "± 237503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1634588,
+            "range": "± 13999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 204898,
+            "range": "± 5118",
             "unit": "ns/iter"
           }
         ]
