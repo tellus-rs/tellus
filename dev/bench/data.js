@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792531721316,
+  "lastUpdate": 1792534775444,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4019,6 +4019,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3088852,
             "range": "± 14521",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7008b72d419086c467dd7d502306ecfe052b29fd",
+          "message": "Merge pull request #160 from tellus-rs/fix/webpki-advisories\n\nfix(deps): bump rustls-webpki and webpki-roots for emSign advisories",
+          "timestamp": "2026-10-21T01:15:34+03:00",
+          "tree_id": "b6a1abe5b23dd5700d16b19b6c42766d46b5fc63",
+          "url": "https://github.com/tellus-rs/tellus/commit/7008b72d419086c467dd7d502306ecfe052b29fd"
+        },
+        "date": 1792534774569,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14158832,
+            "range": "± 651826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13244754,
+            "range": "± 739193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 661711,
+            "range": "± 8847",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 902315,
+            "range": "± 25124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4746362,
+            "range": "± 86294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3882284,
+            "range": "± 26170",
             "unit": "ns/iter"
           }
         ]
