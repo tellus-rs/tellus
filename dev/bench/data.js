@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792531719377,
+  "lastUpdate": 1792531721316,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7189,6 +7189,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 198435,
             "range": "± 4559",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e101c0bd5cea1b2eb72ab264dc44fe3fff1fc6b7",
+          "message": "Merge pull request #158 from tellus-rs/dependabot/github_actions/ci-minor-c51d5d0d9b\n\nci(deps): bump actions/create-github-app-token from 3.2.0 to 3.3.0 in the ci-minor group across 1 directory",
+          "timestamp": "2026-10-21T00:24:18+03:00",
+          "tree_id": "b9a93942a2b31d673fd013fdc392f6a0c80671c2",
+          "url": "https://github.com/tellus-rs/tellus/commit/e101c0bd5cea1b2eb72ab264dc44fe3fff1fc6b7"
+        },
+        "date": 1792531720708,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2764373,
+            "range": "± 212909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2749464,
+            "range": "± 99884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1193199,
+            "range": "± 18867",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 137099,
+            "range": "± 5016",
             "unit": "ns/iter"
           }
         ]
