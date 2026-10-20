@@ -205,6 +205,17 @@ terminated signals and capacity answer different needs, so `send_terminated` enq
 same FIFO channel (preserving order behind queued messages) but bypasses the capacity check,
 since a terminated signal must never be dropped.
 
+An actor reads its own mailbox depth through `ActorContext::queued`: the number of items not
+received yet, terminated signals included. An actor which writes to a database or a socket can
+flush once its mailbox has run empty, and one which is overloaded can shed load, both as part of
+its own protocol. For the actor itself the value is a lower bound, since only the actor removes
+items; and because the run loop drops the terminated signals of unwatched actors before `receive`
+sees them, the count can exceed what `receive` will get by that many. `queued` takes the channel's
+length under its lock, which every send and receive takes as well, so nothing is paid until it is
+called. The depth is deliberately not on `ActorRef`: for a remote reference it would need a round
+trip, so other actors ask through the actor's protocol. Nor is it flow control, since senders do
+not see it; for that, bound the mailbox.
+
 The mailbox also owns watcher registration: watchers are collected in a map keyed by watcher ID
 which termination takes and closes atomically, so a watcher racing with termination either
 registers in time and is signaled, or fails registration and learns immediately that the actor

@@ -62,6 +62,21 @@ fn take_incoming_drains_the_mailbox() {
     assert!(test_context.take_incoming().is_empty());
 }
 
+/// The depth an actor would read is what it has not received yet, so a test can assert on it
+/// without a running system.
+#[test]
+fn queued_counts_the_incoming_not_yet_taken() {
+    let mut test_context = TestContext::new();
+    assert_eq!(test_context.context().queued(), 0);
+
+    test_context.context().self_ref().tell(1);
+    test_context.context().self_ref().tell(2);
+    assert_eq!(test_context.context().queued(), 2);
+
+    test_context.take_incoming();
+    assert_eq!(test_context.context().queued(), 0);
+}
+
 #[tokio::test]
 async fn watching_a_terminated_context_signals_right_away() {
     let other = TestContext::<()>::new();

@@ -5,6 +5,8 @@
 //! - `ping_pong`: pairs of actors play ping-pong, one pair and one pair per worker thread.
 //! - `fan_out`: the root actor sends messages round-robin to its workers, one worker and four
 //!   workers per worker thread.
+//! - `queued`: concurrent sender tasks, one and four per worker thread, flood a single counting
+//!   actor which reads its own mailbox depth on every message or never.
 //!
 //! All benchmarks run on a Tokio runtime with a fixed worker thread count, which also sizes the
 //! workloads, so measurements do not depend on the host's core count.
@@ -12,6 +14,7 @@
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use std::{
     convert::Infallible,
+    hint::black_box,
     num::NonZeroUsize,
     time::{Duration, Instant},
 };
@@ -26,6 +29,7 @@ const FLOOD_CAPACITY: NonZeroUsize =
     NonZeroUsize::new(FLOOD_MESSAGES).expect("flood message count is not zero");
 const PING_PONG_ROUNDS: usize = 1_000;
 const FAN_OUT_MESSAGES: usize = 100_000;
+const QUEUED_MESSAGES: usize = 100_000;
 
 fn flood(c: &mut Criterion) {
     let rt = runtime();
@@ -116,6 +120,47 @@ fn fan_out(c: &mut Criterion) {
     group.finish();
 }
 
+fn queued(c: &mut Criterion) {
+    let rt = runtime();
+
+    let mut group = c.benchmark_group("queued");
+
+    for senders in [WORKER_THREADS, 4 * WORKER_THREADS] {
+        let share = QUEUED_MESSAGES / senders;
+        group.throughput(Throughput::Elements((share * senders) as u64));
+
+        for (label, probe) in [("never", Probe::Never), ("every", Probe::Every)] {
+            group.bench_function(BenchmarkId::new(label, senders), |b| {
+                b.to_async(&rt).iter_custom(|iters| async move {
+                    measure(
+                        iters,
+                        || {
+                            let actor = Probing {
+                                messages: share * senders,
+                                probe,
+                            };
+                            (actor, ActorConfig::default())
+                        },
+                        |root| {
+                            for _ in 0..senders {
+                                let root = root.clone();
+                                tokio::spawn(async move {
+                                    for _ in 0..share {
+                                        root.tell(Tick);
+                                    }
+                                });
+                            }
+                        },
+                    )
+                    .await
+                });
+            });
+        }
+    }
+
+    group.finish();
+}
+
 fn runtime() -> Runtime {
     Builder::new_multi_thread()
         .worker_threads(WORKER_THREADS)
@@ -179,6 +224,46 @@ impl Actor for Countdown {
         _: Incoming<Self::Message>,
         remaining: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(next_control(remaining))
+    }
+}
+
+/// Whether the actor reads its own mailbox depth on every message.
+#[derive(Clone, Copy)]
+enum Probe {
+    Never,
+    Every,
+}
+
+/// A countdown which reads its mailbox depth on every message if its probe says so.
+struct Probing {
+    messages: usize,
+    probe: Probe,
+}
+
+impl Actor for Probing {
+    type Message = Tick;
+    type State = usize;
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(self.messages)
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        remaining: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match self.probe {
+            Probe::Every => {
+                black_box(context.queued());
+            }
+
+            Probe::Never => {}
+        }
+
         Ok(next_control(remaining))
     }
 }
@@ -361,6 +446,6 @@ criterion_group!(
         .noise_threshold(0.05)
         .warm_up_time(Duration::from_secs(3))
         .measurement_time(Duration::from_secs(10));
-    targets = flood, ping_pong, fan_out
+    targets = flood, ping_pong, fan_out, queued
 );
 criterion_main!(benches);

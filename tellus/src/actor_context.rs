@@ -155,6 +155,21 @@ impl<M> ActorContext<M> {
         }
     }
 
+    /// The number of incoming items queued for this actor, messages and terminated signals alike,
+    /// which it has not received yet. For the actor itself the value is a lower bound: only the
+    /// actor removes items and senders can only add to them, so at least this many are waiting.
+    /// The run loop drops the terminated signals of unwatched actors before [Actor::receive] sees
+    /// them, so the count can exceed what `receive` will get by that many.
+    ///
+    /// This is for an actor's own behavior, e.g. flushing a batch once its mailbox has run empty
+    /// or shedding load above a threshold, as part of its protocol. It is no substitute for flow
+    /// control, since senders do not see it; for that, see [MailboxCapacity::Bounded].
+    ///
+    /// [MailboxCapacity::Bounded]: crate::MailboxCapacity::Bounded
+    pub fn queued(&self) -> usize {
+        self.self_ref().queued()
+    }
+
     #[cfg(feature = "persistence")]
     pub(crate) fn stopping_rx(&self) -> watch::Receiver<()> {
         self.stopping_rx.clone()

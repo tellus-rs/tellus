@@ -37,6 +37,11 @@ impl<M> MailboxHandle<M> {
         &self.watcher_registry
     }
 
+    /// The number of items not received yet, signals included.
+    pub(crate) fn queued(&self) -> usize {
+        self.incoming_tx.len()
+    }
+
     /// The same underlying sender as for messages, hence a signal is ordered behind previously
     /// delivered messages while bypassing the quota.
     pub(crate) fn terminated_sink(&self) -> Arc<dyn TerminatedSink>
@@ -481,6 +486,31 @@ mod tests {
 
         drop(mailbox);
         assert!(watcher.send_terminated(actor_id).is_err());
+    }
+
+    /// The depth counts every item still in the queue, a forced message and a terminated signal
+    /// like a counted message, and goes down as items are received.
+    #[tokio::test]
+    async fn queued_is_the_number_of_items_in_the_queue() {
+        let (mailbox_handle, mut mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
+        assert_eq!(mailbox_handle.queued(), 0);
+
+        assert!(mailbox_handle.try_send_message(()).is_ok());
+        assert!(mailbox_handle.try_send_forced_message(()).is_ok());
+        assert!(
+            mailbox_handle
+                .terminated_sink()
+                .send_terminated(ActorId::new())
+                .is_ok()
+        );
+        assert_eq!(mailbox_handle.queued(), 3);
+
+        assert!(mailbox.recv().await.is_some());
+        assert_eq!(mailbox_handle.queued(), 2);
+
+        assert!(mailbox.recv().await.is_some());
+        assert!(mailbox.recv().await.is_some());
+        assert_eq!(mailbox_handle.queued(), 0);
     }
 
     /// Taking the watchers closes registration, hence a watcher racing with termination either is

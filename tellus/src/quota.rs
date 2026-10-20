@@ -47,6 +47,12 @@ impl<T> CountedSender<T> {
     pub(crate) fn try_send_uncounted(&self, item: T) -> Result<(), Disconnected> {
         self.item_tx.send(item).map_err(|_| Disconnected)
     }
+
+    /// The number of items in the channel, counted and uncounted alike. Takes the channel lock,
+    /// like every send and receive does.
+    pub(crate) fn len(&self) -> usize {
+        self.item_tx.len()
+    }
 }
 
 // A derived `Clone` would needlessly require `T: Clone`.

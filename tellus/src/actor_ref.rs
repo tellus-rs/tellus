@@ -107,6 +107,12 @@ impl<M> ActorRef<M> {
         self.mailbox_handle.watcher_registry()
     }
 
+    /// Crate-private on purpose: for a remote reference the depth would need a round trip, so
+    /// other actors ask through the actor's own protocol instead.
+    pub(crate) fn queued(&self) -> usize {
+        self.mailbox_handle.queued()
+    }
+
     fn new(actor_id: ActorId, mailbox_handle: MailboxHandle<M>) -> Self {
         Self {
             actor_id,
