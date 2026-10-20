@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792421600522,
+  "lastUpdate": 1792531518539,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -3899,6 +3899,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3909496,
             "range": "± 15631",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "312579440ef26a0c82841b4e5a7364f085bbdbfe",
+          "message": "Merge pull request #157 from tellus-rs/dependabot/github_actions/ci-patch-5941466e47\n\nci(deps): bump the ci-patch group with 2 updates",
+          "timestamp": "2026-10-21T00:21:22+03:00",
+          "tree_id": "3aff5be1751b37a0e1d2d88750fe106c40e36943",
+          "url": "https://github.com/tellus-rs/tellus/commit/312579440ef26a0c82841b4e5a7364f085bbdbfe"
+        },
+        "date": 1792531517157,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13865962,
+            "range": "± 1087188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 12716253,
+            "range": "± 408805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 934584,
+            "range": "± 17137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 799864,
+            "range": "± 3391",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4816520,
+            "range": "± 99124",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3927877,
+            "range": "± 24859",
             "unit": "ns/iter"
           }
         ]
