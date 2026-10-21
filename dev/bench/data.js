@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792534777571,
+  "lastUpdate": 1792604932207,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4079,6 +4079,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3882284,
             "range": "± 26170",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c288b6ee5213f1758ed772bdc037e94c23b01914",
+          "message": "Merge pull request #1 from tellus-rs/feat/remoting\n\nfeat: add remoting and cluster support",
+          "timestamp": "2026-10-21T20:44:28+03:00",
+          "tree_id": "7f0108d964d231ec862979829dbf20e4a235abe3",
+          "url": "https://github.com/tellus-rs/tellus/commit/c288b6ee5213f1758ed772bdc037e94c23b01914"
+        },
+        "date": 1792604931484,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11588361,
+            "range": "± 1370859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 12629027,
+            "range": "± 1188884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 760928,
+            "range": "± 14908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 788246,
+            "range": "± 4106",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5212476,
+            "range": "± 72403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3991161,
+            "range": "± 21730",
             "unit": "ns/iter"
           }
         ]
