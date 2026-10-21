@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792618003529,
+  "lastUpdate": 1792618005461,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7621,6 +7621,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 156550,
             "range": "± 5487",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ffa9da72917ca4b2e3f8824fc7c9f992718f486",
+          "message": "Merge pull request #168 from tellus-rs/fix/cluster-test-ports\n\ntest(cluster): recover from ports taken before a node binds them",
+          "timestamp": "2026-10-22T00:23:27+03:00",
+          "tree_id": "10df43b4004b0a87de59b917b00292482c5aeff5",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ffa9da72917ca4b2e3f8824fc7c9f992718f486"
+        },
+        "date": 1792618004999,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2205407,
+            "range": "± 65706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2222058,
+            "range": "± 112934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 861709,
+            "range": "± 7088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 102475,
+            "range": "± 1779",
             "unit": "ns/iter"
           }
         ]
