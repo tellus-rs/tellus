@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792604932207,
+  "lastUpdate": 1792604934111,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7405,6 +7405,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 204898,
             "range": "± 5118",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c288b6ee5213f1758ed772bdc037e94c23b01914",
+          "message": "Merge pull request #1 from tellus-rs/feat/remoting\n\nfeat: add remoting and cluster support",
+          "timestamp": "2026-10-21T20:44:28+03:00",
+          "tree_id": "7f0108d964d231ec862979829dbf20e4a235abe3",
+          "url": "https://github.com/tellus-rs/tellus/commit/c288b6ee5213f1758ed772bdc037e94c23b01914"
+        },
+        "date": 1792604933648,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3404302,
+            "range": "± 155447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3686180,
+            "range": "± 166018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1267535,
+            "range": "± 4324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 151338,
+            "range": "± 7567",
             "unit": "ns/iter"
           }
         ]
