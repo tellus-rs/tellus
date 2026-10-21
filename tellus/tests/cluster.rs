@@ -49,17 +49,17 @@ use rustls::{
 };
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     convert::Infallible,
-    env, fs,
-    io::{BufRead, BufReader, Write},
-    net::{SocketAddr, UdpSocket},
+    env, fmt, fs,
+    io::{self, BufRead, BufReader, Write},
+    net::{Ipv4Addr, SocketAddr, UdpSocket},
     num::NonZeroUsize,
     ops::RangeInclusive,
     path::{Path, PathBuf},
-    process::{Child, Command, ExitStatus, Stdio},
+    process::{self, Child, Command, ExitStatus, Stdio},
     sync::{
-        Arc, OnceLock,
+        Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError,
         atomic::{AtomicBool, AtomicU32, Ordering},
         mpsc,
     },
@@ -75,7 +75,10 @@ use tellus::{
         failure::{Deadline, DeadlineFailureDetector},
         pubsub::{self, Topic},
         receptionist::{self, ReceptionistError, Subscription},
-        transport::{ConnectedControl, QuicConnection, QuicTransport, Transport, TransportError},
+        transport::{
+            ConnectedControl, QuicConnection, QuicTransport, QuicTransportError, Transport,
+            TransportError,
+        },
     },
 };
 use tokio::{
@@ -94,6 +97,8 @@ const KEY_ENV: &str = "TELLUS_REMOTING_KEY";
 const ROOTS_ENV: &str = "TELLUS_REMOTING_ROOTS";
 const CLUSTER_SIZE_ENV: &str = "TELLUS_REMOTING_CLUSTER_SIZE";
 const STREAMS_ENV: &str = "TELLUS_REMOTING_STREAMS";
+const FORCE_COLLISION_ENV: &str = "TELLUS_REMOTING_FORCE_COLLISION";
+const ADDR_PREFIX: &str = "ADDR ";
 const REF_PREFIX: &str = "REF ";
 const JOIN_PREFIX: &str = "JOIN ";
 const CLUSTER_PREFIX: &str = "CLUSTER ";
@@ -133,6 +138,10 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 const UNWATCH_GRACE: Duration = Duration::from_millis(500);
 const DEAD_LETTER_GRACE: Duration = Duration::from_millis(300);
 const EXIT_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const COLLISION_EXIT_TIMEOUT: Duration = Duration::from_secs(5);
+const BIND_COLLISION_EXIT: i32 = 75;
+const SPAWN_ATTEMPTS: usize = 3;
+const SCENARIO_ATTEMPTS: usize = 3;
 const BENCH_PINGS: u32 = 50_000;
 const BENCH_WINDOW: u32 = 4_096;
 const BENCH_SERIAL: u32 = 2_000;
@@ -154,8 +163,19 @@ type Receiver = mpsc::Receiver<TestEvent>;
 /// against a star shaped cluster around the client, which gossip completes into a mesh.
 static SELF_ADDR: OnceLock<SocketAddr> = OnceLock::new();
 
+/// The stdout lines of every spawned node, read by one thread per node and handed back after
+/// every read, so a node's lines can be awaited one prefix after another.
+static NODE_LINES: LazyLock<Mutex<HashMap<u32, mpsc::Receiver<String>>>> =
+    LazyLock::new(Mutex::default);
+
+/// The address every spawned node reported once it was bound, by process ID.
+static NODE_ADDRS: LazyLock<Mutex<HashMap<u32, SocketAddr>>> = LazyLock::new(Mutex::default);
+
+/// The socket of a collision forced through [FORCE_COLLISION_ENV], held until the process exits.
+static FORCED_COLLISION: Mutex<Option<UdpSocket>> = Mutex::new(None);
+
 fn main() -> anyhow::Result<()> {
-    match env::var(ROLE_ENV).as_deref() {
+    let result = match env::var(ROLE_ENV).as_deref() {
         Ok(role) if role == Role::Echo.as_str() => echo_node(),
         Ok(role) if role == Role::Keeper.as_str() => keeper_node(),
         Ok(role) if role == Role::Mutual.as_str() => mutual_node(),
@@ -169,9 +189,37 @@ fn main() -> anyhow::Result<()> {
         Ok(role) if role == Role::GossipBench.as_str() => gossip_bench_client(),
         Ok(role) if role == Role::GossipIdle.as_str() => gossip_idle_node(),
         Ok(role) if role == Role::StreamsBench.as_str() => streams_bench_client(),
-        Ok(role) => bail!("unknown role {role}"),
+        Ok(role) => Err(anyhow::anyhow!("unknown role {role}")),
         Err(_) => client(),
+    };
+    exit_on_bind_collision(result)
+}
+
+/// A node whose address was taken between its reservation and its bind exits with
+/// [BIND_COLLISION_EXIT], so the spawning side can tell a collision from any other failure.
+fn exit_on_bind_collision(result: anyhow::Result<()>) -> anyhow::Result<()> {
+    if let Err(error) = &result
+        && is_addr_in_use(error)
+    {
+        eprintln!("Error: {error:?}");
+        process::exit(BIND_COLLISION_EXIT);
     }
+    result
+}
+
+fn is_addr_in_use(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        matches!(
+            cause.downcast_ref::<QuicTransportError>(),
+            Some(QuicTransportError::Bind { source, .. }) if source.kind() == io::ErrorKind::AddrInUse
+        )
+    })
+}
+
+/// Printed right after the endpoint has started and before joining or bootstrapping, so it means
+/// bound, not ready: a spawning side waiting for it never waits for a cluster to form.
+fn announce_bound(addr: SocketAddr) {
+    println!("{ADDR_PREFIX}{addr}");
 }
 
 /// The role a spawned copy of this process plays; the closed set keeps a spawn site and the
@@ -246,6 +294,7 @@ fn mutual_node() -> anyhow::Result<()> {
         )?;
         let addr = transport.local_addr()?;
         cluster::start_endpoint(test_config(addr), transport)?;
+        announce_bound(addr);
 
         match env::var(SEEDS_ENV) {
             Ok(seeds) => {
@@ -284,6 +333,7 @@ fn self_down_node() -> anyhow::Result<()> {
         let mut config = test_config(addr);
         config.downing_provider = Arc::new(|| Box::new(SelfDownWithPeers));
         cluster::start_endpoint(config, TimeoutTransport(transport))?;
+        announce_bound(addr);
 
         let seeds = parse_addrs(&env::var(SEEDS_ENV).context("seed addresses")?)?;
         timeout(TIMEOUT, cluster::join(&seeds))
@@ -404,12 +454,13 @@ fn leave_node() -> anyhow::Result<()> {
 fn zombie_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
-        let bind_addr = env::var(ADDR_ENV).context("bind address")?;
+        let bind_addr = env::var(ADDR_ENV).unwrap_or_else(|_| "127.0.0.1:0".to_string());
         let transport = QuicTransport::dev(bind_addr.parse()?)?;
         let addr = transport.local_addr()?;
         let mut config = test_config(addr);
         config.downing_provider = Arc::new(|| Box::new(NeverDowning));
         cluster::start_endpoint(config, TimeoutTransport(transport))?;
+        announce_bound(addr);
 
         let seeds = parse_addrs(&env::var(SEEDS_ENV).context("seed addresses")?)?;
         timeout(TIMEOUT, cluster::join(&seeds))
@@ -448,6 +499,7 @@ fn majority_node() -> anyhow::Result<()> {
         let mut config = test_config(addr);
         config.downing_provider = Arc::new(|| Box::new(KeepMajority::new(MAJORITY_AFTER)));
         cluster::start_endpoint(config, TimeoutTransport(transport))?;
+        announce_bound(addr);
 
         match env::var(SEEDS_ENV) {
             Ok(seeds) => timeout(TIMEOUT, cluster::join(&parse_addrs(&seeds)?))
@@ -501,6 +553,7 @@ fn cluster_id_node() -> anyhow::Result<()> {
         let transport = QuicTransport::dev(bind_addr.parse()?)?;
         let addr = transport.local_addr()?;
         cluster::start_endpoint(test_config(addr), TimeoutTransport(transport))?;
+        announce_bound(addr);
 
         let joined = match env::var(SEEDS_ENV) {
             Ok(seeds) => {
@@ -542,6 +595,7 @@ fn foreign_probe_node() -> anyhow::Result<()> {
         let transport = QuicTransport::dev(bind_addr.parse()?)?;
         let addr = transport.local_addr()?;
         cluster::start_endpoint(test_config(addr), TimeoutTransport(transport))?;
+        announce_bound(addr);
         cluster::form().context("forming the cluster")?;
 
         let seeds = parse_addrs(&env::var(BOOTSTRAP_ENV).context("seed addresses")?)?;
@@ -1121,7 +1175,7 @@ fn client() -> anyhow::Result<()> {
     runtime.block_on(start_endpoint())?;
 
     echo_scenario(&runtime).context("echo scenario")?;
-    discovery_scenario(&runtime).context("discovery scenario")?;
+    retried("discovery scenario", || discovery_scenario(&runtime)).context("discovery scenario")?;
     receptionist_scenario(&runtime).context("receptionist scenario")?;
     pubsub_scenario(&runtime).context("pub-sub scenario")?;
 
@@ -1157,19 +1211,19 @@ fn client() -> anyhow::Result<()> {
     ask_down_scenario(&runtime).context("ask down scenario")?;
 
     relayed_reachability_scenario(&runtime).context("relayed reachability scenario")?;
-    restart_scenario(&runtime).context("restart scenario")?;
+    retried("restart scenario", || restart_scenario(&runtime)).context("restart scenario")?;
 
     changes_scenario(&runtime).context("changes scenario")?;
-    bootstrap_scenario(&runtime).context("bootstrap scenario")?;
-    down_scenario(&runtime).context("down scenario")?;
+    retried("bootstrap scenario", || bootstrap_scenario(&runtime)).context("bootstrap scenario")?;
+    retried("down scenario", || down_scenario(&runtime)).context("down scenario")?;
     zombie_scenario(&runtime).context("zombie scenario")?;
     held_join_scenario(&runtime).context("held join scenario")?;
-    keep_majority_scenario().context("keep majority scenario")?;
+    retried("keep majority scenario", keep_majority_scenario).context("keep majority scenario")?;
     leave_scenario(&runtime).context("leave scenario")?;
     self_down_scenario().context("self down scenario")?;
     identity_binding_scenario().context("identity binding scenario")?;
     foreign_cluster_scenario(&runtime).context("foreign cluster scenario")?;
-    foreign_probe_scenario().context("foreign probe scenario")?;
+    retried("foreign probe scenario", foreign_probe_scenario).context("foreign probe scenario")?;
 
     Ok(())
 }
@@ -1678,7 +1732,7 @@ fn echo_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Discovery: a key registered on another node resolves into a working reference, given only that
-/// node's address. The lookup starts before the node exists and is retried while the directory
+/// node's address. The lookup starts before the node has joined and is retried while the directory
 /// answers empty, until the node has joined and its registrations were replicated here, so
 /// bootstrap order does not matter. An unregistered name answers empty while a wrong message type
 /// is refused, since only the first is worth retrying. A key registered on this node resolves at
@@ -2249,11 +2303,16 @@ fn restart_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         _ => bail!("unexpected event from the death watch client"),
     }
     echo_process.0.kill().context("killing the echo process")?;
+    echo_process.0.wait().context("reaping the echo process")?;
+    force_collision("rebind", addr);
+    let held = hold_addr(addr)?;
     expect_done(&event_rx)?;
     runtime
         .block_on(timeout(TIMEOUT, system.terminated()))
         .context("death watch client termination")??;
 
+    drop(held);
+    force_collision("respawn", addr);
     let mut restarted_process = KillOnDrop(spawn_node_at(Role::Echo, Some(addr))?);
 
     let echo =
@@ -2933,9 +2992,10 @@ fn own_addr(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<Socke
 /// whichever of them happens to hold the lowest address.
 fn bootstrap_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
-    let first_addr = reserved_addr()?;
-    let second_addr = reserved_addr()?;
+    let addrs = reserved_addrs(2)?;
+    let (first_addr, second_addr) = (addrs[0], addrs[1]);
     let seeds = vec![self_addr, first_addr, second_addr];
+    force_collision("shared", first_addr);
 
     let mut first_process = KillOnDrop(spawn_bootstrap_node(Role::Echo, first_addr, &seeds)?);
     let mut second_process = KillOnDrop(spawn_bootstrap_node(Role::Echo, second_addr, &seeds)?);
@@ -3061,6 +3121,11 @@ fn down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     }
 
     echo_process.0.kill().context("killing the downed echo")?;
+    echo_process.0.wait().context("reaping the downed echo")?;
+    force_collision("rebind", addr);
+    let held = hold_addr(addr)?;
+    drop(held);
+    force_collision("respawn", addr);
     let restarted_process = KillOnDrop(spawn_node_at(Role::Echo, Some(addr))?);
     let echo =
         lookup_echo_with_retries(runtime, addr).context("no reference from the rejoined node")?;
@@ -3080,8 +3145,8 @@ fn down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 /// been swept: the address watermark alone must refuse it, so it learns its fate and downs itself
 /// instead of being admitted again.
 fn zombie_scenario(runtime: &Runtime) -> anyhow::Result<()> {
-    let addr = reserved_addr()?;
-    let mut zombie = KillOnDrop(spawn_node_at(Role::Zombie, Some(addr))?);
+    let mut zombie = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
+    let addr = bound_addr(&zombie)?;
     let mut state_rx = cluster::cluster_state()?;
     let mut observed = Vec::new();
     await_state(runtime, &mut state_rx, &mut observed, |state| {
@@ -3131,9 +3196,9 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     .context("the nodes of earlier scenarios are downed")?;
 
     let hold = HoldDowning::new();
-    let (witness_addr, frozen_addr) = (reserved_addr()?, reserved_addr()?);
-    let mut witness = KillOnDrop(spawn_node_at(Role::Zombie, Some(witness_addr))?);
-    let mut frozen = KillOnDrop(spawn_node_at(Role::Zombie, Some(frozen_addr))?);
+    let mut witness = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
+    let mut frozen = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
+    let (witness_addr, frozen_addr) = (bound_addr(&witness)?, bound_addr(&frozen)?);
     await_state(runtime, &mut state_rx, &mut observed, |state| {
         is_up(state, witness_addr) && is_up(state, frozen_addr)
     })
@@ -3145,8 +3210,8 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     })
     .context("the frozen zombie becomes unreachable")?;
 
-    let joiner_addr = reserved_addr()?;
-    let mut joiner = KillOnDrop(spawn_node_at(Role::Echo, Some(joiner_addr))?);
+    let mut joiner = KillOnDrop(spawn_node_at(Role::Echo, None)?);
+    let joiner_addr = bound_addr(&joiner)?;
     thread::sleep(JOIN_HOLD_GRACE);
     if is_up(&state_rx.borrow(), joiner_addr) {
         bail!("the join at {joiner_addr} was admitted while a member is unreachable");
@@ -3208,9 +3273,7 @@ struct MajorityNode {
 
 /// A cluster of `size` majority nodes, ordered by address, once every one sees all of them Up.
 fn majority_cluster(size: usize) -> anyhow::Result<Vec<MajorityNode>> {
-    let mut addrs = (0..size)
-        .map(|_| reserved_addr())
-        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut addrs = reserved_addrs(size)?;
     addrs.sort();
 
     let mut nodes = Vec::with_capacity(size);
@@ -3253,8 +3316,8 @@ fn majority_pair() -> anyhow::Result<[MajorityNode; 2]> {
 /// one of [DEPARTURE_PINGS] replies arrives, in order, before the real terminated signal. The
 /// leaving node checks its departure report itself and fails its exit otherwise.
 fn leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
-    let addr = reserved_addr()?;
-    let mut process = KillOnDrop(spawn_node_at(Role::Leave, Some(addr))?);
+    let mut process = KillOnDrop(spawn_node_at(Role::Leave, None)?);
+    let addr = bound_addr(&process)?;
     let echo = resolve_ref::<Request>(&mut process)?;
 
     let (event_tx, event_rx) = mpsc::channel();
@@ -3330,25 +3393,28 @@ fn identity_binding_scenario() -> anyhow::Result<()> {
             Ok((cert_path, key_path))
         };
 
-    let seed_addr = reserved_addr()?;
     let (seed_cert, seed_key) = mint(
         "seed",
-        vec![MTLS_SERVER_NAME.to_string(), seed_addr.ip().to_string()],
+        vec![MTLS_SERVER_NAME.to_string(), any_port().ip().to_string()],
         Vec::new(),
     )?;
     let mut seed_process = KillOnDrop(spawn_mutual_node(
-        seed_addr, &seed_cert, &seed_key, &ca_path, None,
+        any_port(),
+        &seed_cert,
+        &seed_key,
+        &ca_path,
+        None,
     )?);
+    let seed_addr = bound_addr(&seed_process)?;
     expect_join_line(&mut seed_process, "seed")?;
 
-    let good_addr = reserved_addr()?;
     let (good_cert, good_key) = mint(
         "good",
-        vec![MTLS_SERVER_NAME.to_string(), good_addr.ip().to_string()],
+        vec![MTLS_SERVER_NAME.to_string(), any_port().ip().to_string()],
         Vec::new(),
     )?;
     let mut good_process = KillOnDrop(spawn_mutual_node(
-        good_addr,
+        any_port(),
         &good_cert,
         &good_key,
         &ca_path,
@@ -3357,43 +3423,44 @@ fn identity_binding_scenario() -> anyhow::Result<()> {
     expect_join_line(&mut good_process, "ok")?;
     expect_exit(&mut good_process, "proven mutual TLS joiner")?;
 
-    let uri_addr = reserved_addr()?;
-    let (uri_cert, uri_key) = mint(
-        "uri",
-        vec![MTLS_SERVER_NAME.to_string()],
-        vec![format!("tellus://{uri_addr}")],
-    )?;
-    let mut uri_process = KillOnDrop(spawn_mutual_node(
-        uri_addr,
-        &uri_cert,
-        &uri_key,
-        &ca_path,
-        Some(seed_addr),
-    )?);
+    let mut uri_process = spawn_at_fresh_addr(|uri_addr| {
+        let (uri_cert, uri_key) = mint(
+            "uri",
+            vec![MTLS_SERVER_NAME.to_string()],
+            vec![format!("tellus://{uri_addr}")],
+        )?;
+        Ok(KillOnDrop(spawn_mutual_node(
+            uri_addr,
+            &uri_cert,
+            &uri_key,
+            &ca_path,
+            Some(seed_addr),
+        )?))
+    })?;
     expect_join_line(&mut uri_process, "ok")?;
     expect_exit(&mut uri_process, "URI proven mutual TLS joiner")?;
 
-    let port_addr = reserved_addr()?;
-    let other_port = SocketAddr::new(port_addr.ip(), port_addr.port() ^ 1);
-    let (port_cert, port_key) = mint(
-        "port",
-        vec![MTLS_SERVER_NAME.to_string(), port_addr.ip().to_string()],
-        vec![format!("tellus://{other_port}")],
-    )?;
-    let mut port_process = KillOnDrop(spawn_mutual_node(
-        port_addr,
-        &port_cert,
-        &port_key,
-        &ca_path,
-        Some(seed_addr),
-    )?);
+    let mut port_process = spawn_at_fresh_addr(|port_addr| {
+        let other_port = SocketAddr::new(port_addr.ip(), port_addr.port() ^ 1);
+        let (port_cert, port_key) = mint(
+            "port",
+            vec![MTLS_SERVER_NAME.to_string(), port_addr.ip().to_string()],
+            vec![format!("tellus://{other_port}")],
+        )?;
+        Ok(KillOnDrop(spawn_mutual_node(
+            port_addr,
+            &port_cert,
+            &port_key,
+            &ca_path,
+            Some(seed_addr),
+        )?))
+    })?;
     expect_join_line(&mut port_process, "timeout")?;
     expect_exit(&mut port_process, "wrong port mutual TLS joiner")?;
 
-    let bad_addr = reserved_addr()?;
     let (bad_cert, bad_key) = mint("bad", vec![MTLS_SERVER_NAME.to_string()], Vec::new())?;
     let mut bad_process = KillOnDrop(spawn_mutual_node(
-        bad_addr,
+        any_port(),
         &bad_cert,
         &bad_key,
         &ca_path,
@@ -3414,8 +3481,8 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         .context("the client names its cluster")?;
     let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
 
-    let foreign_addr = reserved_addr()?;
-    let mut foreign = KillOnDrop(spawn_cluster_id_node(foreign_addr, None)?);
+    let mut foreign = KillOnDrop(spawn_cluster_id_node(any_port(), None)?);
+    let foreign_addr = bound_addr(&foreign)?;
     let foreign_cluster =
         stdout_line(&mut foreign, CLUSTER_PREFIX).context("foreign cluster ID")?;
     anyhow::ensure!(
@@ -3423,8 +3490,7 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         "an independently formed cluster has the client's ID {this_cluster}"
     );
 
-    let mut foreign_member =
-        KillOnDrop(spawn_cluster_id_node(reserved_addr()?, Some(foreign_addr))?);
+    let mut foreign_member = KillOnDrop(spawn_cluster_id_node(any_port(), Some(foreign_addr))?);
     let joined_cluster =
         stdout_line(&mut foreign_member, CLUSTER_PREFIX).context("foreign member's cluster ID")?;
     anyhow::ensure!(
@@ -3433,7 +3499,7 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     );
     expect_exit(&mut foreign_member, "foreign member")?;
 
-    let mut member = KillOnDrop(spawn_cluster_id_node(reserved_addr()?, Some(self_addr))?);
+    let mut member = KillOnDrop(spawn_cluster_id_node(any_port(), Some(self_addr))?);
     let joined_cluster = stdout_line(&mut member, CLUSTER_PREFIX).context("member's cluster ID")?;
     anyhow::ensure!(
         joined_cluster == this_cluster.to_string(),
@@ -3459,8 +3525,8 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 /// them: each one's probe reports the other's address and cluster as foreign within a probe
 /// interval of both being up, plus the time a probe takes.
 fn foreign_probe_scenario() -> anyhow::Result<()> {
-    let first_addr = reserved_addr()?;
-    let second_addr = reserved_addr()?;
+    let addrs = reserved_addrs(2)?;
+    let (first_addr, second_addr) = (addrs[0], addrs[1]);
     let seeds = [first_addr, second_addr];
 
     let mut first = KillOnDrop(spawn_bootstrap_node(
@@ -4730,6 +4796,7 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     }
     cluster::start_endpoint(config, TimeoutTransport(transport))?;
     let _ = SELF_ADDR.set(addr);
+    announce_bound(addr);
 
     if let Ok(seeds) = env::var(SEEDS_ENV) {
         timeout(TIMEOUT, cluster::join(&parse_addrs(&seeds)?))
@@ -4815,12 +4882,134 @@ impl Transport for TimeoutTransport {
 }
 
 /// An address the OS has just handed out and nothing holds anymore, so the node about to be
-/// spawned can bind it: naming a node before it exists is what a lookup has to survive.
+/// spawned can bind it: naming a node before it exists is what a lookup has to survive. Another
+/// process can take it before the node binds it, which [BindCollision] reports.
 fn reserved_addr() -> anyhow::Result<SocketAddr> {
-    let socket = UdpSocket::bind("127.0.0.1:0")?;
-    let addr = socket.local_addr()?;
-    drop(socket);
-    Ok(addr)
+    Ok(reserved_addrs(1)?.remove(0))
+}
+
+/// Distinct addresses: every socket is held until the last address is read, else one port could
+/// be handed out twice.
+fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+    let sockets = (0..count)
+        .map(|_| UdpSocket::bind("127.0.0.1:0"))
+        .collect::<Result<Vec<_>, _>>()?;
+    sockets
+        .iter()
+        .map(|socket| socket.local_addr().map_err(anyhow::Error::from))
+        .collect()
+}
+
+/// The address a node binds to when the OS is to choose its port, which it then reports.
+fn any_port() -> SocketAddr {
+    SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+}
+
+/// The address a spawned node reported once it was bound.
+fn bound_addr(child: &Child) -> anyhow::Result<SocketAddr> {
+    lock(&NODE_ADDRS)
+        .get(&child.id())
+        .copied()
+        .context("the node reported no bound address")
+}
+
+/// Waits for the node's address line. A node which closes its stdout and exits with
+/// [BIND_COLLISION_EXIT] instead found its address taken.
+fn await_bound(child: &mut Child, requested: SocketAddr) -> anyhow::Result<()> {
+    match stdout_line(child, ADDR_PREFIX) {
+        Ok(addr) => {
+            let addr = addr.parse().context("bound address")?;
+            lock(&NODE_ADDRS).insert(child.id(), addr);
+            Ok(())
+        }
+
+        Err(error) => match wait_with_timeout(child, COLLISION_EXIT_TIMEOUT) {
+            Ok(status) if status.code() == Some(BIND_COLLISION_EXIT) => {
+                Err(BindCollision(requested).into())
+            }
+            _ => Err(error),
+        },
+    }
+}
+
+/// A spawned node found its address taken by another process before it could bind it.
+#[derive(Debug)]
+struct BindCollision(SocketAddr);
+
+impl fmt::Display for BindCollision {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} was taken before the node could bind it", self.0)
+    }
+}
+
+impl std::error::Error for BindCollision {}
+
+fn is_bind_collision(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| cause.is::<BindCollision>())
+}
+
+/// Binds the address to keep it from other processes while the node which owned it is dead.
+fn hold_addr(addr: SocketAddr) -> anyhow::Result<UdpSocket> {
+    UdpSocket::bind(addr).map_err(|_| BindCollision(addr).into())
+}
+
+/// Spawns a node at a freshly reserved address, and at another one if the address was taken
+/// before the node bound it. Only valid for an address nothing else knows yet.
+fn spawn_at_fresh_addr<T, F>(mut spawn: F) -> anyhow::Result<T>
+where
+    F: FnMut(SocketAddr) -> anyhow::Result<T>,
+{
+    let mut attempt = 1;
+    loop {
+        let addr = reserved_addr()?;
+        force_collision("spawn", addr);
+        match spawn(addr) {
+            Err(error) if attempt < SPAWN_ATTEMPTS && is_bind_collision(&error) => {
+                eprintln!("{error:#}, spawning at another address");
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Runs a scenario again from fresh reservations when one of its addresses was taken, the only
+/// valid retry once that address was shared with other nodes or must survive a restart.
+fn retried<F>(name: &str, mut scenario: F) -> anyhow::Result<()>
+where
+    F: FnMut() -> anyhow::Result<()>,
+{
+    let mut attempt = 1;
+    loop {
+        match scenario() {
+            Err(error) if attempt < SCENARIO_ATTEMPTS && is_bind_collision(&error) => {
+                eprintln!("{name}: {error:#}, running it again");
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// Takes the address once, at the site [FORCE_COLLISION_ENV] names, so a run proves that a
+/// collision there is recovered from.
+fn force_collision(site: &str, addr: SocketAddr) {
+    if env::var(FORCE_COLLISION_ENV).is_ok_and(|forced| forced == site) {
+        let mut forced = lock(&FORCED_COLLISION);
+        if forced.is_none() {
+            match UdpSocket::bind(addr) {
+                Ok(socket) => {
+                    eprintln!("forcing a collision at {site} on {addr}");
+                    *forced = Some(socket);
+                }
+                Err(error) => eprintln!("cannot force a collision at {site} on {addr}: {error}"),
+            }
+        }
+    }
+}
+
+fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn spawn_node(role: Role) -> anyhow::Result<Child> {
@@ -4838,9 +5027,10 @@ fn spawn_node_at(role: Role, bind_addr: Option<SocketAddr>) -> anyhow::Result<Ch
         command.env(ADDR_ENV, bind_addr.to_string());
     }
 
-    let child = command
+    let mut child = command
         .spawn()
         .with_context(|| format!("{} process", role.as_str()))?;
+    await_bound(&mut child, bind_addr.unwrap_or_else(any_port))?;
     Ok(child)
 }
 
@@ -4862,9 +5052,10 @@ fn spawn_bootstrap_node(
         .env(BOOTSTRAP_ENV, seeds)
         .stdout(Stdio::piped());
 
-    let child = command
+    let mut child = command
         .spawn()
         .with_context(|| format!("bootstrap {} process", role.as_str()))?;
+    await_bound(&mut child, bind_addr)?;
     Ok(child)
 }
 
@@ -4878,7 +5069,8 @@ fn spawn_cluster_id_node(bind_addr: SocketAddr, seed: Option<SocketAddr>) -> any
         command.env(SEEDS_ENV, seed.to_string());
     }
 
-    let child = command.spawn().context("cluster ID process")?;
+    let mut child = command.spawn().context("cluster ID process")?;
+    await_bound(&mut child, bind_addr)?;
     Ok(child)
 }
 
@@ -4901,7 +5093,8 @@ fn spawn_mutual_node(
         command.env(SEEDS_ENV, seed.to_string());
     }
 
-    let child = command.spawn().context("mutual TLS process")?;
+    let mut child = command.spawn().context("mutual TLS process")?;
+    await_bound(&mut child, bind_addr)?;
     Ok(child)
 }
 
@@ -4928,49 +5121,37 @@ fn expect_join_line(child: &mut Child, expected: &str) -> anyhow::Result<()> {
 
 /// The bootstrap read must be bounded like every other wait in this file: a node which hangs
 /// before printing the expected line must fail its scenario rather than hang the whole suite.
+/// Lines before the expected one are skipped, later ones stay for the next read.
 fn stdout_line(child: &mut Child, prefix: &'static str) -> anyhow::Result<String> {
-    let stdout = child.stdout.take().context("server process stdout")?;
-    let (line_tx, line_rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines() {
-            match line {
-                Ok(line) => {
-                    if let Some(line) = line.strip_prefix(prefix) {
-                        let _ = line_tx.send(Ok(line.to_string()));
-                        return;
-                    }
-                }
-
-                Err(error) => {
-                    let _ = line_tx.send(Err(anyhow::Error::from(error)));
-                    return;
-                }
-            }
-        }
-        let _ = line_tx.send(Err(anyhow::Error::msg(
-            "no expected line on the server process stdout",
-        )));
-    });
-
-    line_rx
-        .recv_timeout(TIMEOUT)
-        .context("server line within the timeout")?
+    let lines = node_lines(child)?;
+    let line = prefixed_line(&lines, prefix);
+    lock(&NODE_LINES).insert(child.id(), lines);
+    line
 }
 
 /// Every line of a node's stdout, for a node which reports more than once; [stdout_line] reads
-/// one line and stops.
+/// one line at a time.
 fn stdout_lines(child: &mut Child) -> anyhow::Result<mpsc::Receiver<String>> {
-    let stdout = child.stdout.take().context("server process stdout")?;
-    let (line_tx, line_rx) = mpsc::channel();
-    thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if line_tx.send(line).is_err() {
-                return;
+    node_lines(child)
+}
+
+/// The receiver of the node's lines, taken out of [NODE_LINES]. A child whose stdout is still
+/// untaken is a new process, whatever an exited one with the same ID left behind.
+fn node_lines(child: &mut Child) -> anyhow::Result<mpsc::Receiver<String>> {
+    if let Some(stdout) = child.stdout.take() {
+        let (line_tx, line_rx) = mpsc::channel();
+        thread::spawn(move || {
+            for line in BufReader::new(stdout).lines().map_while(Result::ok) {
+                if line_tx.send(line).is_err() {
+                    return;
+                }
             }
-        }
-    });
-    Ok(line_rx)
+        });
+        return Ok(line_rx);
+    }
+    lock(&NODE_LINES)
+        .remove(&child.id())
+        .context("server process stdout")
 }
 
 /// Skips lines until the expected one, bounded like every other wait in this file.
@@ -5076,5 +5257,6 @@ struct KillOnDrop(Child);
 impl Drop for KillOnDrop {
     fn drop(&mut self) {
         let _ = self.0.kill();
+        let _ = self.0.wait();
     }
 }
