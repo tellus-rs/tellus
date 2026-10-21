@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792606591594,
+  "lastUpdate": 1792618003529,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4199,6 +4199,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 4010088,
             "range": "± 20214",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ffa9da72917ca4b2e3f8824fc7c9f992718f486",
+          "message": "Merge pull request #168 from tellus-rs/fix/cluster-test-ports\n\ntest(cluster): recover from ports taken before a node binds them",
+          "timestamp": "2026-10-22T00:23:27+03:00",
+          "tree_id": "10df43b4004b0a87de59b917b00292482c5aeff5",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ffa9da72917ca4b2e3f8824fc7c9f992718f486"
+        },
+        "date": 1792618001713,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 7653945,
+            "range": "± 161457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 7929024,
+            "range": "± 261886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 607717,
+            "range": "± 15563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 532819,
+            "range": "± 4305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3597081,
+            "range": "± 87068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2737389,
+            "range": "± 50601",
             "unit": "ns/iter"
           }
         ]
