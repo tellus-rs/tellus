@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792651635487,
+  "lastUpdate": 1792659485199,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4319,6 +4319,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 3878643,
             "range": "± 31288",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8170b339bc1434bd09b861d35da82e93bf11e061",
+          "message": "Merge pull request #172 from tellus-rs/docs/conventions\n\ndocs: add code and writing conventions to AGENTS.md",
+          "timestamp": "2026-10-22T11:53:55+03:00",
+          "tree_id": "eeae622ba6231f706439acaf1d4aa9a161ef4017",
+          "url": "https://github.com/tellus-rs/tellus/commit/8170b339bc1434bd09b861d35da82e93bf11e061"
+        },
+        "date": 1792659484432,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 15986718,
+            "range": "± 2689349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14698078,
+            "range": "± 1750700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 872183,
+            "range": "± 37659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 951115,
+            "range": "± 9253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 7341972,
+            "range": "± 376560",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 8561732,
+            "range": "± 272170",
             "unit": "ns/iter"
           }
         ]
