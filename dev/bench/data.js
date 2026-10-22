@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792660594219,
+  "lastUpdate": 1792687643894,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4439,6 +4439,90 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 4044544,
             "range": "± 20276",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak@iohk.io",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ceb69f0694975a66e4ee7f2245ad17b1ff99570a",
+          "message": "Merge pull request #162 from tellus-rs/feat/queued\n\nfeat: let an actor read its own mailbox depth",
+          "timestamp": "2026-10-22T17:42:24+01:00",
+          "tree_id": "7c57eb21369d94465387588a3caf424ac23ee9e6",
+          "url": "https://github.com/tellus-rs/tellus/commit/ceb69f0694975a66e4ee7f2245ad17b1ff99570a"
+        },
+        "date": 1792687643258,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14185802,
+            "range": "± 1350958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15154684,
+            "range": "± 1166028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 779185,
+            "range": "± 15022",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 829253,
+            "range": "± 5308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 6532879,
+            "range": "± 137061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4457146,
+            "range": "± 30704",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 21303801,
+            "range": "± 698417",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 22072110,
+            "range": "± 1033879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 21146088,
+            "range": "± 646940",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 22654329,
+            "range": "± 783100",
             "unit": "ns/iter"
           }
         ]
