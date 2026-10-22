@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792660592225,
+  "lastUpdate": 1792660594219,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7945,6 +7945,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 109393,
             "range": "± 2759",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fb981413b8d4b1aaec3620ca07a65223091bdeb2",
+          "message": "Merge pull request #170 from tellus-rs/fix/drain-pending-departure\n\nfix(cluster): drain a departure over a connection still being set up",
+          "timestamp": "2026-10-22T12:12:55+03:00",
+          "tree_id": "c6b6825167fe4711056c5b306f25835d6a24663e",
+          "url": "https://github.com/tellus-rs/tellus/commit/fb981413b8d4b1aaec3620ca07a65223091bdeb2"
+        },
+        "date": 1792660593621,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3536590,
+            "range": "± 179996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3596686,
+            "range": "± 170994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1263897,
+            "range": "± 5005",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 154723,
+            "range": "± 3462",
             "unit": "ns/iter"
           }
         ]
