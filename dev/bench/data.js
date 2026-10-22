@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792659485199,
+  "lastUpdate": 1792659487610,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7837,6 +7837,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 171651,
             "range": "± 5723",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8170b339bc1434bd09b861d35da82e93bf11e061",
+          "message": "Merge pull request #172 from tellus-rs/docs/conventions\n\ndocs: add code and writing conventions to AGENTS.md",
+          "timestamp": "2026-10-22T11:53:55+03:00",
+          "tree_id": "eeae622ba6231f706439acaf1d4aa9a161ef4017",
+          "url": "https://github.com/tellus-rs/tellus/commit/8170b339bc1434bd09b861d35da82e93bf11e061"
+        },
+        "date": 1792659487200,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3313233,
+            "range": "± 238957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3160080,
+            "range": "± 268072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 815913,
+            "range": "± 5736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109393,
+            "range": "± 2759",
             "unit": "ns/iter"
           }
         ]
