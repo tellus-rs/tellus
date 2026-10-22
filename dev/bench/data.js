@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792651632426,
+  "lastUpdate": 1792651635487,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7729,6 +7729,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 102475,
             "range": "± 1779",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a6021aa5624eaac80583fe924993247d0e77a5e7",
+          "message": "Merge pull request #166 from pawurb/fix_cloud_workflow\n\nchore: Fix hotpath-cloud workflow",
+          "timestamp": "2026-10-22T09:43:38+03:00",
+          "tree_id": "2e0edcdcbb6324b2d9379ea489ae130dec09f0a1",
+          "url": "https://github.com/tellus-rs/tellus/commit/a6021aa5624eaac80583fe924993247d0e77a5e7"
+        },
+        "date": 1792651634889,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3696895,
+            "range": "± 213999",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3681548,
+            "range": "± 230200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1319810,
+            "range": "± 10881",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 171651,
+            "range": "± 5723",
             "unit": "ns/iter"
           }
         ]
