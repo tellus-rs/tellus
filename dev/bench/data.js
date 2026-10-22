@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792618005461,
+  "lastUpdate": 1792651632426,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4259,6 +4259,66 @@ window.BENCHMARK_DATA = {
             "name": "fan_out/workers/16",
             "value": 2737389,
             "range": "± 50601",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a6021aa5624eaac80583fe924993247d0e77a5e7",
+          "message": "Merge pull request #166 from pawurb/fix_cloud_workflow\n\nchore: Fix hotpath-cloud workflow",
+          "timestamp": "2026-10-22T09:43:38+03:00",
+          "tree_id": "2e0edcdcbb6324b2d9379ea489ae130dec09f0a1",
+          "url": "https://github.com/tellus-rs/tellus/commit/a6021aa5624eaac80583fe924993247d0e77a5e7"
+        },
+        "date": 1792651631508,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13537867,
+            "range": "± 1023397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13958620,
+            "range": "± 713886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 719796,
+            "range": "± 16356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 824842,
+            "range": "± 4326",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4840223,
+            "range": "± 77787",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3878643,
+            "range": "± 31288",
             "unit": "ns/iter"
           }
         ]
