@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792687643894,
+  "lastUpdate": 1792687646186,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8077,6 +8077,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 154723,
             "range": "± 3462",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak@iohk.io",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ceb69f0694975a66e4ee7f2245ad17b1ff99570a",
+          "message": "Merge pull request #162 from tellus-rs/feat/queued\n\nfeat: let an actor read its own mailbox depth",
+          "timestamp": "2026-10-22T17:42:24+01:00",
+          "tree_id": "7c57eb21369d94465387588a3caf424ac23ee9e6",
+          "url": "https://github.com/tellus-rs/tellus/commit/ceb69f0694975a66e4ee7f2245ad17b1ff99570a"
+        },
+        "date": 1792687645769,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3537559,
+            "range": "± 186076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3602776,
+            "range": "± 207290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1266057,
+            "range": "± 7288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 153600,
+            "range": "± 2516",
             "unit": "ns/iter"
           }
         ]
