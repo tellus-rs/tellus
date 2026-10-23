@@ -220,6 +220,12 @@ terminated signals and capacity answer different needs, so a terminated signal e
 same FIFO channel (preserving order behind queued messages) but bypasses the capacity check, since
 a terminated signal must never be dropped.
 
+`ActorId` is 16-byte aligned, and so is every `Incoming<M>`, since it can hold one. The ID is
+copied with 16-byte loads and stores on the receive path. Unaligned, such a copy can cross a page
+boundary, and on aarch64 that made the receive path of some builds 30 to 52% slower, depending on
+where the stack happened to lie. The cost is padding: up to 15 bytes per queued item. The
+[investigation](investigations/actor-id-alignment/README.md) has the measurements.
+
 An actor reads its own mailbox depth through `ActorContext::queued`: the number of items not
 received yet, terminated signals included. An actor which writes to a database or a socket can
 flush once its mailbox has run empty, and one which is overloaded can shed load, both as part of
