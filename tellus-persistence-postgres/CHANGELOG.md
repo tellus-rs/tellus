@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.11](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.10...tellus-persistence-postgres-v0.2.11) - 2026-10-23
+
+### Other
+
+- updated the following local packages: tellus
+
 ## [0.2.10](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.9...tellus-persistence-postgres-v0.2.10) - 2026-10-21
 
 ### Added

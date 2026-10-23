@@ -1,7 +1,7 @@
 [package]
 name          = "tellus"
 description   = "An actor framework for Rust: typed messages, supervision trees, death watch, event sourcing."
-version       = "0.4.0"
+version       = "0.4.1"
 edition       = { workspace = true }
 license       = { workspace = true }
 readme        = "README.md"

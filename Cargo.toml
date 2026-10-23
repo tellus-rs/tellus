@@ -54,11 +54,11 @@ tracing-subscriber     = { version = "0.3" }
 trait-variant          = { version = "0.1" }
 uuid                   = { version = "1.24" }
 x509-parser            = { version = "0.18" }
-tellus                 = { path = "tellus", version = "0.4.0" }
-tellus-bootstrap-dns   = { path = "tellus-bootstrap-dns", version = "0.1.0" }
-tellus-bootstrap-k8s   = { path = "tellus-bootstrap-k8s", version = "0.1.0" }
+tellus                 = { path = "tellus", version = "0.4.1" }
+tellus-bootstrap-dns   = { path = "tellus-bootstrap-dns", version = "0.1.1" }
+tellus-bootstrap-k8s   = { path = "tellus-bootstrap-k8s", version = "0.1.1" }
 tellus-cluster-demo    = { path = "tellus-cluster-demo", version = "0.1.0" }
-tellus-cluster-inspect = { path = "tellus-cluster-inspect", version = "0.1.0" }
+tellus-cluster-inspect = { path = "tellus-cluster-inspect", version = "0.1.1" }
 
 [profile.dev]
 debug = "line-tables-only"
