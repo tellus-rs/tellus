@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792687646186,
+  "lastUpdate": 1792764255593,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4523,6 +4523,90 @@ window.BENCHMARK_DATA = {
             "name": "queued/every/16",
             "value": 22654329,
             "range": "± 783100",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "39aec830d4c042f227ce10ded5b886f7376f5df2",
+          "message": "Merge pull request #176 from tellus-rs/fix/rustsec-ctutils\n\nfix(deps): update ctutils for RUSTSEC-2026-0385",
+          "timestamp": "2026-10-23T16:58:59+03:00",
+          "tree_id": "df3c81f5772b2881ed302fb17c19b552a5d152f3",
+          "url": "https://github.com/tellus-rs/tellus/commit/39aec830d4c042f227ce10ded5b886f7376f5df2"
+        },
+        "date": 1792764254616,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 15566876,
+            "range": "± 1087872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14359042,
+            "range": "± 1071618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 741311,
+            "range": "± 11568",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 859119,
+            "range": "± 4424",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5838131,
+            "range": "± 175794",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4256150,
+            "range": "± 52518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 18417922,
+            "range": "± 507739",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 19718137,
+            "range": "± 896977",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 18487562,
+            "range": "± 437758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19724532,
+            "range": "± 748087",
             "unit": "ns/iter"
           }
         ]
