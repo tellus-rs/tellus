@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792764255593,
+  "lastUpdate": 1792764257869,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8209,6 +8209,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 153600,
             "range": "± 2516",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "39aec830d4c042f227ce10ded5b886f7376f5df2",
+          "message": "Merge pull request #176 from tellus-rs/fix/rustsec-ctutils\n\nfix(deps): update ctutils for RUSTSEC-2026-0385",
+          "timestamp": "2026-10-23T16:58:59+03:00",
+          "tree_id": "df3c81f5772b2881ed302fb17c19b552a5d152f3",
+          "url": "https://github.com/tellus-rs/tellus/commit/39aec830d4c042f227ce10ded5b886f7376f5df2"
+        },
+        "date": 1792764257194,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3532587,
+            "range": "± 237349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3440241,
+            "range": "± 216197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1398945,
+            "range": "± 11438",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 177842,
+            "range": "± 4463",
             "unit": "ns/iter"
           }
         ]
