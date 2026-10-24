@@ -23,7 +23,7 @@ use tellus::{
 use thiserror::Error;
 use tokio::{
     sync::mpsc,
-    time::{sleep, timeout},
+    time::{advance, sleep, timeout},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -871,6 +871,55 @@ async fn a_panicking_snapshot_save_error_keeps_the_actor_running() {
     assert_eq!(inits, 1, "the actor must not restart");
 }
 
+/// A timer started in `handle` is received by an event-sourced actor like a command once its delay
+/// has elapsed: here its message persists an event.
+#[tokio::test(start_paused = true)]
+async fn an_event_sourced_actor_receives_its_timer() {
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("21", probe_tx),
+        Persistence::new(FaultyStore::default()),
+    );
+
+    system.root().tell(Command::StartTimer);
+    assert_eq!(ask_count(&system).await, 0);
+
+    advance(Duration::from_secs(1)).await;
+    // Only the second get is sure to follow the due timer.
+    ask_count(&system).await;
+    assert_eq!(ask_count(&system).await, 1);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// A restart drops an event-sourced actor's timers: they are runtime state, neither persisted nor
+/// recreated by replay. Here `recovered` does not start "t" again, so the next incarnation never
+/// receives it.
+#[tokio::test(start_paused = true)]
+async fn a_restart_drops_an_event_sourced_actors_timer() {
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("22", probe_tx),
+        Persistence::new(FaultyStore::default()),
+        restart_config(),
+    );
+
+    system.root().tell(Command::StartTimer);
+    system.root().tell(Command::Fail);
+    assert_eq!(ask_count(&system).await, 0);
+
+    advance(Duration::from_secs(1)).await;
+    // Only the second get is sure to come behind a due timer which the restart kept.
+    ask_count(&system).await;
+    assert_eq!(ask_count(&system).await, 0);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
 /// Global, as a thread-local subscriber races with the callsite interest cache of parallel tests.
 fn init_tracing() {
     TRACING.call_once(|| {
@@ -896,6 +945,15 @@ where
         .await
         .expect(not_terminated)
         .expect("watching the root actor failed");
+}
+
+/// Round-trip a `Get`, so the actor has handled everything told before.
+async fn ask_count(system: &ActorSystem<Command>) -> u64 {
+    system
+        .root()
+        .ask(TIMEOUT, Command::Get)
+        .await
+        .expect("no reply to get")
 }
 
 fn restart_config() -> ActorConfig {
@@ -978,7 +1036,7 @@ impl EventSourced for Counter {
 
     fn handle(
         &self,
-        _: &ActorContext<Self::Command>,
+        context: &ActorContext<Self::Command>,
         incoming: Incoming<Self::Command>,
         _: &Self::State,
     ) -> Result<Effect<Self>, Self::Error> {
@@ -1004,6 +1062,11 @@ impl EventSourced for Counter {
             Command::Stop => Ok(Effect::stop()),
 
             Command::StopAfter(n) => Ok(Effect::persist(Increased(n)).and_stop()),
+
+            Command::StartTimer => {
+                context.start_timer("t", Command::Increment(1), Duration::from_secs(1));
+                Ok(Effect::none())
+            }
         }
     }
 
@@ -1027,6 +1090,7 @@ enum Command {
     Fail,
     Stop,
     StopAfter(u64),
+    StartTimer,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

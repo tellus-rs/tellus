@@ -72,6 +72,11 @@ On every spawn and every restart, before the first command:
 fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
 `recovered` always runs, and never during replay.
 
+`init` has no context, so timers (see [actors.md](actors.md#timers)) start in `recovered` and
+`handle`. A timer is runtime state, neither persisted nor recreated by replay, and a restart cancels
+it. `recovered` runs on every restart, so it is where to start the timer again. A `then`
+continuation gets only the state and has no context, so it cannot start a timer.
+
 ## Replay and live execution
 
 `apply` is pure and total: no I/O, no failure, no dependence on the clock, on randomness or on

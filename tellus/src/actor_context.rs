@@ -3,7 +3,8 @@ use crate::cluster;
 use crate::{
     Actor, ActorConfig, ActorId, ActorRef, Control, Incoming, SupervisionStrategy,
     actor_ref::{SelfRef, Sink},
-    mailbox::Mailbox,
+    mailbox::{Mailbox, Queued},
+    timers::Timers,
     watch::WatcherRegistry,
 };
 use derive_more::Debug;
@@ -24,11 +25,13 @@ use tokio::{
     select,
     sync::watch,
     task::{self, consume_budget},
-    time::{Instant, sleep},
+    time::{Instant, Sleep, sleep},
 };
 use tracing::{debug, error};
 
 pub(crate) const STATE_FAILED_TO_DROP: &str = "actor state failed to drop";
+
+const TIMER_FAILED_TO_DROP: &str = "timer message failed to drop";
 
 /// Contextual methods for a given actor, provided to [Actor::init] and [Actor::receive].
 #[derive(Debug)]
@@ -43,6 +46,9 @@ pub struct ActorContext<M> {
 
     #[debug(skip)]
     watched: RefCell<HashMap<ActorId, Watched>>,
+
+    #[debug(skip)]
+    timers: RefCell<Option<Box<Timers<M>>>>,
 }
 
 impl<M> ActorContext<M> {
@@ -109,6 +115,39 @@ impl<M> ActorContext<M> {
         });
     }
 
+    /// Start a timer: once the delay has elapsed, the message is delivered to this actor through
+    /// its mailbox, like an [ActorRef::tell] to itself. Hence a message which arrived before the
+    /// deadline is received before the timer's message. Unlike a told message, a timer bypasses the
+    /// capacity of a bounded mailbox, as a terminated signal does.
+    ///
+    /// Starting a timer under a key which is in use replaces that timer. A timer which has been
+    /// replaced, or canceled via [ActorContext::cancel_timer], is never received, even if it is
+    /// due and its message is queued already. A restart of this actor cancels all its timers, and
+    /// termination drops them.
+    ///
+    /// A delay the clock cannot represent, e.g. `Duration::MAX`, is capped at about thirty years,
+    /// as `tokio::time::sleep` does. The run loop enqueues a due timer between two items, so a
+    /// deadline which passes during a long [Actor::receive] is enqueued after it.
+    ///
+    /// Timers need Tokio's time driver. On a runtime built without it, this panics, so the actor
+    /// fails under its supervision as for any other panic in its own code. Timers add no such
+    /// requirement for an actor which never starts one.
+    pub fn start_timer(&self, key: &'static str, message: M, delay: Duration) {
+        self.timers
+            .borrow_mut()
+            .get_or_insert_default()
+            .start(key, message, delay, Instant::now());
+    }
+
+    /// Cancel the timer under this key: its message is dropped and never received, even if the
+    /// timer is due and its message is queued already. Canceling a key which is unknown, or whose
+    /// timer has been received already, has no effect.
+    pub fn cancel_timer(&self, key: &'static str) {
+        if let Some(timers) = self.timers.borrow_mut().as_deref_mut() {
+            timers.cancel(key);
+        }
+    }
+
     /// Watch another actor, i.e. receive an [Incoming::Terminated] signal once that actor has
     /// terminated. If it has already terminated, the signal is received right away. Watching an
     /// already watched actor again has no effect: the signal is delivered once.
@@ -155,11 +194,12 @@ impl<M> ActorContext<M> {
         }
     }
 
-    /// The number of incoming items queued for this actor, messages and terminated signals alike,
-    /// which it has not received yet. For the actor itself the value is a lower bound: only the
-    /// actor removes items and senders can only add to them, so at least this many are waiting.
-    /// The run loop drops the terminated signals of unwatched actors before [Actor::receive] sees
-    /// them, so the count can exceed what `receive` will get by that many.
+    /// The number of incoming items queued for this actor, messages, terminated signals and timer
+    /// items alike, which it has not received yet. For the actor itself the value is a lower bound:
+    /// only the actor removes items and senders can only add to them, so at least this many are
+    /// waiting. The run loop drops the terminated signals of unwatched actors and the items of
+    /// canceled or replaced timers before [Actor::receive] sees them, so the count can exceed what
+    /// `receive` will get by that many.
     ///
     /// This is for an actor's own behavior, e.g. flushing a batch once its mailbox has run empty
     /// or shedding load above a threshold, as part of its protocol. It is no substitute for flow
@@ -183,11 +223,90 @@ impl<M> ActorContext<M> {
             stop_children_tx,
             stop_children_rx,
             watched: RefCell::new(HashMap::new()),
+            timers: RefCell::new(None),
+        }
+    }
+
+    pub(crate) fn timer_armed(&mut self) -> bool {
+        self.timers.get_mut().as_deref().is_some_and(Timers::armed)
+    }
+
+    pub(crate) fn timer_sleep(&mut self) -> Option<Pin<&mut Sleep>> {
+        self.timers.get_mut().as_deref_mut()?.sleep()
+    }
+
+    pub(crate) fn fire_due_timers(&mut self) {
+        let now = Instant::now();
+        while let Some(id) = self
+            .timers
+            .get_mut()
+            .as_deref_mut()
+            .and_then(|timers| timers.fire_due(now))
+        {
+            self.self_ref().enqueue_timer(id);
+        }
+
+        if let Some(timers) = self.timers.get_mut() {
+            timers.rearm();
+        }
+    }
+
+    pub(crate) fn gate(&self, queued: Queued<M>) -> Option<Incoming<M>> {
+        match queued {
+            Queued::Incoming(incoming) => Some(incoming),
+
+            Queued::Timer(id) => {
+                let message = self
+                    .timers
+                    .borrow_mut()
+                    .as_deref_mut()
+                    .and_then(|timers| timers.take(id));
+                if message.is_none() {
+                    debug!(
+                        actor_id = %self.self_ref().actor_id(),
+                        generation = id.generation(),
+                        "dropping stale timer"
+                    );
+                }
+
+                message.map(Incoming::Message)
+            }
         }
     }
 
     pub(crate) fn take_watched_for(&mut self, other_id: ActorId) -> bool {
         self.watched.get_mut().remove(&other_id).is_some()
+    }
+
+    #[cfg(feature = "test-util")]
+    pub(crate) fn pending_timers(&self) -> Vec<(&'static str, Instant)> {
+        self.timers
+            .borrow()
+            .as_deref()
+            .map(Timers::pending)
+            .unwrap_or_default()
+    }
+
+    #[cfg(feature = "test-util")]
+    pub(crate) fn fire_timer(&self, key: &'static str) -> bool {
+        let id = self
+            .timers
+            .borrow_mut()
+            .as_deref_mut()
+            .and_then(|timers| timers.fire(key));
+        if let Some(id) = id {
+            self.self_ref().enqueue_timer(id);
+        }
+
+        id.is_some()
+    }
+
+    fn take_timer_messages(&mut self) -> Vec<M> {
+        self.timers
+            .get_mut()
+            .as_deref_mut()
+            .map(Timers::take_all)
+            .unwrap_or_default()
     }
 
     async fn stop_children(&mut self) {
@@ -234,7 +353,9 @@ macro_rules! next_incoming {
             // other tasks on its worker.
             consume_budget().await;
 
-            let incoming = tokio::select! {
+            let armed = $context.timer_armed();
+
+            let queued = tokio::select! {
                 biased;
 
                 _ = &mut $stopped_by_parent => {
@@ -245,9 +366,24 @@ macro_rules! next_incoming {
                     break 'next_incoming None;
                 }
 
-                incoming = $mailbox.recv() => {
-                    incoming.expect("self_ref keeps a mailbox handle alive")
+                // Before the mailbox, else a mailbox which never runs empty starves a due timer.
+                _ = async {
+                    $context
+                        .timer_sleep()
+                        .expect("an armed timer has its sleep")
+                        .await
+                }, if armed => {
+                    $context.fire_due_timers();
+                    continue 'next_incoming;
                 }
+
+                queued = $mailbox.recv() => {
+                    queued.expect("self_ref keeps a mailbox handle alive")
+                }
+            };
+
+            let Some(incoming) = $context.gate(queued) else {
+                continue 'next_incoming;
             };
 
             if let crate::Incoming::Terminated(other) = &incoming
@@ -463,6 +599,10 @@ where
     }
     debug!(%actor_id, restarts = *restarts, ?delay, "restarting");
 
+    for message in context.take_timer_messages() {
+        drop_containing_panic(actor_id, TIMER_FAILED_TO_DROP, message);
+    }
+
     context.stop_children().await;
 
     match await_backoff(delay, stopped_by_parent.as_mut()).await {
@@ -479,8 +619,9 @@ where
 /// the channel is dropped before their destructors run: senders observe the termination while the
 /// children still stop, and none of these destructors runs between drain and drop. A concurrent
 /// sender can still enqueue in that window; flume retains such a message until its last sender
-/// drops, which this sequence does not prevent. The watchers are signaled last, since a terminated
-/// signal must prove that the actor's destructors have run.
+/// drops, which this sequence does not prevent. The messages of the timers are dropped right after
+/// the queued ones. The watchers are signaled last, since a terminated signal must prove that the
+/// actor's destructors have run.
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub(crate) async fn terminate<A, M>(actor: A, mut context: ActorContext<M>, mailbox: Mailbox<M>) {
     let actor_id = context.self_ref().actor_id();
@@ -488,8 +629,12 @@ pub(crate) async fn terminate<A, M>(actor: A, mut context: ActorContext<M>, mail
     let (incoming_rx, watcher_registration) = mailbox.split();
     let drained = incoming_rx.drain().collect::<Vec<_>>();
     drop_containing_panic(actor_id, "mailbox failed to drop", incoming_rx);
-    for incoming in drained {
-        drop_containing_panic(actor_id, "queued message failed to drop", incoming);
+    for queued in drained {
+        drop_containing_panic(actor_id, "queued message failed to drop", queued);
+    }
+
+    for message in context.take_timer_messages() {
+        drop_containing_panic(actor_id, TIMER_FAILED_TO_DROP, message);
     }
 
     for (other_id, watched) in context.take_watched() {

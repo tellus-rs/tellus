@@ -1,6 +1,7 @@
 use crate::{
     ActorId, Incoming, MailboxCapacity,
     quota::{CountedSendError, CountedSender, Full, Quota},
+    timers::TimerId,
     watch::{ActorTerminated, TerminatedHandler, WatcherRegistration, WatcherRegistry},
 };
 use flume::Receiver;
@@ -11,24 +12,30 @@ use thiserror::Error;
 
 /// Sending mailbox half.
 pub(crate) struct MailboxHandle<M> {
-    incoming_tx: CountedSender<Incoming<M>>,
+    incoming_tx: CountedSender<Queued<M>>,
     watcher_registry: WatcherRegistry,
 }
 
 impl<M> MailboxHandle<M> {
     pub(crate) fn try_send_message(&self, message: M) -> Result<(), SendError> {
         self.incoming_tx
-            .try_send_counted(Incoming::Message(message))?;
+            .try_send_counted(Queued::Incoming(Incoming::Message(message)))?;
 
         Ok(())
     }
 
     pub(crate) fn try_send_forced_message(&self, message: M) -> Result<(), SendError> {
         self.incoming_tx
-            .try_send_forced(Incoming::Message(message))
+            .try_send_forced(Queued::Incoming(Incoming::Message(message)))
             .map_err(|_| ActorTerminated)?;
 
         Ok(())
+    }
+
+    pub(crate) fn try_send_timer(&self, id: TimerId) -> Result<(), ActorTerminated> {
+        self.incoming_tx
+            .try_send_uncounted(Queued::Timer(id))
+            .map_err(|_| ActorTerminated)
     }
 
     pub(crate) fn watcher_registry(&self) -> &WatcherRegistry {
@@ -59,7 +66,7 @@ impl<M> Clone for MailboxHandle<M> {
 
 /// Receiving mailbox half.
 pub(crate) struct Mailbox<M> {
-    incoming_rx: Receiver<Incoming<M>>,
+    incoming_rx: Receiver<Queued<M>>,
     watcher_registration: WatcherRegistration,
     quota: Quota,
 }
@@ -67,31 +74,38 @@ pub(crate) struct Mailbox<M> {
 impl<M> Mailbox<M> {
     /// `&mut self` to enforce one consumer per mailbox.
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    pub(crate) async fn recv(&mut self) -> Option<Incoming<M>> {
-        let incoming = self.incoming_rx.recv_async().await.ok()?;
-        if matches!(incoming, Incoming::Message(_)) {
+    pub(crate) async fn recv(&mut self) -> Option<Queued<M>> {
+        let queued = self.incoming_rx.recv_async().await.ok()?;
+        if matches!(queued, Queued::Incoming(Incoming::Message(_))) {
             self.quota.unreserve();
         }
-        Some(incoming)
+        Some(queued)
     }
 
     #[cfg(feature = "test-util")]
-    pub(crate) fn try_recv(&mut self) -> Option<Incoming<M>> {
+    pub(crate) fn try_recv(&mut self) -> Option<Queued<M>> {
         match self.incoming_rx.try_recv() {
-            Ok(incoming) => {
-                if matches!(incoming, Incoming::Message(_)) {
+            Ok(queued) => {
+                if matches!(queued, Queued::Incoming(Incoming::Message(_))) {
                     self.quota.unreserve();
                 }
-                Some(incoming)
+                Some(queued)
             }
 
             Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
         }
     }
 
-    pub(crate) fn split(self) -> (Receiver<Incoming<M>>, WatcherRegistration) {
+    pub(crate) fn split(self) -> (Receiver<Queued<M>>, WatcherRegistration) {
         (self.incoming_rx, self.watcher_registration)
     }
+}
+
+/// An item in a mailbox: an incoming for the actor, or the slot and generation of a due timer.
+pub(crate) enum Queued<M> {
+    Incoming(Incoming<M>),
+
+    Timer(TimerId),
 }
 
 #[derive(Debug, Error)]
@@ -112,12 +126,12 @@ impl From<CountedSendError> for SendError {
     }
 }
 
-impl<M> TerminatedHandler for CountedSender<Incoming<M>>
+impl<M> TerminatedHandler for CountedSender<Queued<M>>
 where
     M: Send + 'static,
 {
     fn handle_terminated(&self, actor_id: ActorId) -> Result<(), ActorTerminated> {
-        self.try_send_uncounted(Incoming::Terminated(actor_id))
+        self.try_send_uncounted(Queued::Incoming(Incoming::Terminated(actor_id)))
             .map_err(|_| ActorTerminated)
     }
 }
@@ -148,7 +162,8 @@ pub(crate) fn make_mailbox<M>(mailbox_capacity: MailboxCapacity) -> (MailboxHand
 mod tests {
     use crate::{
         ActorId, Incoming, MailboxCapacity,
-        mailbox::{SendError, make_mailbox},
+        mailbox::{Queued, SendError, make_mailbox},
+        timers::TimerId,
         watch::Watcher,
     };
     use std::{num::NonZeroUsize, time::Duration};
@@ -232,8 +247,14 @@ mod tests {
         assert!(mailbox_handle.try_send_message(2).is_ok());
         drop(mailbox_handle);
 
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(1))));
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(2))));
+        assert!(matches!(
+            mailbox.recv().await,
+            Some(Queued::Incoming(Incoming::Message(1)))
+        ));
+        assert!(matches!(
+            mailbox.recv().await,
+            Some(Queued::Incoming(Incoming::Message(2)))
+        ));
         assert!(mailbox.recv().await.is_none());
     }
 
@@ -306,10 +327,13 @@ mod tests {
         assert!(mailbox_handle.try_send_message(()).is_ok());
         assert!(terminated_handler.handle_terminated(ActorId::new()).is_ok());
 
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(_))));
         assert!(matches!(
             mailbox.recv().await,
-            Some(Incoming::Terminated(_))
+            Some(Queued::Incoming(Incoming::Message(_)))
+        ));
+        assert!(matches!(
+            mailbox.recv().await,
+            Some(Queued::Incoming(Incoming::Terminated(_)))
         ));
 
         assert!(mailbox_handle.try_send_message(()).is_ok());
@@ -317,6 +341,38 @@ mod tests {
             mailbox_handle.try_send_message(()),
             Err(SendError::MailboxFull(_))
         ));
+    }
+
+    #[tokio::test]
+    async fn timer_items_ignore_capacity() {
+        let (mailbox_handle, mut mailbox) =
+            make_mailbox::<()>(MailboxCapacity::Bounded(NonZeroUsize::MIN));
+
+        assert!(mailbox_handle.try_send_message(()).is_ok());
+        assert!(mailbox_handle.try_send_timer(TimerId::new(0, 1)).is_ok());
+
+        assert!(matches!(
+            mailbox.recv().await,
+            Some(Queued::Incoming(Incoming::Message(_)))
+        ));
+        assert!(matches!(
+            mailbox.recv().await,
+            Some(Queued::Timer(id)) if id == TimerId::new(0, 1)
+        ));
+
+        assert!(mailbox_handle.try_send_message(()).is_ok());
+        assert!(matches!(
+            mailbox_handle.try_send_message(()),
+            Err(SendError::MailboxFull(_))
+        ));
+    }
+
+    #[test]
+    fn a_queued_item_is_no_larger_than_an_incoming() {
+        assert_eq!(size_of::<Queued<()>>(), size_of::<Incoming<()>>());
+        assert_eq!(size_of::<Queued<u32>>(), size_of::<Incoming<u32>>());
+        assert_eq!(size_of::<Queued<u64>>(), size_of::<Incoming<u64>>());
+        assert_eq!(size_of::<Queued<String>>(), size_of::<Incoming<String>>());
     }
 
     /// A watcher delivers the terminated signal into the watching actor's mailbox and reports an
@@ -330,15 +386,15 @@ mod tests {
         assert!(watcher.handle_terminated(actor_id).is_ok());
         assert!(matches!(
             mailbox.recv().await,
-            Some(Incoming::Terminated(other)) if other == actor_id
+            Some(Queued::Incoming(Incoming::Terminated(other))) if other == actor_id
         ));
 
         drop(mailbox);
         assert!(watcher.handle_terminated(actor_id).is_err());
     }
 
-    /// The depth counts every item still in the queue, a forced message and a terminated signal
-    /// like a counted message, and goes down as items are received.
+    /// The depth counts every item still in the queue, a forced message, a terminated signal and a
+    /// timer item like a counted message, and goes down as items are received.
     #[tokio::test]
     async fn queued_is_the_number_of_items_in_the_queue() {
         let (mailbox_handle, mut mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
@@ -352,11 +408,13 @@ mod tests {
                 .handle_terminated(ActorId::new())
                 .is_ok()
         );
+        assert!(mailbox_handle.try_send_timer(TimerId::new(0, 1)).is_ok());
+        assert_eq!(mailbox_handle.queued(), 4);
+
+        assert!(mailbox.recv().await.is_some());
         assert_eq!(mailbox_handle.queued(), 3);
 
         assert!(mailbox.recv().await.is_some());
-        assert_eq!(mailbox_handle.queued(), 2);
-
         assert!(mailbox.recv().await.is_some());
         assert!(mailbox.recv().await.is_some());
         assert_eq!(mailbox_handle.queued(), 0);

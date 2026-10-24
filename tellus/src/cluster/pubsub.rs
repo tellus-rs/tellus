@@ -315,7 +315,7 @@ mod tests {
             receptionist::{ReceptionistError, WireGroup},
             reply,
         },
-        mailbox::Mailbox,
+        mailbox::{Mailbox, Queued},
         sync::lock,
     };
     use flume::Receiver;
@@ -482,9 +482,9 @@ mod tests {
             .split()
             .0
             .drain()
-            .filter_map(|incoming| match incoming {
-                Incoming::Message(message) => Some(message),
-                Incoming::Terminated(_) => None,
+            .filter_map(|queued| match queued {
+                Queued::Incoming(Incoming::Message(message)) => Some(message),
+                Queued::Incoming(Incoming::Terminated(_)) | Queued::Timer(_) => None,
             })
             .collect()
     }

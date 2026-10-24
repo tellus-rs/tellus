@@ -318,8 +318,8 @@ impl<M> Entry<M> {
 }
 
 /// Stops itself once its timeout has elapsed, so its watching host is woken by the terminated
-/// signal: without a scheduler that is the only wake-up a host can get, its own message type
-/// being reserved for its entities.
+/// signal: the host cannot wake itself with a timer, since its own message type is reserved for its
+/// entities.
 struct Ticker {
     idle_timeout: Duration,
 }
