@@ -1,0 +1,118 @@
+name: Stack sweep
+
+on:
+  push:
+    branches:
+      - bench/stack-sweep
+
+env:
+  BASE: 39aec830d4c042f227ce10ded5b886f7376f5df2
+  CANDIDATE: b7b369b60e4b572046ff45965bce7b0b4816365d
+
+permissions:
+  contents: read
+
+jobs:
+  sweep:
+    name: Sweep (${{ matrix.runner }}, job ${{ matrix.job }})
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - ubuntu-latest
+          - ubuntu-24.04-arm
+        job: [1, 2, 3, 4]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Verify inputs
+        run: |
+          test "$(git rev-parse "$CANDIDATE^")" = "$(git rev-parse "$BASE")"
+          git diff --stat "$BASE" "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Create worktrees
+        id: worktrees
+        run: |
+          git worktree add --detach ../base "$BASE"
+          git worktree add --detach ../candidate "$CANDIDATE"
+          stable=$(grep channel ../base/rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/')
+          echo "stable=$stable" | tee -a "$GITHUB_OUTPUT"
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+        with:
+          toolchain: ${{ steps.worktrees.outputs.stable }}
+
+      - name: Build benches
+        run: |
+          for tree in base candidate; do
+            (cd "../$tree" && cargo bench -p tellus --bench messaging --no-run --locked --message-format=json) \
+              | jq -r 'select(.reason == "compiler-artifact" and .target.name == "messaging" and .executable != null) | .executable' \
+              > "$tree.path"
+            test "$(wc -l < "$tree.path")" -eq 1
+          done
+          mkdir -p "$RUNNER_TEMP/sweep"
+          cp "$(cat base.path)" "$RUNNER_TEMP/sweep/B"
+          cp "$(cat candidate.path)" "$RUNNER_TEMP/sweep/C"
+          cp "$(cat base.path)" "$RUNNER_TEMP/sweep/A"
+          (cd "$RUNNER_TEMP/sweep" && sha256sum B C A | tee hashes.txt)
+          test "$(sha256sum < "$RUNNER_TEMP/sweep/A")" = "$(sha256sum < "$RUNNER_TEMP/sweep/B")"
+
+      - name: Build stack shift library and probe
+        run: |
+          cc -shared -fPIC -O2 -o "$RUNNER_TEMP/sweep/stack_shift.so" .github/stack-sweep/stack_shift.c -ldl
+          cc -O2 -pthread -o "$RUNNER_TEMP/sweep/probe" .github/stack-sweep/probe.c
+
+      - name: Probe
+        run: |
+          .github/stack-sweep/probe.sh "$RUNNER_TEMP/sweep/stack_shift.so" "$RUNNER_TEMP/sweep/probe" \
+            | tee "$RUNNER_TEMP/sweep/probe.txt"
+
+      - name: Metadata
+        run: |
+          cpu=$(grep -m1 -E 'model name|^Model' /proc/cpuinfo | cut -d: -f2 | xargs || true)
+          if [ -z "$cpu" ]; then cpu=$(lscpu | grep -m1 'Model name' | cut -d: -f2 | xargs); fi
+          jq -n \
+            --arg runner "${{ matrix.runner }}" \
+            --arg job "${{ matrix.job }}" \
+            --arg run_id "$GITHUB_RUN_ID" \
+            --arg base "$BASE" \
+            --arg candidate "$CANDIDATE" \
+            --arg cpu "$cpu" \
+            --arg nproc "$(nproc)" \
+            --arg uname "$(uname -a)" \
+            --arg rustc "$(cd ../base && rustc -vV)" \
+            --arg cc "$(cc --version | head -1)" \
+            --arg rustflags "${RUSTFLAGS:-}" \
+            --arg profile_env "$(env | grep '^CARGO_PROFILE_' || true)" \
+            --arg hashes "$(cat "$RUNNER_TEMP/sweep/hashes.txt")" \
+            --arg probe "$(cat "$RUNNER_TEMP/sweep/probe.txt")" \
+            '$ARGS.named' > "$RUNNER_TEMP/sweep/metadata.json"
+          {
+            echo '```'
+            jq -r 'to_entries[] | "\(.key): \(.value)"' "$RUNNER_TEMP/sweep/metadata.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Sweep
+        run: |
+          sweep="$RUNNER_TEMP/sweep"
+          python3 -I .github/stack-sweep/sweep.py run \
+            --preload "$sweep/stack_shift.so" --workdir "$sweep/work" --out "$sweep/results.jsonl" \
+            "B=$sweep/B" "C=$sweep/C" "A=$sweep/A"
+          test "$(wc -l < "$sweep/results.jsonl")" -eq 1440
+          python3 -I .github/stack-sweep/sweep.py summary "$sweep/results.jsonl" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload results
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sweep-${{ matrix.runner }}-job-${{ matrix.job }}
+          path: |
+            ${{ runner.temp }}/sweep/results.jsonl
+            ${{ runner.temp }}/sweep/metadata.json
+          retention-days: 90
