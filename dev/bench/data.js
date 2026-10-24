@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792865060312,
+  "lastUpdate": 1792865062163,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8341,6 +8341,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 177842,
             "range": "± 4463",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3cbe4ab3b54c347a6cc33bba926abdff83de514c",
+          "message": "Merge pull request #180 from tellus-rs/docs/actor-id-alignment\n\ndocs: record the actor id alignment investigation",
+          "timestamp": "2026-10-24T19:59:03+02:00",
+          "tree_id": "a9857600b33c6c85f0e95862b1a7a4f88e6c92be",
+          "url": "https://github.com/tellus-rs/tellus/commit/3cbe4ab3b54c347a6cc33bba926abdff83de514c"
+        },
+        "date": 1792865061628,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3429070,
+            "range": "± 257026",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3598524,
+            "range": "± 205146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1396336,
+            "range": "± 6811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 173429,
+            "range": "± 7127",
             "unit": "ns/iter"
           }
         ]
