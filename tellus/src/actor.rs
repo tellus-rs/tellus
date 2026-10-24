@@ -100,6 +100,7 @@ impl<'de> Deserialize<'de> for Nothing {
 /// A message or signal received by an actor. Signals are currently limited to
 /// [Incoming::Terminated].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(align(16))]
 pub enum Incoming<M> {
     /// A message sent to this actor.
     Message(M),
