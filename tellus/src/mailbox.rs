@@ -6,7 +6,13 @@ use crate::{
 use flume::Receiver;
 #[cfg(feature = "test-util")]
 use flume::TryRecvError;
-use std::sync::Arc;
+use std::{
+    future::{self, Future},
+    hint,
+    pin::Pin,
+    sync::Arc,
+    task::Poll,
+};
 use thiserror::Error;
 
 /// Sending mailbox half.
@@ -68,7 +74,15 @@ impl<M> Mailbox<M> {
     /// `&mut self` to enforce one consumer per mailbox.
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) async fn recv(&mut self) -> Option<Incoming<M>> {
-        let incoming = self.incoming_rx.recv_async().await.ok()?;
+        let mut recv = self.incoming_rx.recv_async();
+        let incoming = future::poll_fn(|cx| {
+            let mut slot = Slot(Poll::Pending);
+            slot.0 = Pin::new(&mut recv).poll(cx);
+            hint::black_box(&mut slot);
+            slot.0
+        })
+        .await
+        .ok()?;
         if matches!(incoming, Incoming::Message(_)) {
             self.quota.unreserve();
         }
@@ -93,6 +107,9 @@ impl<M> Mailbox<M> {
         (self.incoming_rx, self.watcher_registration)
     }
 }
+
+#[repr(align(32))]
+struct Slot<T>(T);
 
 #[derive(Debug, Error)]
 pub(crate) enum SendError {
