@@ -7,16 +7,17 @@ on:
 
 env:
   BASE: 39aec830d4c042f227ce10ded5b886f7376f5df2
-  CANDIDATE: b7b369b60e4b572046ff45965bce7b0b4816365d
 
 permissions:
   contents: read
 
 jobs:
   sweep:
-    name: Sweep (${{ matrix.runner }}, job ${{ matrix.job }})
+    name: Sweep (${{ matrix.candidate.name }}, ${{ matrix.runner }}, job ${{ matrix.job }})
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    env:
+      CANDIDATE: ${{ matrix.candidate.sha }}
     strategy:
       fail-fast: false
       matrix:
@@ -24,6 +25,13 @@ jobs:
           - ubuntu-latest
           - ubuntu-24.04-arm
         job: [1, 2, 3, 4]
+        candidate:
+          - name: P
+            sha: f8fce534ca20110b37abcf23a7de7c0f1a32276d
+          - name: R
+            sha: 96684f860480b44aa93cd1893d3139153c1e0d84
+          - name: PR
+            sha: bc6010f745fde9c9b1ea518a557cb3791fafb95e
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -79,6 +87,7 @@ jobs:
           if [ -z "$cpu" ]; then cpu=$(lscpu | grep -m1 'Model name' | cut -d: -f2 | xargs); fi
           jq -n \
             --arg runner "${{ matrix.runner }}" \
+            --arg candidate_name "${{ matrix.candidate.name }}" \
             --arg job "${{ matrix.job }}" \
             --arg run_id "$GITHUB_RUN_ID" \
             --arg base "$BASE" \
@@ -111,7 +120,7 @@ jobs:
       - name: Upload results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: sweep-${{ matrix.runner }}-job-${{ matrix.job }}
+          name: sweep-${{ matrix.candidate.name }}-${{ matrix.runner }}-job-${{ matrix.job }}
           path: |
             ${{ runner.temp }}/sweep/results.jsonl
             ${{ runner.temp }}/sweep/metadata.json
