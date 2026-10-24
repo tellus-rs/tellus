@@ -26,12 +26,8 @@ jobs:
           - ubuntu-24.04-arm
         job: [1, 2, 3, 4]
         candidate:
-          - name: P
-            sha: f8fce534ca20110b37abcf23a7de7c0f1a32276d
-          - name: R
-            sha: 96684f860480b44aa93cd1893d3139153c1e0d84
-          - name: PR
-            sha: bc6010f745fde9c9b1ea518a557cb3791fafb95e
+          - name: A
+            sha: b548674d6dd2e72138b5104529bfed38458a0108
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
