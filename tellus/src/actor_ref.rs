@@ -20,7 +20,7 @@ use tracing::warn;
 /// compare equal and hash equally, however they were obtained.
 #[derive(Debug)]
 pub struct ActorRef<M> {
-    actor_id: ActorId,
+    actor_id: AlignedId,
 
     #[debug(skip)]
     sink: Sink<M>,
@@ -29,7 +29,7 @@ pub struct ActorRef<M> {
 impl<M> ActorRef<M> {
     /// The ID of the actor represented by this reference.
     pub fn actor_id(&self) -> ActorId {
-        self.actor_id
+        self.actor_id.0
     }
 
     /// Send a message to the actor represented by this reference without blocking. If the actor
@@ -49,7 +49,7 @@ impl<M> ActorRef<M> {
 
             #[cfg(feature = "cluster")]
             Sink::Remote(remote_sink) => {
-                if let Err(error) = remote_sink.try_send_message(self.actor_id, message) {
+                if let Err(error) = remote_sink.try_send_message(self.actor_id.0, message) {
                     self.dead_letter(&error);
                 }
             }
@@ -92,14 +92,14 @@ impl<M> ActorRef<M> {
     #[cfg(feature = "cluster")]
     pub(crate) fn remote(actor_id: ActorId, remote_sink: cluster::RemoteSink<M>) -> Self {
         Self {
-            actor_id,
+            actor_id: AlignedId(actor_id),
             sink: Sink::Remote(remote_sink),
         }
     }
 
     pub(crate) fn dead_letter(&self, error: &dyn Error) {
         warn!(
-            actor_id = %self.actor_id,
+            actor_id = %self.actor_id.0,
             message_type = type_name::<M>(),
             %error,
             source = error.source(),
@@ -118,7 +118,7 @@ impl<M> ActorRef<M> {
 
     fn new(actor_id: ActorId, mailbox_handle: MailboxHandle<M>) -> Self {
         Self {
-            actor_id,
+            actor_id: AlignedId(actor_id),
             sink: Sink::Local(mailbox_handle),
         }
     }
@@ -127,7 +127,7 @@ impl<M> ActorRef<M> {
 // Derived impls would needlessly require `M: PartialEq`/`M: Hash`.
 impl<M> PartialEq for ActorRef<M> {
     fn eq(&self, other: &Self) -> bool {
-        self.actor_id == other.actor_id
+        self.actor_id.0 == other.actor_id.0
     }
 }
 
@@ -138,7 +138,7 @@ impl<M> Hash for ActorRef<M> {
     where
         H: Hasher,
     {
-        self.actor_id.hash(state);
+        self.actor_id.0.hash(state);
     }
 }
 
@@ -151,6 +151,10 @@ impl<M> Clone for ActorRef<M> {
         }
     }
 }
+
+#[derive(Debug, Clone, Copy)]
+#[repr(align(16))]
+struct AlignedId(ActorId);
 
 pub(crate) enum Sink<M> {
     Local(MailboxHandle<M>),
@@ -202,7 +206,7 @@ impl<M> SelfRef<M> {
     }
 
     pub(crate) fn make_watcher(&self) -> Watcher {
-        Watcher::new(self.actor_ref.actor_id, self.terminated_handler.clone())
+        Watcher::new(self.actor_ref.actor_id.0, self.terminated_handler.clone())
     }
 
     pub(crate) fn send_terminated(&self, actor_id: ActorId) {
