@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1792764257869,
+  "lastUpdate": 1792865060312,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4607,6 +4607,90 @@ window.BENCHMARK_DATA = {
             "name": "queued/every/16",
             "value": 19724532,
             "range": "± 748087",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3cbe4ab3b54c347a6cc33bba926abdff83de514c",
+          "message": "Merge pull request #180 from tellus-rs/docs/actor-id-alignment\n\ndocs: record the actor id alignment investigation",
+          "timestamp": "2026-10-24T19:59:03+02:00",
+          "tree_id": "a9857600b33c6c85f0e95862b1a7a4f88e6c92be",
+          "url": "https://github.com/tellus-rs/tellus/commit/3cbe4ab3b54c347a6cc33bba926abdff83de514c"
+        },
+        "date": 1792865059448,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14831798,
+            "range": "± 976361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15742577,
+            "range": "± 1009196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 760998,
+            "range": "± 14217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 862445,
+            "range": "± 4415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5777482,
+            "range": "± 137749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4263413,
+            "range": "± 45449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 18484211,
+            "range": "± 517273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 19555238,
+            "range": "± 707548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 18718415,
+            "range": "± 560015",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19981245,
+            "range": "± 601638",
             "unit": "ns/iter"
           }
         ]
