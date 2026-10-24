@@ -16,20 +16,24 @@ use crate::{
     EventSourced,
     persistence::{effect::Effect, spawn},
 };
-use std::iter;
+use std::{iter, time::Duration};
+use tokio::time::Instant;
 
 /// An [ActorContext] together with the mailbox behind it, for calling an actor's methods directly.
 ///
 /// Everything the actor sends to itself arrives in the mailbox: [ActorRef::tell] on
-/// [ActorContext::self_ref], the replies of a [ReplyTo] from [ActorContext::reply_to], and the
+/// [ActorContext::self_ref], the replies of a [ReplyTo] from [ActorContext::reply_to], the
 /// [Incoming::Terminated] signal of [ActorContext::watch] on an actor which has already
-/// terminated. [TestContext::take_incoming] returns it in FIFO order.
+/// terminated, and the message of a timer fired by [TestContext::fire_timer].
+/// [TestContext::take_incoming] returns it in FIFO order.
 ///
 /// Calling an actor directly bypasses the run loop. Notably, a terminated signal passed to
 /// [Actor::receive] is not dropped when its sender is no longer watched, and nothing restarts the
-/// actor on failure. [ActorContext::spawn] still spawns a real child actor, hence needs a Tokio
-/// runtime; the child is asked to stop when the [TestContext] is dropped, and
-/// [TestContext::terminate] waits for it.
+/// actor on failure. No timer fires when its delay elapses; see [TestContext::fire_timer].
+/// [TestContext::take_incoming] drops the items of canceled or replaced timers for its whole batch
+/// at once, not item by item between calls to [Actor::receive]. [ActorContext::spawn] still spawns
+/// a real child actor, hence needs a Tokio runtime; the child is asked to stop when the
+/// [TestContext] is dropped, and [TestContext::terminate] waits for it.
 ///
 /// # Testing
 ///
@@ -103,9 +107,45 @@ impl<M> TestContext<M> {
     }
 
     /// Everything enqueued in the mailbox since the last call, in the order it arrived. Does not
-    /// wait for more.
+    /// wait for more. Like the run loop, it drops a fired timer which the actor has canceled or
+    /// replaced since. Unlike the run loop, it does so for the whole batch at once rather than item
+    /// by item between calls to [Actor::receive]. A cancel made while handling an earlier item
+    /// hence cannot drop a timer item behind it. To test that, pass the earlier item to
+    /// [Actor::receive] directly and take the incoming afterwards.
+    ///
+    /// [Actor::receive]: crate::Actor::receive
     pub fn take_incoming(&mut self) -> Vec<Incoming<M>> {
-        iter::from_fn(|| self.mailbox.try_recv()).collect()
+        iter::from_fn(|| self.mailbox.try_recv())
+            .filter_map(|queued| self.context.gate(queued))
+            .collect()
+    }
+
+    /// The timers the actor has started which have not fired yet, earliest deadline first, those
+    /// with equal deadlines in the order they were started. However much time passes, a timer stays
+    /// listed until [TestContext::fire_timer] fires it or the actor cancels or replaces it.
+    ///
+    /// The time remaining is measured on Tokio's clock. A test which asserts it pauses that clock,
+    /// e.g. with `#[tokio::test(start_paused = true)]`.
+    pub fn timers(&self) -> Vec<PendingTimer> {
+        let now = Instant::now();
+
+        self.context
+            .pending_timers()
+            .into_iter()
+            .map(|(key, deadline)| PendingTimer {
+                key,
+                remaining: deadline.saturating_duration_since(now),
+            })
+            .collect()
+    }
+
+    /// Fire the timer started under this key as the run loop does once its delay has elapsed,
+    /// whatever time is left. Its message arrives in the mailbox behind the items already there,
+    /// and [TestContext::take_incoming] returns it unless the actor cancels or replaces the timer
+    /// first. Returns whether there was a timer to fire, that is `false` for an unknown key and for
+    /// a timer which has fired already.
+    pub fn fire_timer(&mut self, key: &'static str) -> bool {
+        self.context.fire_timer(key)
     }
 
     /// Terminate this context's actor as the run loop would: stop its children and wait until all
@@ -125,6 +165,17 @@ where
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// A timer which an actor has started and which has not fired yet, as listed by
+/// [TestContext::timers].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PendingTimer {
+    /// The key the timer was started under.
+    pub key: &'static str,
+
+    /// The time left until the timer is due, zero once its deadline has passed.
+    pub remaining: Duration,
 }
 
 /// The outcome of [settle].

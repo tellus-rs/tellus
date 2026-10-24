@@ -1850,7 +1850,7 @@ mod tests {
                 TransportError,
             },
         },
-        mailbox::Mailbox,
+        mailbox::{Mailbox, Queued},
         quota::Quota,
         sync::lock,
         watch::WatcherRegistration,
@@ -1978,9 +1978,9 @@ mod tests {
                 .split()
                 .0
                 .drain()
-                .filter_map(|incoming| match incoming {
-                    Incoming::Message(message) => Some(message),
-                    Incoming::Terminated(_) => None,
+                .filter_map(|queued| match queued {
+                    Queued::Incoming(Incoming::Message(message)) => Some(message),
+                    Queued::Incoming(Incoming::Terminated(_)) | Queued::Timer(_) => None,
                 })
                 .collect::<Vec<_>>()
         };
@@ -4405,9 +4405,9 @@ mod tests {
     /// A local actor which a peer's frames are delivered to, watching one of the peer's actors.
     struct Recipient {
         self_ref: SelfRef<u64>,
-        incoming_rx: flume::Receiver<Incoming<u64>>,
+        incoming_rx: flume::Receiver<Queued<u64>>,
         _watcher_registration: WatcherRegistration,
-        received: Vec<Incoming<u64>>,
+        received: Vec<Queued<u64>>,
     }
 
     impl Recipient {
@@ -4451,9 +4451,9 @@ mod tests {
             self.poll();
             self.received
                 .iter()
-                .map(|incoming| match incoming {
-                    Incoming::Message(message) => Some(*message),
-                    Incoming::Terminated(_) => None,
+                .map(|queued| match queued {
+                    Queued::Incoming(Incoming::Message(message)) => Some(*message),
+                    Queued::Incoming(Incoming::Terminated(_)) | Queued::Timer(_) => None,
                 })
                 .collect()
         }

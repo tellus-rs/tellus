@@ -3,6 +3,7 @@ use crate::cluster;
 use crate::{
     ActorId, MailboxCapacity,
     mailbox::{Mailbox, MailboxHandle, SendError, make_mailbox},
+    timers::TimerId,
     watch::{TerminatedHandler, Watcher, WatcherRegistry},
 };
 use derive_more::Debug;
@@ -69,6 +70,12 @@ impl<M> ActorRef<M> {
         self.local_mailbox_handle().try_send_forced_message(message)
     }
 
+    pub(crate) fn enqueue_timer(&self, id: TimerId) {
+        self.local_mailbox_handle()
+            .try_send_timer(id)
+            .expect("the actor's own mailbox outlives its context");
+    }
+
     pub(crate) fn sink(&self) -> &Sink<M> {
         &self.sink
     }
@@ -112,7 +119,9 @@ impl<M> ActorRef<M> {
             Sink::Local(mailbox_handle) => mailbox_handle,
 
             #[cfg(feature = "cluster")]
-            Sink::Remote(_) => unreachable!("a host only tells entities it spawned itself"),
+            Sink::Remote(_) => {
+                unreachable!("only an actor's own reference and a host's to its entities get here")
+            }
         }
     }
 

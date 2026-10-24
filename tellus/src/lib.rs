@@ -25,7 +25,9 @@
 //! [Incoming::Terminated] signal, and [ActorContext::unwatch], which reverts that. The signal is
 //! ordered behind all messages the terminated actor has delivered to the watcher. Receiving it
 //! hence proves that the watcher has seen every message from that actor it will ever see: each
-//! arrived before the signal or was dropped as a dead letter.
+//! arrived before the signal or was dropped as a dead letter. Actors can message themselves after a
+//! delay via [ActorContext::start_timer], through their own mailbox; a timer replaced under its key
+//! or canceled via [ActorContext::cancel_timer] is never received.
 //!
 //! A [Host] hosts entities: actors identified by a key, spawned on the first [HostEnvelope] for
 //! that key and, if configured, passivated once nothing has messaged them for a while, with
@@ -82,6 +84,7 @@ mod persistence;
 mod quota;
 mod request_response;
 mod sync;
+mod timers;
 mod watch;
 
 pub use crate::{
