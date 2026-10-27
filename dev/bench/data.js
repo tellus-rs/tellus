@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793094359637,
+  "lastUpdate": 1793130233171,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -4775,6 +4775,90 @@ window.BENCHMARK_DATA = {
             "name": "queued/every/16",
             "value": 19310347,
             "range": "± 433387",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b1feb713daaf375111fbc96135b5ad1033a55bf3",
+          "message": "Merge pull request #188 from tellus-rs/ci/bench-protocol\n\nci: add a benchmark protocol, label-driven sweeps and codegen checks",
+          "timestamp": "2026-10-27T20:38:16+01:00",
+          "tree_id": "d24196b8b9a4ec01af9898bcadd595ef8a8f0b7f",
+          "url": "https://github.com/tellus-rs/tellus/commit/b1feb713daaf375111fbc96135b5ad1033a55bf3"
+        },
+        "date": 1793130231765,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 10746626,
+            "range": "± 1187000",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 10325275,
+            "range": "± 309480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 799923,
+            "range": "± 13347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 654940,
+            "range": "± 3527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5062973,
+            "range": "± 80173",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3450270,
+            "range": "± 20641",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 15589329,
+            "range": "± 431096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16382184,
+            "range": "± 353045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 15748662,
+            "range": "± 557620",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16398292,
+            "range": "± 441967",
             "unit": "ns/iter"
           }
         ]
