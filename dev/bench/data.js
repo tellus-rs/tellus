@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793094358050,
+  "lastUpdate": 1793094359637,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8473,6 +8473,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 173429,
             "range": "± 7127",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac59a98a8ceec5fb08c9e794d517bd341e0b755f",
+          "message": "Merge pull request #182 from tellus-rs/docs/timer-cost\n\ndocs: record the timer cost investigation of #174",
+          "timestamp": "2026-10-27T10:40:49+01:00",
+          "tree_id": "c73639fda6d1326038b99ab35bcdabffdfc2d0b0",
+          "url": "https://github.com/tellus-rs/tellus/commit/ac59a98a8ceec5fb08c9e794d517bd341e0b755f"
+        },
+        "date": 1793094359371,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3383331,
+            "range": "± 174699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3397923,
+            "range": "± 220328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1401592,
+            "range": "± 12575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 171751,
+            "range": "± 3514",
             "unit": "ns/iter"
           }
         ]
