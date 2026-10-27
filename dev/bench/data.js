@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793130233171,
+  "lastUpdate": 1793130235552,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8605,6 +8605,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 171751,
             "range": "± 3514",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b1feb713daaf375111fbc96135b5ad1033a55bf3",
+          "message": "Merge pull request #188 from tellus-rs/ci/bench-protocol\n\nci: add a benchmark protocol, label-driven sweeps and codegen checks",
+          "timestamp": "2026-10-27T20:38:16+01:00",
+          "tree_id": "d24196b8b9a4ec01af9898bcadd595ef8a8f0b7f",
+          "url": "https://github.com/tellus-rs/tellus/commit/b1feb713daaf375111fbc96135b5ad1033a55bf3"
+        },
+        "date": 1793130234858,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2755465,
+            "range": "± 154689",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2835474,
+            "range": "± 122148",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 970359,
+            "range": "± 15449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 116029,
+            "range": "± 3093",
             "unit": "ns/iter"
           }
         ]
