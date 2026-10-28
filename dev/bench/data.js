@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793180982911,
+  "lastUpdate": 1793180984740,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8773,6 +8773,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 116029,
             "range": "± 3093",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8252b062c00eea576e58ea6c5c7fa73a5e44bd33",
+          "message": "Merge pull request #185 from tellus-rs/feat/timers-opt-in\n\nfeat: add timers, opt-in per actor via Actor::Timers",
+          "timestamp": "2026-10-28T10:42:11+01:00",
+          "tree_id": "6fa74ea617920a62697e3264772f104895e376d4",
+          "url": "https://github.com/tellus-rs/tellus/commit/8252b062c00eea576e58ea6c5c7fa73a5e44bd33"
+        },
+        "date": 1793180984257,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2368340,
+            "range": "± 90362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2290246,
+            "range": "± 106934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 928881,
+            "range": "± 20116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 113538,
+            "range": "± 3111",
             "unit": "ns/iter"
           }
         ]
