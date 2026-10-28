@@ -9,7 +9,8 @@
 //! All benchmarks run on a Tokio runtime with a fixed worker thread count, so measurements do not
 //! depend on the host's core count.
 
-use criterion::{Criterion, Throughput, criterion_group, criterion_main};
+use criterion::Throughput;
+use hotpath::criterion::{Criterion, criterion_group, criterion_main};
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,
@@ -203,7 +204,7 @@ impl EventSourced for Counter {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default()
+    config = criterion::Criterion::default()
         .sample_size(30)
         .noise_threshold(0.05)
         .warm_up_time(Duration::from_secs(3))

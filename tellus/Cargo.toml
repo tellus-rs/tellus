@@ -64,6 +64,7 @@ axum               = { workspace = true, features = [ "http1", "tokio" ] }
 config             = { workspace = true, features = [ "toml" ] }
 criterion          = { workspace = true, features = [ "async_tokio" ] }
 derive_more        = { workspace = true, features = [ "debug", "deref", "deref_mut" ] }
+hotpath            = { workspace = true, features = [ "criterion-0-8" ] }
 rcgen              = { workspace = true, features = [ "crypto", "pem", "ring" ] }
 rustls             = { workspace = true, features = [ "ring", "std" ] }
 serde              = { workspace = true, features = [ "derive" ] }

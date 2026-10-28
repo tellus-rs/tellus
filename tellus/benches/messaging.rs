@@ -14,7 +14,8 @@
 //! All benchmarks run on a Tokio runtime with a fixed worker thread count, which also sizes the
 //! workloads, so measurements do not depend on the host's core count.
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::Throughput;
+use hotpath::criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use std::{
     convert::Infallible,
     hint::black_box,
@@ -547,7 +548,7 @@ struct FanningOut {
 
 criterion_group!(
     name = benches;
-    config = Criterion::default()
+    config = criterion::Criterion::default()
         .sample_size(30)
         .noise_threshold(0.05)
         .warm_up_time(Duration::from_secs(3))
