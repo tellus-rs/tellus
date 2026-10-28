@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793216619860,
+  "lastUpdate": 1793216622416,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9445,6 +9445,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163267,
             "range": "± 3572",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34bfcff0ba2803e161b4d7d66856d727dec3b054",
+          "message": "Merge pull request #187 from tellus-rs/dependabot/cargo/cargo-major-9a852f24bf\n\nbuild(deps): bump the cargo-major group across 1 directory with 3 updates",
+          "timestamp": "2026-10-28T20:36:14+01:00",
+          "tree_id": "b78aa6003e9a9d2f289605f8e6d2adcfa4041fc2",
+          "url": "https://github.com/tellus-rs/tellus/commit/34bfcff0ba2803e161b4d7d66856d727dec3b054"
+        },
+        "date": 1793216621508,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3405582,
+            "range": "± 156294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3458811,
+            "range": "± 202640",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1402601,
+            "range": "± 13480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 160930,
+            "range": "± 5852",
             "unit": "ns/iter"
           }
         ]
