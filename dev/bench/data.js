@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793205060442,
+  "lastUpdate": 1793205064170,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9109,6 +9109,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 114336,
             "range": "± 2459",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "81baf7c3ac6439861bc5e3244bf033e4f7bf9c89",
+          "message": "Merge pull request #191 from tellus-rs/docs/timers-and-queued-examples\n\ndocs: add a stale readings tutorial step and a batch writes example",
+          "timestamp": "2026-10-28T17:23:34+01:00",
+          "tree_id": "ea72c809787f567d9d0f22db905f08284a290367",
+          "url": "https://github.com/tellus-rs/tellus/commit/81baf7c3ac6439861bc5e3244bf033e4f7bf9c89"
+        },
+        "date": 1793205062758,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3356186,
+            "range": "± 111791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3454903,
+            "range": "± 188684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1261536,
+            "range": "± 6250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 146795,
+            "range": "± 4344",
             "unit": "ns/iter"
           }
         ]
