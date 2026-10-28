@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793188450755,
+  "lastUpdate": 1793188452134,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8941,6 +8941,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 113538,
             "range": "± 3111",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0b8b2bced3715d9dab18a0ba7f4ee684f239830e",
+          "message": "Merge pull request #190 from tellus-rs/docs/timer-cost-patches\n\ndocs: keep the timer variants as patches instead of branches",
+          "timestamp": "2026-10-28T12:47:25+01:00",
+          "tree_id": "8a1048afeca81ea59545db4888bbb90386930aa4",
+          "url": "https://github.com/tellus-rs/tellus/commit/0b8b2bced3715d9dab18a0ba7f4ee684f239830e"
+        },
+        "date": 1793188451908,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2729759,
+            "range": "± 131627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2730005,
+            "range": "± 125358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 981302,
+            "range": "± 5735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 114336,
+            "range": "± 2459",
             "unit": "ns/iter"
           }
         ]
