@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793263823261,
+  "lastUpdate": 1793263824723,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9613,6 +9613,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160930,
             "range": "± 5852",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d2e3a48dd40f7d2a80c77110b152b1c95b172674",
+          "message": "Merge pull request #196 from tellus-rs/fix/pipe-to-self-full-mailbox\n\nfix: deliver a piped future's output past a full mailbox",
+          "timestamp": "2026-10-29T09:43:03+01:00",
+          "tree_id": "87d002191b6b1f9a16902118177444313dbecd31",
+          "url": "https://github.com/tellus-rs/tellus/commit/d2e3a48dd40f7d2a80c77110b152b1c95b172674"
+        },
+        "date": 1793263824494,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3164675,
+            "range": "± 119915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3170446,
+            "range": "± 32322",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1317864,
+            "range": "± 9253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 165011,
+            "range": "± 4325",
             "unit": "ns/iter"
           }
         ]
