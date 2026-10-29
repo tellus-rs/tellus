@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793284561455,
+  "lastUpdate": 1793286370494,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -5939,6 +5939,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27372209,
             "range": "± 914354",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "distinct": true,
+          "id": "4d013b8c1c161c60e8a5977dccedb2e12a043615",
+          "message": "docs: describe the website's pin workflow in AGENTS.md\n\nSigned-off-by: Heiko Seeberger <git@heikoseeberger.de>",
+          "timestamp": "2026-10-29T16:58:37+02:00",
+          "tree_id": "25528b52e90c45298123fad738367bc463c1cda4",
+          "url": "https://github.com/tellus-rs/tellus/commit/4d013b8c1c161c60e8a5977dccedb2e12a043615"
+        },
+        "date": 1793286369456,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14635121,
+            "range": "± 1309371",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13455064,
+            "range": "± 383815",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 958407,
+            "range": "± 20016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 843754,
+            "range": "± 5992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5844521,
+            "range": "± 89673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4345310,
+            "range": "± 20821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19309973,
+            "range": "± 539962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20173504,
+            "range": "± 514104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19473396,
+            "range": "± 840200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19939834,
+            "range": "± 573273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19911010,
+            "range": "± 390618",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21438689,
+            "range": "± 671162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27215780,
+            "range": "± 975235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19739309,
+            "range": "± 490857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21463210,
+            "range": "± 828971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27626651,
+            "range": "± 905855",
             "unit": "ns/iter"
           }
         ]
