@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793286370494,
+  "lastUpdate": 1793286372689,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10285,6 +10285,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160380,
             "range": "± 4847",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "distinct": true,
+          "id": "4d013b8c1c161c60e8a5977dccedb2e12a043615",
+          "message": "docs: describe the website's pin workflow in AGENTS.md\n\nSigned-off-by: Heiko Seeberger <git@heikoseeberger.de>",
+          "timestamp": "2026-10-29T16:58:37+02:00",
+          "tree_id": "25528b52e90c45298123fad738367bc463c1cda4",
+          "url": "https://github.com/tellus-rs/tellus/commit/4d013b8c1c161c60e8a5977dccedb2e12a043615"
+        },
+        "date": 1793286372110,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3167548,
+            "range": "± 123749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3126989,
+            "range": "± 21004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1381809,
+            "range": "± 10592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 159306,
+            "range": "± 5104",
             "unit": "ns/iter"
           }
         ]
