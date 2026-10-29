@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793283518134,
+  "lastUpdate": 1793283519859,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9949,6 +9949,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 98779,
             "range": "± 5774",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5de204e21746904b7f76596886cd5fbeea618ff",
+          "message": "Merge pull request #197 from tellus-rs/fix/reply-to-full-mailbox\n\nfeat: deliver a reply_to reply past a full mailbox",
+          "timestamp": "2026-10-29T15:11:46+01:00",
+          "tree_id": "0e5945bfa856442d20c92b11803d35a94cc0d701",
+          "url": "https://github.com/tellus-rs/tellus/commit/e5de204e21746904b7f76596886cd5fbeea618ff"
+        },
+        "date": 1793283519606,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2661733,
+            "range": "± 127784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2988010,
+            "range": "± 115497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 970843,
+            "range": "± 10575",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 118825,
+            "range": "± 1639",
             "unit": "ns/iter"
           }
         ]
