@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793266400567,
+  "lastUpdate": 1793266403355,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9781,6 +9781,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 165011,
             "range": "± 4325",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4e3a52bd4b3b770b632cb2590ab63a5b7d583cd0",
+          "message": "Merge pull request #179 from hotpath-rs/callgrind_mode\n\nchore: Use callgrind merged mode for hotpath benchmarks",
+          "timestamp": "2026-10-29T10:26:11+01:00",
+          "tree_id": "889330c7caa92386824921afadabd804ecda9f16",
+          "url": "https://github.com/tellus-rs/tellus/commit/4e3a52bd4b3b770b632cb2590ab63a5b7d583cd0"
+        },
+        "date": 1793266402835,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2663341,
+            "range": "± 220192",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2661742,
+            "range": "± 225731",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 685660,
+            "range": "± 45634",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 98779,
+            "range": "± 5774",
             "unit": "ns/iter"
           }
         ]
