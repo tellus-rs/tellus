@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>tellus comparison benchmarks (manual-32706028064)</title>
+<meta name="description" content="Messaging throughput of tellus against kameo and ractor for manual-32706028064, with the methodology and its caveats.">
+<link rel="canonical" href="https://tellus.rs/tellus/comparison/latest/">
 <link rel="icon" href="https://tellus.rs/favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="https://tellus.rs/dashboards.css">
 </head>
@@ -32,12 +34,12 @@
 <ol>
 <li><strong>tellus's <code>receive</code> is synchronous; kameo's and ractor's handlers are <code>async fn</code>.</strong>
 tellus therefore avoids allocating and polling a future per message, but cannot await inside <code>receive</code>.
-This is a capability difference, not only a speed difference, and it favours tellus on exactly these microbenchmarks.</li>
+This is a capability difference, not only a speed difference, and it favors tellus on exactly these microbenchmarks.</li>
 <li><strong>tellus's mailbox is statically typed; the others erase message types</strong>, costing an allocation
 and a dynamic dispatch per message that tellus does not pay.</li>
 <li><strong>Competitors are configured for speed, not defaults.</strong> kameo runs without <code>tracing</code>
 and ractor without <code>message_span_propogation</code>, both of which add per-message instrumentation that
-tellus has no equivalent of. This biases the setup in the competitors' favour.</li>
+tellus has no equivalent of. This biases the setup in the competitors' favor.</li>
 <li><strong>Messaging microbenchmarks only.</strong> Nothing here speaks to supervision, distribution,
 ergonomics, memory use or production readiness. kameo and ractor are mature, feature-rich frameworks; tellus is
 under active development and does far less.</li>
