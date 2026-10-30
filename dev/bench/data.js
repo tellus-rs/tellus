@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793393709065,
+  "lastUpdate": 1793393710777,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10789,6 +10789,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163614,
             "range": "± 7419",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0013ac8a44f6ddd9aceb879a98b83d1f563dcd37",
+          "message": "Merge pull request #207 from tellus-rs/dependabot/cargo/cargo-minor-c3f7ddf466\n\nbuild(deps): bump the cargo-minor group with 2 updates",
+          "timestamp": "2026-10-30T21:48:13+01:00",
+          "tree_id": "76e32de88c2927d6f0d9aa6cf81f62413cb50843",
+          "url": "https://github.com/tellus-rs/tellus/commit/0013ac8a44f6ddd9aceb879a98b83d1f563dcd37"
+        },
+        "date": 1793393710347,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2279586,
+            "range": "± 157758",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2222212,
+            "range": "± 81426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 878215,
+            "range": "± 14466",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 108235,
+            "range": "± 2246",
             "unit": "ns/iter"
           }
         ]
