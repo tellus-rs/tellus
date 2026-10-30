@@ -196,7 +196,7 @@ macro_rules! run_event_sourced {
         $stopped_by_parent_rx:ident
     ) => {
         task::spawn(async move {
-            let mut context = ActorContext::new($self_ref);
+            let mut context = ActorContext::new($self_ref, $config.mailbox_capacity);
 
             let mut rx = $stopped_by_parent_rx.clone();
             let mut stopped_by_parent = pin!(rx.changed());

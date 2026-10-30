@@ -51,6 +51,8 @@ tellus is under active development and its API is still settling.
   backoff, or `Stop`.
 - **Bounded or unbounded mailboxes**: bounded ones drop messages beyond capacity as dead letters but
   never drop terminated signals, the outputs of piped futures or `reply_to` replies.
+- **Stashing**: `ActorContext::stash` defers a message, or a terminated signal, until `unstash_all`,
+  which hands the stashed items back ahead of the mailbox, in order.
 - **Event-sourced persistence** (feature `persistence`): events are appended to a pluggable store
   and only then applied, the state is recovered by replay, and conditional appends fence
   concurrent incarnations.

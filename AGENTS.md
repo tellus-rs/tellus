@@ -63,7 +63,7 @@ Tasks are defined in the [justfile](justfile):
   `persistence.rs`, `host_persistence.rs` and `persistence_tests.rs`, which also needs
   `persistence-tests`). Integration tests live in `tellus/tests/`: `ask.rs`, `persistence.rs`,
   `fairness.rs`, `how_to_unit_test.rs`, `how_to_unit_test_event_sourced.rs`,
-  `persistence_tests.rs`, `pipe_to_self.rs`, `queued.rs`, `supervision.rs`, `termination.rs`,
+  `persistence_tests.rs`, `pipe_to_self.rs`, `queued.rs`, `stash.rs`, `supervision.rs`, `termination.rs`,
   `test_context.rs`, `test_context_persistence.rs`, `timers.rs`, `watch.rs`, plus `cluster.rs`,
   which needs `--features cluster-dev`, has no test harness and runs its scenarios from `main`,
   spawning itself as further nodes. `test_context.rs` and `how_to_unit_test.rs` need `--features
@@ -374,6 +374,11 @@ cross-file invariants:
   itself lives in `watch.rs` (`Watcher`, `WatcherRegistry` and the `TerminatedHandler` a watcher
   runs); the mailbox half holds the registry and implements that trait for its own sender, and
   registration closes atomically with termination, so watch is race-free.
+- `stash.rs` holds what an actor deferred with `ActorContext::stash` and what `unstash_all` handed
+  back. Both `next_incoming` macros take an unstashed item ahead of the mailbox and of a due timer,
+  behind one length check per item, and skip the unwatch check for it. The stash has the
+  mailbox's capacity, survives a restart with the context and is dropped at termination with the
+  queued items.
 - `unwatch` is enforced on the watcher's side: the run loop drops a terminated signal whose sender
   is no longer watched before `receive` ever sees it.
 - Supervision (`actor_config.rs`): errors and panics (both `init` and `receive` run under
