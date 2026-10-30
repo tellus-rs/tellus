@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793286372689,
+  "lastUpdate": 1793349260996,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6059,6 +6059,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27626651,
             "range": "± 905855",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e19d519633eb75e9acfc5a3bae472d06b4a2e132",
+          "message": "Merge pull request #200 from tellus-rs/docs/comparison-page-metadata\n\nchore(comparison): add meta description and canonical URL to reports",
+          "timestamp": "2026-10-30T09:27:06+01:00",
+          "tree_id": "58f51602aecab3cbae50859e7eb07d8025f1dbe6",
+          "url": "https://github.com/tellus-rs/tellus/commit/e19d519633eb75e9acfc5a3bae472d06b4a2e132"
+        },
+        "date": 1793349260193,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13248644,
+            "range": "± 1062444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14504025,
+            "range": "± 977075",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 952698,
+            "range": "± 7887",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 839278,
+            "range": "± 5288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5832169,
+            "range": "± 136626",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4299972,
+            "range": "± 71191",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19822103,
+            "range": "± 407760",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20544441,
+            "range": "± 408859",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19865262,
+            "range": "± 521905",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20541227,
+            "range": "± 440447",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20045873,
+            "range": "± 476909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21771367,
+            "range": "± 800659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27700543,
+            "range": "± 847526",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20063656,
+            "range": "± 474628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21649301,
+            "range": "± 809338",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27607376,
+            "range": "± 1004823",
             "unit": "ns/iter"
           }
         ]
