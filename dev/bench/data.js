@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793388476700,
+  "lastUpdate": 1793393709065,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6299,6 +6299,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27307859,
             "range": "± 854488",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0013ac8a44f6ddd9aceb879a98b83d1f563dcd37",
+          "message": "Merge pull request #207 from tellus-rs/dependabot/cargo/cargo-minor-c3f7ddf466\n\nbuild(deps): bump the cargo-minor group with 2 updates",
+          "timestamp": "2026-10-30T21:48:13+01:00",
+          "tree_id": "76e32de88c2927d6f0d9aa6cf81f62413cb50843",
+          "url": "https://github.com/tellus-rs/tellus/commit/0013ac8a44f6ddd9aceb879a98b83d1f563dcd37"
+        },
+        "date": 1793393708317,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9610837,
+            "range": "± 426347",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 10530510,
+            "range": "± 364136",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 732411,
+            "range": "± 13915",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 549804,
+            "range": "± 18341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3782813,
+            "range": "± 70175",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2876733,
+            "range": "± 38355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 14862834,
+            "range": "± 461177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16044053,
+            "range": "± 389018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 15136290,
+            "range": "± 366414",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16355841,
+            "range": "± 391408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 14710271,
+            "range": "± 459581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 17162498,
+            "range": "± 672305",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 21279912,
+            "range": "± 656082",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 14730171,
+            "range": "± 335989",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 17275613,
+            "range": "± 491037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 20991615,
+            "range": "± 722390",
             "unit": "ns/iter"
           }
         ]
