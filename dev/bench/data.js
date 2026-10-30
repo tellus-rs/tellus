@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793388474838,
+  "lastUpdate": 1793388476700,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10621,6 +10621,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 170642,
             "range": "± 3538",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ca478ee798b832cf5d2016c0de9a2a34b200094e",
+          "message": "Merge pull request #202 from tellus-rs/build/pin-image-digests\n\nbuild: pin images by digest",
+          "timestamp": "2026-10-30T20:20:19+01:00",
+          "tree_id": "9d4e73a4df1a9af2906f1845639590b0e2a36f2d",
+          "url": "https://github.com/tellus-rs/tellus/commit/ca478ee798b832cf5d2016c0de9a2a34b200094e"
+        },
+        "date": 1793388476254,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3501643,
+            "range": "± 138866",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3528311,
+            "range": "± 216632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1389529,
+            "range": "± 11245",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 163614,
+            "range": "± 7419",
             "unit": "ns/iter"
           }
         ]
