@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793395796067,
+  "lastUpdate": 1793395798817,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10957,6 +10957,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 108235,
             "range": "± 2246",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "17a81ef4d5069bb9d3702fb6ac83e455d6061507",
+          "message": "Merge pull request #203 from tellus-rs/dependabot/docker_compose/tellus-cluster-demo/docker-compose-minor-351ddfa07c\n\nbuild(deps): bump docker from 29.7.2-cli to 29.9.2-cli in /tellus-cluster-demo in the docker-compose-minor group across 1 directory",
+          "timestamp": "2026-10-30T22:22:38+01:00",
+          "tree_id": "c83a7d7a9da6e03ad5637b3dde2b46a61f037915",
+          "url": "https://github.com/tellus-rs/tellus/commit/17a81ef4d5069bb9d3702fb6ac83e455d6061507"
+        },
+        "date": 1793395798304,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3042185,
+            "range": "± 151195",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3134698,
+            "range": "± 293068",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1412176,
+            "range": "± 6499",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 170059,
+            "range": "± 4412",
             "unit": "ns/iter"
           }
         ]
