@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793349260996,
+  "lastUpdate": 1793349262771,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10453,6 +10453,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 159306,
             "range": "± 5104",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e19d519633eb75e9acfc5a3bae472d06b4a2e132",
+          "message": "Merge pull request #200 from tellus-rs/docs/comparison-page-metadata\n\nchore(comparison): add meta description and canonical URL to reports",
+          "timestamp": "2026-10-30T09:27:06+01:00",
+          "tree_id": "58f51602aecab3cbae50859e7eb07d8025f1dbe6",
+          "url": "https://github.com/tellus-rs/tellus/commit/e19d519633eb75e9acfc5a3bae472d06b4a2e132"
+        },
+        "date": 1793349262266,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3471429,
+            "range": "± 175070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3515290,
+            "range": "± 80280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1400764,
+            "range": "± 10474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 170642,
+            "range": "± 3538",
             "unit": "ns/iter"
           }
         ]
