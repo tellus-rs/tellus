@@ -4659,7 +4659,7 @@ dependencies = [
 
 [[package]]
 name = "tellus-persistence-postgres"
-version = "0.2.12"
+version = "0.2.13"
 dependencies = [
  "anyhow",
  "composed",
