@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793460697181,
+  "lastUpdate": 1793469411428,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7019,6 +7019,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27117159,
             "range": "± 809340",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9fb5897494934a927dbc364c0726b6590dc5087c",
+          "message": "Merge pull request #216 from tellus-rs/docs/stale-statements\n\ndocs: correct stale statements on inspect, min_peers, caching and lb",
+          "timestamp": "2026-10-31T18:49:20+01:00",
+          "tree_id": "82c994644c9f30a0c567268f6d8bb6cd6cc42725",
+          "url": "https://github.com/tellus-rs/tellus/commit/9fb5897494934a927dbc364c0726b6590dc5087c"
+        },
+        "date": 1793469410561,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 15197582,
+            "range": "± 995260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15715027,
+            "range": "± 689608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 914941,
+            "range": "± 39991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 825637,
+            "range": "± 6494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5769314,
+            "range": "± 148969",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4299405,
+            "range": "± 45941",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19836614,
+            "range": "± 683294",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20547899,
+            "range": "± 602971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 20265601,
+            "range": "± 668636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20654155,
+            "range": "± 472486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20352834,
+            "range": "± 691809",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21723873,
+            "range": "± 519842",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27469656,
+            "range": "± 1685506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20606790,
+            "range": "± 586497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21576610,
+            "range": "± 998102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27102594,
+            "range": "± 953646",
             "unit": "ns/iter"
           }
         ]
