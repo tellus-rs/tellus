@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793440822833,
+  "lastUpdate": 1793440825541,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11125,6 +11125,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 170059,
             "range": "± 4412",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "748d87a49b5af2222718d047a90b061b7c4f46cc",
+          "message": "Merge pull request #210 from hotpath-rs/hotpath_action\n\nchore: Use hotpath-relay GitHub marketplace action",
+          "timestamp": "2026-10-31T10:53:09+01:00",
+          "tree_id": "3b87dd680739e59fc01e568ff3fb7e673789154f",
+          "url": "https://github.com/tellus-rs/tellus/commit/748d87a49b5af2222718d047a90b061b7c4f46cc"
+        },
+        "date": 1793440825114,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3081995,
+            "range": "± 143029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3049280,
+            "range": "± 129459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1386980,
+            "range": "± 11927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 163561,
+            "range": "± 4411",
             "unit": "ns/iter"
           }
         ]
