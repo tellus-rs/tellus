@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793448454425,
+  "lastUpdate": 1793448455959,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11293,6 +11293,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163561,
             "range": "± 4411",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "62468e0e85ddcafa933ca47770a587b42a421402",
+          "message": "Merge pull request #211 from tellus-rs/fix/profile-alloc-noise\n\nchore: run the profile flood on a current-thread runtime",
+          "timestamp": "2026-10-31T13:00:16+01:00",
+          "tree_id": "1b684cba0d13cdcd81ee7192431f08add3c848e5",
+          "url": "https://github.com/tellus-rs/tellus/commit/62468e0e85ddcafa933ca47770a587b42a421402"
+        },
+        "date": 1793448455609,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3147478,
+            "range": "± 86805",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3156106,
+            "range": "± 81807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1390952,
+            "range": "± 11219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 167268,
+            "range": "± 3237",
             "unit": "ns/iter"
           }
         ]
