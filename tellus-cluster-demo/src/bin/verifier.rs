@@ -298,8 +298,8 @@ async fn events(State(state): State<Arc<VerifierState>>, headers: HeaderMap) -> 
 }
 
 /// The claim the load balancer stands for: whatever the chaos agent does to the nodes behind it,
-/// a request is answered. A single failed request is the health check's detection lag, an outage
-/// beyond [Config::lb_outage] is a violation.
+/// a request is answered. Every failed request is counted, and failures lasting beyond
+/// [Config::lb_outage] are a violation.
 async fn watch_lb(config: Arc<Config>, state: Arc<VerifierState>) {
     let client = client();
     let url = format!("{}/cluster", config.lb);
