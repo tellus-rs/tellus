@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793440825541,
+  "lastUpdate": 1793448454425,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6659,6 +6659,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27313963,
             "range": "± 886416",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "62468e0e85ddcafa933ca47770a587b42a421402",
+          "message": "Merge pull request #211 from tellus-rs/fix/profile-alloc-noise\n\nchore: run the profile flood on a current-thread runtime",
+          "timestamp": "2026-10-31T13:00:16+01:00",
+          "tree_id": "1b684cba0d13cdcd81ee7192431f08add3c848e5",
+          "url": "https://github.com/tellus-rs/tellus/commit/62468e0e85ddcafa933ca47770a587b42a421402"
+        },
+        "date": 1793448453693,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14572562,
+            "range": "± 825261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14226831,
+            "range": "± 781503",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 851694,
+            "range": "± 6402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 817936,
+            "range": "± 39918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5841319,
+            "range": "± 125253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4255814,
+            "range": "± 31720",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19912841,
+            "range": "± 654419",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20276112,
+            "range": "± 515890",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19845290,
+            "range": "± 716395",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20523764,
+            "range": "± 618911",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19581707,
+            "range": "± 614197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21378856,
+            "range": "± 1078248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27636645,
+            "range": "± 989572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19679924,
+            "range": "± 466035",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21554489,
+            "range": "± 776329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27429588,
+            "range": "± 1328524",
             "unit": "ns/iter"
           }
         ]
