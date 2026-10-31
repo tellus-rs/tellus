@@ -16,6 +16,8 @@ judged             = true
 min_percent_change = 2
 metrics            = [ "avg", "total" ]
 min_calls          = 1
+# recv allocates a waker per empty wait, and thread scheduling decides how many!
+ignore = [ "tellus::mailbox::recv" ]
 
 [functions.icount]
 judged             = true
