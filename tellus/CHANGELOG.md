@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.2](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.1...tellus-v0.5.2) - 2026-10-31
+
+### Other
+
+- use hotpath criterion adapter for benchmarks
+- run the profile flood on a current-thread runtime
+
 ## [0.5.1](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.0...tellus-v0.5.1) - 2026-10-29
 
 ### Added
