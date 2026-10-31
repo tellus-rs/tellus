@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793460695745,
+  "lastUpdate": 1793460697181,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11629,6 +11629,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163176,
             "range": "± 4400",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "03c84f2798d06e7fa8d80a48dd2fc3dedc2075b2",
+          "message": "Merge pull request #213 from tellus-rs/chore/ignore-recv-allocations\n\nchore: stop judging recv allocations in the profile policy",
+          "timestamp": "2026-10-31T16:24:23+01:00",
+          "tree_id": "598f9f9919370a2a8e62c995898e642e57ca92b6",
+          "url": "https://github.com/tellus-rs/tellus/commit/03c84f2798d06e7fa8d80a48dd2fc3dedc2075b2"
+        },
+        "date": 1793460696916,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3007131,
+            "range": "± 124506",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3080682,
+            "range": "± 162561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1377206,
+            "range": "± 14221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 161854,
+            "range": "± 4475",
             "unit": "ns/iter"
           }
         ]
