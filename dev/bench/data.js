@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793448455959,
+  "lastUpdate": 1793456819545,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -6779,6 +6779,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27429588,
             "range": "± 1328524",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ba176c411b0cf8fc16730b84d656384a229c211",
+          "message": "Merge pull request #199 from hotpath-rs/hotpath-async-criterion\n\nchore: Use hotpath criterion adapter for benchmarks",
+          "timestamp": "2026-10-31T15:19:46+01:00",
+          "tree_id": "fbd4a6252a6af87b8bc19db3cebeed767281ee94",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ba176c411b0cf8fc16730b84d656384a229c211"
+        },
+        "date": 1793456819077,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13976415,
+            "range": "± 744318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14609925,
+            "range": "± 868066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1011761,
+            "range": "± 12608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 838508,
+            "range": "± 4559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5747152,
+            "range": "± 130016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4277247,
+            "range": "± 16962",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19797409,
+            "range": "± 572284",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20437376,
+            "range": "± 463330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19574434,
+            "range": "± 566370",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20282471,
+            "range": "± 758517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20130382,
+            "range": "± 566274",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 22119284,
+            "range": "± 864349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27681421,
+            "range": "± 971520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19995053,
+            "range": "± 639872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21844545,
+            "range": "± 990807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27163471,
+            "range": "± 853749",
             "unit": "ns/iter"
           }
         ]
