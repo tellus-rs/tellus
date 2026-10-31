@@ -164,6 +164,19 @@ profile-persistence-alloc-gate out="target/hotpath/profile_persistence.json":
 profile-persistence-alloc-check file:
     just _alloc-check "{{ file }}" tellus::persistence::spawn::apply_events tellus::persistence::spawn::replay_page
 
+# hotpath.rs refuses every upload judged under a policy it finds invalid.
+check-hotpath-policies:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    failed=0
+    for file in hotpath/*-policy.toml; do
+        hotpath cloud validate-policy --benchmark "$(basename "$file" -policy.toml)" || failed=1
+    done
+    if [[ -f hotpath/policy.toml ]]; then
+        hotpath cloud validate-policy || failed=1
+    fi
+    exit $failed
+
 # Every named function must show up in the report having allocated exactly "0 B", not rounded.
 _alloc-check file +names:
     #!/usr/bin/env bash
