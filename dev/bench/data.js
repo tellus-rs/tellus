@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793456819545,
+  "lastUpdate": 1793456821000,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11461,6 +11461,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 167268,
             "range": "± 3237",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ba176c411b0cf8fc16730b84d656384a229c211",
+          "message": "Merge pull request #199 from hotpath-rs/hotpath-async-criterion\n\nchore: Use hotpath criterion adapter for benchmarks",
+          "timestamp": "2026-10-31T15:19:46+01:00",
+          "tree_id": "fbd4a6252a6af87b8bc19db3cebeed767281ee94",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ba176c411b0cf8fc16730b84d656384a229c211"
+        },
+        "date": 1793456820765,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3041333,
+            "range": "± 84764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3050127,
+            "range": "± 63583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1301338,
+            "range": "± 18488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 163176,
+            "range": "± 4400",
             "unit": "ns/iter"
           }
         ]
