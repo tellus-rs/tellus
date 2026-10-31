@@ -1,9 +1,10 @@
 #[cfg(feature = "cluster")]
 use crate::cluster;
 use crate::{
-    Actor, ActorConfig, ActorId, ActorRef, Control, Incoming, SupervisionStrategy,
+    Actor, ActorConfig, ActorId, ActorRef, Control, Incoming, MailboxCapacity, SupervisionStrategy,
     actor_ref::{SelfRef, Sink},
     mailbox::Mailbox,
+    stash::Stash,
     timers::{Delivery, Sealed, TIMER_FAILED_TO_DROP, Timed, TimerMode, Token, Untimed},
     watch::WatcherRegistry,
 };
@@ -49,6 +50,9 @@ where
 
     #[debug(skip)]
     watched: RefCell<HashMap<ActorId, Watched>>,
+
+    /// What the actor deferred, and what it unstashed and has not received yet.
+    stash: RefCell<Stash<M>>,
 
     #[debug(skip)]
     timers: T::Table<M>,
@@ -185,12 +189,35 @@ where
         self.self_ref().queued()
     }
 
+    /// Defer the given incoming until [ActorContext::unstash_all]: it is kept in this actor's
+    /// stash, in the order it was stashed, and received again like a queued item once it is
+    /// unstashed. Stashing the `Incoming` as [Actor::receive] got it keeps a terminated signal
+    /// behind the messages of the stopped actor, so the death watch ordering survives stashing.
+    ///
+    /// The stash has the capacity of the mailbox, counting the unstashed items not received yet,
+    /// so a bounded actor holds at most twice its capacity in mailbox and stash. A stashed item has
+    /// left the mailbox and frees its capacity, and [ActorContext::queued] does not count the
+    /// stash. The stash survives a restart, and termination drops it like the mailbox.
+    ///
+    /// # Errors
+    /// Fails if the stash is full, returning the incoming, so the actor decides what to do with it.
+    pub fn stash(&self, incoming: Incoming<M>) -> Result<(), Incoming<M>> {
+        self.stash.borrow_mut().push(incoming)
+    }
+
+    /// Hand every stashed item to the run loop, which receives them ahead of the mailbox and of a
+    /// due timer, one [Actor::receive] per item, in the order they were stashed. An item stashed
+    /// again while they are received waits for the next call. Unstashing nothing has no effect.
+    pub fn unstash_all(&self) {
+        self.stash.borrow_mut().unstash_all();
+    }
+
     #[cfg(feature = "persistence")]
     pub(crate) fn stop_children_rx(&self) -> watch::Receiver<()> {
         self.stop_children_rx.clone()
     }
 
-    pub(crate) fn new(self_ref: SelfRef<M>) -> Self {
+    pub(crate) fn new(self_ref: SelfRef<M>, mailbox_capacity: MailboxCapacity) -> Self {
         let (stop_children_tx, stop_children_rx) = watch::channel(());
 
         Self {
@@ -198,8 +225,18 @@ where
             stop_children_tx,
             stop_children_rx,
             watched: RefCell::new(HashMap::new()),
+            stash: RefCell::new(Stash::new(mailbox_capacity)),
             timers: Default::default(),
         }
+    }
+
+    pub(crate) fn take_unstashed(&mut self) -> Option<Incoming<M>> {
+        self.stash.get_mut().pop_unstashed()
+    }
+
+    #[cfg(feature = "test-util")]
+    pub(crate) fn take_stashed(&mut self) -> Vec<Incoming<M>> {
+        self.stash.get_mut().take_stashed()
     }
 
     pub(crate) fn take_watched_for(&mut self, other_id: ActorId) -> bool {
@@ -220,6 +257,10 @@ where
 
     fn take_watched(&mut self) -> HashMap<ActorId, Watched> {
         mem::take(self.watched.get_mut())
+    }
+
+    fn take_stash(&mut self) -> Vec<Incoming<M>> {
+        self.stash.get_mut().take_all()
     }
 }
 
@@ -336,6 +377,11 @@ macro_rules! next_incoming {
             // other tasks on its worker.
             consume_budget().await;
 
+            // Ahead of the mailbox: an unstashed item was received before anything queued.
+            if let Some(incoming) = $context.take_unstashed() {
+                break 'next_incoming Some(incoming);
+            }
+
             let incoming = tokio::select! {
                 biased;
 
@@ -375,6 +421,11 @@ macro_rules! next_incoming_timed {
             // one unit explicitly, so an actor whose mailbox never runs empty still yields to the
             // other tasks on its worker.
             consume_budget().await;
+
+            // Ahead of the mailbox and of a due timer: an unstashed item was received before both.
+            if let Some(incoming) = $context.take_unstashed() {
+                break 'next_incoming Some(incoming);
+            }
 
             let armed = $context.timer_armed();
             let deliverable = $context.timer_deliverable();
@@ -452,7 +503,7 @@ macro_rules! run_actor {
         $stopped_by_parent_rx:ident
     ) => {
         task::spawn(async move {
-            let mut context = ActorContext::new($self_ref);
+            let mut context = ActorContext::new($self_ref, $config.mailbox_capacity);
 
             let mut rx = $stopped_by_parent_rx.clone();
             let mut stopped_by_parent = pin!(rx.changed());
@@ -735,6 +786,9 @@ pub(crate) async fn terminate<A, M, T>(
     for incoming in drained {
         drop_containing_panic(actor_id, "queued message failed to drop", incoming);
     }
+    for incoming in context.take_stash() {
+        drop_containing_panic(actor_id, "stashed message failed to drop", incoming);
+    }
 
     T::drop_timer_messages(Token(()), actor_id, &mut context.timers);
 
@@ -847,6 +901,7 @@ mod tests {
         ActorContext, ActorId, Backoff, RestartPolicy, SupervisionStrategy, Untimed,
         actor_context::{Interrupted, PanicPayload, Restart, Watched, await_backoff, next_restart},
         actor_ref::SelfRef,
+        stash::Stash,
     };
     use std::{
         cell::RefCell, collections::HashMap, future, num::NonZeroU32, pin::pin, time::Duration,
@@ -866,6 +921,7 @@ mod tests {
                 + size_of::<watch::Sender<()>>()
                 + size_of::<watch::Receiver<()>>()
                 + size_of::<RefCell<HashMap<ActorId, Watched>>>()
+                + size_of::<RefCell<Stash<u32>>>()
         );
     }
 

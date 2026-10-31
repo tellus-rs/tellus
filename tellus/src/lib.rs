@@ -29,7 +29,9 @@
 //! Timed` can message itself after a delay via [ActorContext::start_timer], behind the messages
 //! queued for it; a timer replaced under its key or canceled via [ActorContext::cancel_timer] is
 //! never received. With `type Timers =` [Untimed], the mode of the plain [ActorContext], an actor
-//! has no timers and pays nothing for them.
+//! has no timers and pays nothing for them. An actor can defer an [Incoming] with
+//! [ActorContext::stash] and receive the stashed items again, ahead of its mailbox, after
+//! [ActorContext::unstash_all].
 //!
 //! A [Host] hosts entities: actors identified by a key, spawned on the first [HostEnvelope] for
 //! that key and, if configured, passivated once nothing has messaged them for a while, with
@@ -85,6 +87,7 @@ mod mailbox;
 mod persistence;
 mod quota;
 mod request_response;
+mod stash;
 mod sync;
 mod timers;
 mod watch;

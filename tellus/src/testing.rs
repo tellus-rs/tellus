@@ -103,6 +103,17 @@ where
         &self.context
     }
 
+    /// Everything the actor has stashed and not unstashed yet, in the order it was stashed.
+    pub fn take_stashed(&mut self) -> Vec<Incoming<M>> {
+        self.context.take_stashed()
+    }
+
+    /// Everything the actor has unstashed, in the order the run loop would receive it, ahead of
+    /// the mailbox.
+    pub fn take_unstashed(&mut self) -> Vec<Incoming<M>> {
+        iter::from_fn(|| self.context.take_unstashed()).collect()
+    }
+
     /// Terminate this context's actor as the run loop would: stop its children and wait until all
     /// of them have terminated, and only then send [Incoming::Terminated] to its watchers.
     ///
@@ -119,7 +130,7 @@ where
         let (self_ref, mailbox) = SelfRef::new(ActorId::new(), MailboxCapacity::Unbounded);
 
         Self {
-            context: ActorContext::new(self_ref),
+            context: ActorContext::new(self_ref, MailboxCapacity::Unbounded),
             mailbox,
         }
     }

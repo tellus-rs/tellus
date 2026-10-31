@@ -493,3 +493,31 @@ impl Actor for Notifier {
         Ok(Control::Continue(state))
     }
 }
+
+/// What the actor stashes is taken from the stash, and what it unstashes from the run loop's side,
+/// in the order it was stashed, ahead of the mailbox.
+#[test]
+fn stashed_and_unstashed_items_are_taken_separately() {
+    let mut test_context = TestContext::<u32>::new();
+    let context = test_context.context();
+    context
+        .stash(Incoming::Message(1))
+        .expect("the stash is unbounded");
+    assert!(test_context.take_unstashed().is_empty());
+
+    let context = test_context.context();
+    context
+        .stash(Incoming::Message(2))
+        .expect("the stash is unbounded");
+    context.unstash_all();
+    context
+        .stash(Incoming::Message(3))
+        .expect("the stash is unbounded");
+
+    assert_eq!(
+        test_context.take_unstashed(),
+        [Incoming::Message(1), Incoming::Message(2)]
+    );
+    assert_eq!(test_context.take_stashed(), [Incoming::Message(3)]);
+    assert!(test_context.take_incoming().is_empty());
+}

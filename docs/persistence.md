@@ -74,6 +74,11 @@ On every spawn and every restart, before the first command:
 fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
 `recovered` always runs, and never during replay.
 
+An event-sourced actor stashes through `handle` as a plain actor does through `receive` (see
+[actors.md](actors.md#stashing)): a command stashed while the actor waits, e.g. for a piped future,
+is received again after `unstash_all`, ahead of the mailbox. The stash is runtime state like a
+timer, neither persisted nor recreated by replay, but unlike a timer it survives a restart.
+
 A `Timed` event-sourced actor starts its timers (see [actors.md](actors.md#timers)) in `recovered`
 and `handle`; `init` has no context. A timer is runtime state, neither persisted nor recreated by
 replay, and a restart cancels it. `recovered` runs on every restart, so it is where to start the
