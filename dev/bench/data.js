@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793469411428,
+  "lastUpdate": 1793469413292,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11797,6 +11797,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 161854,
             "range": "± 4475",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9fb5897494934a927dbc364c0726b6590dc5087c",
+          "message": "Merge pull request #216 from tellus-rs/docs/stale-statements\n\ndocs: correct stale statements on inspect, min_peers, caching and lb",
+          "timestamp": "2026-10-31T18:49:20+01:00",
+          "tree_id": "82c994644c9f30a0c567268f6d8bb6cd6cc42725",
+          "url": "https://github.com/tellus-rs/tellus/commit/9fb5897494934a927dbc364c0726b6590dc5087c"
+        },
+        "date": 1793469412766,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3029629,
+            "range": "± 96116",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3112482,
+            "range": "± 115344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1379544,
+            "range": "± 9684",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 162144,
+            "range": "± 5122",
             "unit": "ns/iter"
           }
         ]
