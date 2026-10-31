@@ -1,0 +1,49 @@
+name: hotpath policy
+
+permissions:
+  contents: read
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - hotpath/**
+      - justfile
+      - .github/workflows/hotpath-policy.yml
+  push:
+    branches:
+      - main
+    paths:
+      - hotpath/**
+      - justfile
+      - .github/workflows/hotpath-policy.yml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate hotpath policies
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Install just
+        uses: taiki-e/install-action@1e29709c0ec63babbe8f266397a465f29a825f91 # v2.87.31
+        with:
+          tool: just
+
+      # Outside the repository, so rust-toolchain.toml does not apply to the install.
+      - name: Install hotpath CLI
+        run: |
+          version=$(awk '$0 == "name = \"hotpath\"" { getline; gsub(/"/, "", $3); print $3 }' Cargo.lock)
+          test -n "$version"
+          cd "$RUNNER_TEMP"
+          cargo install hotpath --version "$version" --features cloud --locked
+
+      - name: Validate hotpath policies
+        run: just check-hotpath-policies
