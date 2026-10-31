@@ -265,8 +265,9 @@ Item order within a file:
 
 ## Workspace layout
 
-- `tellus/`: the actor framework. The bootstrap crates and `tellus-persistence-postgres` are
-  published too (`publish = true`); the inspect crate, the demo and the TUI are not.
+- `tellus/`: the actor framework. The bootstrap crates, `tellus-cluster-inspect` and
+  `tellus-persistence-postgres` are published too (`publish = true`); the demo and the TUI are
+  not.
 - `tellus-bootstrap-dns/`: DNS seed discovery (`DnsSeeds` implements `SeedDiscovery`, SRV or
   A/AAAA records) for cluster bootstrap; the trait and the run-once `cluster::bootstrap` loop live
   in `tellus/src/cluster/bootstrap.rs` (feature `cluster`). Its tests resolve against an in-process

@@ -153,11 +153,13 @@ which was never told how to find the others.
 
 The relevant settings are:
 
-- `bootstrap.min_peers` (5): how many addresses discovery must resolve, unchanged for the settle
-  window, before a node joins. Sizing it to the deployment keeps five simultaneously starting
-  nodes from forming two clusters which never merge. In exchange, no node can bootstrap while
-  fewer than five addresses resolve, so a restarting node waits until all five containers are
-  running again. That suits a fixed size cluster and not an elastic one.
+- `bootstrap.min_peers` (5): how many addresses, the resolved ones plus the node's own, must
+  stay unchanged for the settle window before a node may form a new cluster. Joins do not wait
+  for it: on every resolution, a node joins through the resolved addresses, so a restarting node
+  rejoins as soon as discovery resolves one member. Sizing it to the deployment keeps five
+  simultaneously starting nodes from forming two clusters which never merge. In exchange, a cold
+  start forms no cluster before all five containers are running. That suits a fixed size cluster
+  and not an elastic one.
 - `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS`, `RECOVERY_SECS` and, under Compose only,
   `DEAD_SECS` (chaos) and `TELLUS_SETTLE_SECS` (verifier): the verifier only checks after the chaos agent has been quiet
   for the settle window, so the settle window must stay below the quiet window, and the quiet

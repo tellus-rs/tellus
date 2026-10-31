@@ -73,7 +73,10 @@ impl DnsSeeds {
         })
     }
 
-    /// Replace the system configured resolver, e.g. by one pointed at specific name servers.
+    /// Replace the system configured resolver, e.g. by one pointed at specific name servers. The
+    /// system configured resolver keeps no response cache. A resolver which does returns the same
+    /// addresses until its cached answer expires, so bootstrap sees nodes come and go only that
+    /// late.
     pub fn with_resolver(mut self, resolver: TokioResolver) -> Self {
         self.resolver = resolver;
         self
