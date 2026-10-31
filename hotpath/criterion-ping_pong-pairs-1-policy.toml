@@ -1,0 +1,35 @@
+# Docs: https://hotpath.rs/cloud
+
+pr_check = "fail"
+
+[functions]
+min_percent_total = 2
+
+[functions.timing]
+judged             = false
+min_percent_change = 50
+metrics            = [ "avg", "total" ]
+min_calls          = 1
+
+[functions.alloc]
+judged             = true
+min_percent_change = 2
+metrics            = [ "avg", "total" ]
+min_calls          = 1
+
+[functions.icount]
+judged             = true
+fail_check         = false
+min_percent_change = 3
+metrics            = [ "avg", "total" ]
+min_calls          = 1
+
+[[functions.budgets]]
+match   = "tellus::actor_ref::tell"
+alloc   = { total = "0 B" }
+message = "the steady-state messaging path must not allocate per message"
+
+[[functions.budgets]]
+match   = "tellus::quota::reserve"
+alloc   = { total = "0 B" }
+message = "the steady-state messaging path must not allocate per message"

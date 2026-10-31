@@ -2,14 +2,15 @@ name: hotpath relay
 
 on:
   workflow_run:
-    workflows: ["Profile"]
+    workflows: ["Profile", "Criterion profile"]
     types: [completed]
 
 permissions: {}
 
 jobs:
-  relay:
+  relay-profile:
     if: >-
+      github.event.workflow_run.name == 'Profile' &&
       github.event.workflow_run.event == 'pull_request' &&
       github.event.workflow_run.conclusion == 'success'
     strategy:
@@ -18,6 +19,32 @@ jobs:
         benchmark:
           - profile
           - profile_persistence
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      id-token: write
+      pull-requests: read
+    concurrency:
+      group: hotpath-relay-${{ matrix.benchmark }}-${{ github.event.workflow_run.head_repository.full_name }}-${{ github.event.workflow_run.head_branch }}
+      cancel-in-progress: true
+    steps:
+      - uses: hotpath-rs/hotpath-relay@d40b0e465fa852b0c1f4e33989140d11d7b2742c # v1.0.0
+        with:
+          benchmark: ${{ matrix.benchmark }}
+          artifact_name: hotpath-report-${{ matrix.benchmark }}
+          report_file: report.json
+
+  relay-criterion:
+    if: >-
+      github.event.workflow_run.name == 'Criterion profile' &&
+      github.event.workflow_run.event == 'pull_request' &&
+      github.event.workflow_run.conclusion == 'success'
+    strategy:
+      fail-fast: false
+      matrix:
+        benchmark:
+          - criterion-ping_pong-pairs-1
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -137,6 +137,11 @@ profile-persistence:
 profile-persistence-alloc *features:
     cargo run --release -p tellus --example profile_persistence --features "hotpath-alloc,persistence,persistence-in-memory {{ features }}"
 
+# One Criterion benchmark as a hotpath report: the routine of `id` runs exactly `iterations` times.
+# Example: just criterion-profile messaging flood/bounded 10
+criterion-profile bench id iterations *features:
+    HOTPATH_CRITERION_ITERATIONS={{ iterations }} cargo bench -p tellus --bench {{ bench }} --features "hotpath-alloc {{ features }}" -- --test --exact "{{ id }}"
+
 profile-alloc-gate out="target/hotpath/profile.json":
     #!/usr/bin/env bash
     set -euo pipefail
