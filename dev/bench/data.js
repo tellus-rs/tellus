@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793569034873,
+  "lastUpdate": 1793569036947,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -13309,6 +13309,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160204,
             "range": "± 6710",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0432953cdca39e22f9077dae84dcf199f7aeb3f7",
+          "message": "Merge pull request #232 from tellus-rs/ci/fix-222\n\nci: sweep the timers rows of the messaging bench",
+          "timestamp": "2026-11-01T22:30:21+01:00",
+          "tree_id": "c45215d83048582ebd070f467b04df2d8a27eb74",
+          "url": "https://github.com/tellus-rs/tellus/commit/0432953cdca39e22f9077dae84dcf199f7aeb3f7"
+        },
+        "date": 1793569036307,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2268791,
+            "range": "± 101172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2263202,
+            "range": "± 123331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 893447,
+            "range": "± 36976",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109764,
+            "range": "± 4831",
             "unit": "ns/iter"
           }
         ]
