@@ -183,7 +183,7 @@ where
 }
 
 /// The task future of the event-sourced run loop, expanded once per [TimerMode] with its wait
-/// macro, so the untimed loop is exactly the loop without timers.
+/// macro.
 macro_rules! run_event_sourced {
     (
         $next_incoming:ident,

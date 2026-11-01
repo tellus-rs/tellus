@@ -76,9 +76,9 @@ impl<M> Clone for Topic<M> {
 /// subscribes a child it can stop instead.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, if the reference names an actor on another node, if the
-/// registration does not fit one frame, or if this node already holds the most registrations or
-/// bytes of registrations one node may.
+/// Fails if the endpoint is not started, if the reference names an actor on another node, or if
+/// the registration does not fit one frame. Fails as well if this node already holds the most
+/// registrations or bytes of registrations one node may.
 pub fn subscribe<M>(topic: &Topic<M>, actor_ref: &ActorRef<M>) -> Result<(), RegisterError>
 where
     M: Manifest + DeserializeOwned + Send + 'static,
@@ -91,7 +91,7 @@ where
 ///
 /// This node's own subscribers are told first, each a clone of the message. The message is
 /// serialized only if a subscriber lives on another node, and then once. One frame carries it to
-/// all subscribers of one node which share a stream towards it. That frame is split into several
+/// all subscribers of one node which share a stream toward it. That frame is split into several
 /// only to stay within the maximum frame size. A message whose serialization takes a
 /// [ReplyTo](crate::ReplyTo) goes to the first subscriber on another node alone, since a reply
 /// destination is serialized only once. Every further subscriber on another node is told
@@ -101,12 +101,12 @@ where
 /// makes the message a dead letter for each subscriber its frame names. The answer counts the
 /// subscribers told, not the messages delivered. A subscriber whose registration has not reached
 /// this node yet is not told. [receptionist::settled] says whether every Up member has delivered
-/// a first snapshot at all; a later registration still in transit is invisible to it and to this
+/// a first snapshot at all. A later registration still in transit is invisible to it and to this
 /// answer alike.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, or if the name is registered on an Up member only for
-/// other message types.
+/// Fails if the endpoint is not started, or if no Up member has the topic subscribed for `M` but
+/// one has it subscribed for another message type.
 ///
 /// [ActorRef::tell]: crate::ActorRef::tell
 /// [receptionist::settled]: crate::cluster::receptionist::settled
@@ -459,7 +459,7 @@ mod tests {
         ids
     }
 
-    /// Every frame queued so far, with the address it is queued towards and its data stream.
+    /// Every frame queued so far, with the address it is queued toward and its data stream.
     fn queued(
         dial_requests: &Receiver<DialRequest>,
     ) -> Vec<(SocketAddr, Option<usize>, Frame<'static>)> {

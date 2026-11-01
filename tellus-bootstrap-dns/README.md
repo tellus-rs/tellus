@@ -9,9 +9,10 @@ retry. A stale target and a transient failure are indistinguishable to the resol
 skipped alike. A partial view does settle, so a target failing throughout the settle window shrinks
 the universe the formation provider counts its majority against.
 
-The default resolver keeps no response cache: bootstrap polls DNS to see nodes come and go, and a
-cached answer would hide a node registered after it for the record's TTL, e.g. a sibling restarting
-a moment later than this one. A resolver given via `with_resolver` is used as configured.
+The default resolver keeps no response cache. Bootstrap polls DNS every `resolve_interval` of its
+`BootstrapConfig` to see nodes come and go, and a cached answer would hide a node registered after
+it for the record's TTL, e.g. a sibling restarting a moment later than this one. A resolver given
+via `with_resolver` is used as configured.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
 lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
@@ -95,9 +96,9 @@ Two of the service's settings must be exactly as shown:
   readiness probe gated on cluster membership would hide every pod from every other one, so no
   node could ever settle: bootstrap would be waiting for itself.
 - `ipFamilyPolicy: SingleStack` with `ipFamilies: [ IPv4 ]`, because a dual stack service answers
-  both A and AAAA for every pod. Bootstrap counts addresses, so each node would count twice
-  towards `min_peers` and towards the formation provider's majority, and only one of the two
-  addresses is the one the node advertises; a peer dialed at any other address is refused.
+  both A and AAAA for every pod. Bootstrap counts addresses, so each node would count twice toward
+  `min_peers` and toward the formation provider's majority, and only one of the two addresses is the
+  one the node advertises; a peer dialed at any other address is refused.
 
 The address a node advertises comes from the downward API, paired with the same port:
 
@@ -118,9 +119,9 @@ address with an IPv6 host parses. The variable name is the one
 another loader wants its own.
 
 Size `bootstrap.min_peers` to the replica count for a fixed size cluster and lower for an elastic
-one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what each choice
-costs.
-Whether the pods come from a StatefulSet or a Deployment makes no difference to discovery.
+one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what
+each choice costs. Whether the pods come from a StatefulSet or a Deployment makes no difference to
+discovery.
 
 Where the readiness rule is in the way, [tellus-bootstrap-k8s](../tellus-bootstrap-k8s) lists the
 pods through the Kubernetes API instead, which sees a pod as soon as it has an address.

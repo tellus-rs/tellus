@@ -86,10 +86,11 @@ async fn test_missing_name() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// An in-process DNS server on an ephemeral UDP port, authoritative for `tellus.test.`: three SRV
-/// records under `_tellus._udp`, two with per-node ports and resolvable targets and one with a
-/// target without records, one SRV record under `_stale._udp` with only that target, A records
-/// for the resolvable targets, and a two address A record set for the fixed port mode.
+/// An in-process DNS server on an ephemeral UDP port, authoritative for `tellus.test.`. It serves
+/// three SRV records under `_tellus._udp`, two with per-node ports and resolvable targets and one
+/// with a target without records. It also serves one SRV record under `_stale._udp` with only that
+/// target, A records for the resolvable targets, and a two address A record set for the fixed port
+/// mode.
 async fn spawn_dns() -> anyhow::Result<SocketAddr> {
     let origin = Name::from_str("tellus.test.")?;
     let authority = InMemoryZoneHandler::<TokioRuntimeProvider>::empty(

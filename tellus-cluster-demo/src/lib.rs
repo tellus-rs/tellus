@@ -1,5 +1,5 @@
-//! The JSON a demo node's and the verifier's HTTP APIs answer. The cluster state itself is served
-//! by `tellus-cluster-inspect`, mounted by every node at `/inspect`.
+//! The JSON a demo node's and the verifier's HTTP APIs answer. Every node also mounts
+//! `tellus-cluster-inspect` at `/inspect`, which serves the cluster state as well.
 
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
@@ -160,7 +160,7 @@ pub enum VerifierEvent {
         value: String,
     },
 
-    /// A verification ran at the end of a quiet window.
+    /// A verification ran once the chaos agent had been quiet for the verifier's settle time.
     Verified {
         /// How many violations it found.
         violations: usize,

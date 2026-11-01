@@ -119,7 +119,7 @@ impl<M> ActorRef<M> {
             Sink::Local(mailbox_handle) => mailbox_handle,
 
             #[cfg(feature = "cluster")]
-            Sink::Remote(_) => unreachable!("a host only tells entities it spawned itself"),
+            Sink::Remote(_) => unreachable!("only references to self or a spawned child get here"),
         }
     }
 

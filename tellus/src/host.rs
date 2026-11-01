@@ -25,9 +25,10 @@ use tracing::{debug, warn};
 /// its children, hence stopping it stops them first.
 ///
 /// Passivation frees the memory of entities nobody talks to, which is only safe where their state
-/// is recoverable or disposable, e.g. for event sourced entities. A message routed through the
-/// host while an entity stops is buffered, up to the configured buffer, and delivered to its next
-/// incarnation.
+/// is recoverable or disposable, e.g. for event-sourced entities. A message routed through the
+/// host while it passivates an entity is buffered, up to the configured buffer, and delivered to
+/// the entity's next incarnation. A message routed to an entity which stopped on its own is a dead
+/// letter until the host sees it terminate.
 pub struct Host<K, M, S, P> {
     idle_timeout: Option<Duration>,
     buffer: NonZeroUsize,
@@ -234,7 +235,7 @@ pub struct HostEnvelope<K, M> {
 }
 
 /// Configuration for a [Host]. The default keeps every entity alive and buffers at most 64
-/// messages per entity while it stops.
+/// messages per entity while the host passivates it.
 #[derive(Debug, Clone, Copy)]
 pub struct HostConfig {
     idle_timeout: Option<Duration>,
@@ -243,7 +244,7 @@ pub struct HostConfig {
 
 impl HostConfig {
     /// A configuration keeping every entity alive, buffering at most `buffer` messages per entity
-    /// while it stops.
+    /// while the host passivates it.
     pub fn new(buffer: NonZeroUsize) -> Self {
         Self {
             idle_timeout: None,
@@ -251,9 +252,12 @@ impl HostConfig {
         }
     }
 
-    /// This configuration, passivating an entity to which no message has been routed through the
-    /// host for `idle_timeout`. A zero duration would have the host sweeping without pause; leave
-    /// the idle timeout unset to keep every entity alive instead.
+    /// This configuration, passivating entities to which no message has been routed through the
+    /// host for a while. The host checks for idle entities once per `idle_timeout` and passivates
+    /// each entity found idle for at least that long. If an entity's mailbox refuses the passivate
+    /// message, the host retries at the next check, which can repeat indefinitely. Scheduling and
+    /// messages queued for the host can delay a check, too. A zero duration would have the host
+    /// checking without pause; leave the idle timeout unset to keep every entity alive instead.
     ///
     /// # Errors
     /// Fails if `idle_timeout` is zero.

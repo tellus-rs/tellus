@@ -123,9 +123,9 @@ impl Reachability {
         })
     }
 
-    /// Merges peer statements, parking the ones naming a node which is not a member here yet:
-    /// their observer resends only to its own peers, so a record which arrived through a relay has
-    /// no other way back once the relay has deduplicated it.
+    /// Merges peer statements, parking the ones naming a node which is not a member here yet. Their
+    /// observer resends only to its own peers, so a record which arrived through a relay has no
+    /// other way back once the relay has deduplicated it.
     pub(crate) fn merge(&self, records: &[WireReachability], up: &HashSet<NodeId>) {
         let mut state = lock(&self.state);
         for record in records.iter().copied() {
@@ -446,7 +446,7 @@ mod tests {
     }
 
     /// In an A | B,C,D split with a broken B-C edge, A's statements name a member outside the
-    /// component of B, C and D, so only B-C is a broken link there; at A, whose component is A
+    /// component of B, C and D, so only B-C is a broken link there. At A, whose component is A
     /// alone, there is none. A member which is not Up is never an end either.
     #[test]
     fn a_link_with_an_end_outside_the_component_is_not_broken() {
@@ -626,7 +626,7 @@ mod tests {
         assert!(lock(&table.state).pending.is_empty());
     }
 
-    /// A newer recovery wins even if an old failure is relayed afterwards.
+    /// A newer recovery wins even if an old failure is relayed afterward.
     #[test]
     fn versions_make_recovery_monotone() {
         let nodes = [node(1), node(2)];

@@ -157,7 +157,7 @@ impl<M> TestContext<M, Timed> {
     /// replaced since. Unlike the run loop, it does so for the whole batch at once rather than item
     /// by item between calls to [Actor::receive]. A cancel made while handling an earlier item
     /// hence cannot drop a timer behind it. To test that, pass the earlier item to
-    /// [Actor::receive] directly and take the incoming afterwards.
+    /// [Actor::receive] directly and take the incoming afterward.
     ///
     /// [Actor::receive]: crate::Actor::receive
     pub fn take_incoming(&mut self) -> Vec<Incoming<M>> {

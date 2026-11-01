@@ -69,17 +69,14 @@ impl QuicTransport {
     /// verification accepts every dialer; see [QuicTransport::mutual_tls] and docs/cluster.md
     /// on what an unauthenticated dialer can do.
     ///
-    /// The transport config is taken by value and used for both directions, so this transport
-    /// owns it outright rather than mutating one the caller may share with another endpoint. A
-    /// keep-alive below QUIC's default idle timeout is set on it, so a lane between tellus nodes
-    /// is not silently closed between messages, and so is a concurrent unidirectional stream
-    /// limit of [QuicTransport::DATA_STREAMS].
+    /// The transport config is used for both directions. A keep-alive below QUIC's default idle
+    /// timeout is set on it, so a lane between tellus nodes is not silently closed between
+    /// messages, and so is a concurrent unidirectional stream limit of
+    /// [QuicTransport::DATA_STREAMS].
     ///
     /// # Errors
-    /// Fails if `server_name` is neither a valid DNS name nor an IP address, so a name no
-    /// certificate could be issued for is refused here rather than at the first connection
-    /// attempt. Fails as well if the UDP socket cannot be bound to `bind_addr` or no Tokio runtime
-    /// is running.
+    /// Fails if `server_name` is neither a valid DNS name nor an IP address, if the UDP socket
+    /// cannot be bound to `bind_addr`, or if no Tokio runtime is running.
     pub fn new(
         bind_addr: SocketAddr,
         mut server_config: ServerConfig,
@@ -120,7 +117,7 @@ impl QuicTransport {
     }
 
     /// A transport for mutual TLS from a [QuicConfig], the production configuration read from a
-    /// config file: the certificate chain, the private key and the roots are read as PEM from the
+    /// config file. The certificate chain, the private key and the roots are read as PEM from the
     /// paths it names, then given to [QuicTransport::mutual_tls], which also chooses the crypto
     /// provider. A relative path resolves against the process working directory.
     ///
@@ -162,7 +159,7 @@ impl QuicTransport {
     /// authority. A dialer without such a certificate cannot complete a connection, so it reaches
     /// neither the protocol nor the failure detection of any node.
     ///
-    /// The certificates are read once: renewing them takes a restart.
+    /// The certificates are fixed for the transport's lifetime: renewing them takes a restart.
     ///
     /// The TLS configuration uses rustls's process default [CryptoProvider] if the application has
     /// installed one, otherwise ring's default provider; it never installs a process default
@@ -170,9 +167,10 @@ impl QuicTransport {
     /// provider lacking either makes this fail; it does not fall back to ring.
     ///
     /// # Errors
-    /// Fails if the client certificate verifier cannot be built from `roots`, if the crypto
-    /// provider offers no TLS 1.3 cipher suite, if `cert_chain` and `key` do not make a valid TLS
-    /// configuration, if that configuration cannot back QUIC, or if [QuicTransport::new] fails.
+    /// Fails if the client certificate verifier cannot be built from `roots`, or if the crypto
+    /// provider offers no TLS 1.3 cipher suite. Fails as well if `cert_chain` and `key` do not make
+    /// a valid TLS configuration, if that configuration cannot back QUIC, or if
+    /// [QuicTransport::new] fails.
     pub fn mutual_tls(
         bind_addr: SocketAddr,
         cert_chain: Vec<CertificateDer<'static>>,
@@ -1006,7 +1004,7 @@ mod tests {
     }
 
     /// A mutual TLS pair with certificates from one authority round trips, a dialer without a
-    /// certificate is refused during the handshake, and the server keeps accepting afterwards.
+    /// certificate is refused during the handshake, and the server keeps accepting afterward.
     #[tokio::test]
     async fn mutual_tls_refuses_strangers_and_round_trips() {
         let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));

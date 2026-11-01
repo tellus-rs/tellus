@@ -1,4 +1,4 @@
-/// The id persists across messages, as the specification requires.
+/// A server-sent events parser; an `id` field applies to every later message until the next one.
 #[derive(Debug, Default)]
 pub struct SseParser {
     buffer: Vec<u8>,

@@ -11,15 +11,15 @@ use tokio::sync::{
     watch,
 };
 
-/// A versioned snapshot of this node's view of the cluster: the member list, the Up members this
-/// node currently derives as unreachable and the broken links between reachable members, all of
-/// the same version, plus this node's own identity, the ID of its cluster and the other clusters
-/// seen at discovered addresses. Published on every change through [cluster_state]; consumers
-/// derive from the current value, never from a history, since a receiver which reads less often
-/// than the state changes skips intermediate values. With the `serde` feature it serializes as
-/// `{version, this: {addr, incarnation}, cluster, members, unreachable, broken_links: [{observer,
-/// subject}], foreign_clusters: [{addr, cluster}]}`, the cluster `null` while there is none; a
-/// deserialized value is a mirror which nothing in tellus consumes.
+/// A versioned snapshot of this node's view of the cluster. It holds the member list, the Up
+/// members this node currently derives as unreachable and the broken links between reachable
+/// members, all of the same version. It also holds this node's own identity, the ID of its cluster
+/// and the other clusters seen at discovered addresses. Published on every change through
+/// [cluster_state]; consumers derive from the current value, never from a history, since a receiver
+/// which reads less often than the state changes skips intermediate values. With the `serde`
+/// feature it serializes as `{version, this: {addr, incarnation}, cluster, members, unreachable,
+/// broken_links: [{observer, subject}], foreign_clusters: [{addr, cluster}]}`, the cluster `null`
+/// while there is none; a deserialized value is a mirror which nothing in tellus consumes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ClusterState {
@@ -63,11 +63,11 @@ impl ClusterState {
             .find(|member| member.node() == self.this)
     }
 
-    /// The transitions from `previous` to this value, member by member: an entry which appeared
+    /// The transitions from `previous` to this value, member by member. An entry which appeared
     /// is [Up](Transition::Up), [Left](Transition::Left) or [Down](Transition::Down) by its state,
-    /// a Left or Down entry which disappeared is [Forgotten](Transition::Forgotten), an entry
+    /// and a Left or Down entry which disappeared is [Forgotten](Transition::Forgotten). An entry
     /// which entered the unreachable set is [Unreachable](Transition::Unreachable), and one which
-    /// left it while still listed Up is [Reachable](Transition::Reachable); one downed instead
+    /// left it while still listed Up is [Reachable](Transition::Reachable). One downed instead
     /// yields its Down alone, as does a Left entry downed. A restart is the predecessor's Down
     /// beside the successor's Up.
     pub fn diff(&self, previous: &ClusterState) -> Vec<Transition> {
@@ -299,7 +299,7 @@ pub struct Changes {
 }
 
 impl Changes {
-    /// The next change; pending forever once the endpoint is gone.
+    /// The next change. Cancel safe: dropping the future before it completes consumes no change.
     pub async fn next(&mut self) -> Change {
         loop {
             if let Some(change) = self.queued.pop_front() {

@@ -36,9 +36,10 @@ impl NodeId {
     }
 }
 
-/// The identity of one process at an address, opaque: it can be compared, ordered and printed,
-/// nothing else. Ordered, since UUIDv7 is time based: the younger incarnation on a host compares
-/// greater, which is what resolves two incarnations at one address towards the restart.
+/// The identity of one process at an address, opaque: it can be compared, ordered, hashed,
+/// printed and serialized, nothing else. Ordered, since UUIDv7 is time based: the younger
+/// incarnation on a host compares greater, which is what resolves two incarnations at one address
+/// toward the restart.
 #[derive(
     Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -51,8 +52,8 @@ impl Incarnation {
 }
 
 /// The identity of one cluster, minted when a node forms it and adopted by every node joining
-/// it, opaque: it can be compared, ordered and printed, nothing else. Ordered, since UUIDv7 is
-/// time based: a cluster formed later compares greater.
+/// it, opaque: it can be compared, ordered, hashed, printed and serialized, nothing else.
+/// Ordered, since UUIDv7 is time based: a cluster formed later compares greater.
 #[derive(
     Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
 )]
@@ -78,7 +79,7 @@ mod tests {
         assert_ne!(earlier.to_string(), later.to_string());
     }
 
-    /// Supersession resolves towards the younger incarnation by comparing incarnations, so one
+    /// Supersession resolves toward the younger incarnation by comparing incarnations, so one
     /// minted later must compare greater.
     #[test]
     fn a_younger_incarnation_compares_greater() {

@@ -124,8 +124,9 @@ where
     }
 
     /// Watch another actor, i.e. receive an [Incoming::Terminated] signal once that actor has
-    /// terminated. If it has already terminated, the signal is received right away. Watching an
-    /// already watched actor again has no effect: the signal is delivered once.
+    /// terminated. If it has already terminated, the signal is enqueued at once, behind the items
+    /// already queued for this actor. Watching an already watched actor again has no effect: the
+    /// signal is delivered once.
     ///
     /// The signal is ordered behind all messages the other actor has delivered to this actor.
     /// Receiving it hence proves that this actor has seen every message from the other one it will
@@ -162,7 +163,7 @@ where
 
     /// Stop watching another actor: no terminated signal for it will be received anymore, even if
     /// it has already terminated and the signal is already enqueued. Unwatching an actor which is
-    /// not watched, has no effect.
+    /// not watched has no effect.
     pub fn unwatch<N>(&self, other: &ActorRef<N>) {
         if let Some(watched) = self.watched.borrow_mut().remove(&other.actor_id()) {
             unwatch(self.self_ref().actor_id(), other.actor_id(), watched);
@@ -328,9 +329,7 @@ impl Display for PanicPayload<'_> {
 macro_rules! next_incoming {
     ($actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
-            // Flume's receive future does not participate in Tokio's cooperative budget. Charge
-            // one unit explicitly, so an actor whose mailbox never runs empty still yields to the
-            // other tasks on its worker.
+            // Flume's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
 
             let incoming = tokio::select! {
@@ -368,9 +367,7 @@ macro_rules! next_incoming {
 macro_rules! next_incoming_timed {
     ($actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
-            // Flume's receive future does not participate in Tokio's cooperative budget. Charge
-            // one unit explicitly, so an actor whose mailbox never runs empty still yields to the
-            // other tasks on its worker.
+            // Flume's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
 
             let armed = $context.timer_armed();
@@ -436,8 +433,7 @@ pub(crate) use next_incoming;
 #[cfg(feature = "persistence")]
 pub(crate) use next_incoming_timed;
 
-/// The task future of a run loop, expanded once per [TimerMode] with its wait macro, so the
-/// untimed loop is exactly the loop without timers.
+/// The task future of a run loop, expanded once per [TimerMode] with its wait macro.
 macro_rules! run_actor {
     (
         $next_incoming:ident,
@@ -709,11 +705,8 @@ where
     }
 }
 
-/// The state must already have been dropped by the caller. The queued messages are moved out and
-/// the channel is dropped before their destructors run: senders observe the termination while the
-/// children still stop, and none of these destructors runs between drain and drop. A concurrent
-/// sender can still enqueue in that window; flume retains such a message until its last sender
-/// drops, which this sequence does not prevent. The messages of the timers are dropped right after
+/// The state must already have been dropped by the caller. The channel is dropped before the
+/// destructors of the queued messages run, and the messages of the timers are dropped right after
 /// the queued ones. The watchers are signaled last, since a terminated signal must prove that the
 /// actor's destructors have run.
 #[cfg_attr(feature = "hotpath", hotpath::measure)]

@@ -1,10 +1,10 @@
 //! The verifier of the cluster demo: it polls every node and the load balancer. Once the chaos
 //! agent has been quiet long enough for the cluster to have recovered, it asserts what the cluster
-//! promises: no two members have disjoint Up sets (a split brain), every node is a member, every
-//! node sees every other as Up with none unreachable and no broken link, every node's receptionist
-//! resolves every worker and is settled, every node resolves every subscriber of the event topic
-//! and has heard from every node lately, and every node can still message every other. A load
-//! balancer outage longer than the configured one is a violation at any time.
+//! promises. No two members have disjoint Up sets (a split brain), every node is a member, and
+//! every node sees every other as Up with none unreachable and no broken link. Every node's
+//! receptionist resolves every worker and is settled. Every node resolves every subscriber of the
+//! event topic and has heard from every node lately, and every node can still message every other.
+//! A load balancer outage longer than the configured one is a violation at any time.
 //!
 //! Violations are logged, counted and served at `/violations`, which keeps the latest 200; the
 //! process keeps running, since this is a forever test rather than a run to completion.
@@ -586,8 +586,7 @@ fn client() -> Client {
         .expect("HTTP client")
 }
 
-/// Seconds since the epoch: the verifier's own log lines carry the readable timestamp, this
-/// only has to order the violations served at `/violations`.
+/// Seconds since the epoch.
 fn now() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)

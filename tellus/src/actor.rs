@@ -32,7 +32,7 @@ pub trait Actor {
     /// Returning an error or panicking makes the configured [SupervisionStrategy] decide what
     /// happens. This holds for the first initialization at spawn as well as on the restart path.
     /// Under [SupervisionStrategy::Stop] the actor stops and its watchers get an
-    /// [Incoming::Terminated] signal, under [SupervisionStrategy::Restart] the initialization is
+    /// [Incoming::Terminated] signal. Under [SupervisionStrategy::Restart] the initialization is
     /// retried with backoff.
     ///
     /// # Errors
@@ -58,7 +58,7 @@ pub trait Actor {
     ///
     /// # Deadlock
     /// An actor cannot be stopped while `receive` is running, which also blocks a Tokio worker. A
-    /// `receive` which never completes hence keeps all ancestors from terminating. For long running
+    /// `receive` which never completes hence keeps all ancestors from terminating. For long-running
     /// or blocking work use [ActorContext::pipe_to_self].
     ///
     /// [SupervisionStrategy]: crate::SupervisionStrategy

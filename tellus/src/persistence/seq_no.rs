@@ -16,12 +16,12 @@ impl SeqNo {
         Self(seq_no)
     }
 
-    /// The position directly after this one.
+    /// The position directly after this one, saturating at `u64::MAX`.
     pub fn succ(self) -> Self {
         Self(self.0.saturating_add(1))
     }
 
-    /// The position after appending `count` events at this one.
+    /// The position after appending `count` events at this one, saturating at `u64::MAX`.
     pub fn advanced_by(self, count: usize) -> Self {
         Self(self.0.saturating_add(count as u64))
     }

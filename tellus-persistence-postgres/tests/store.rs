@@ -46,8 +46,8 @@ async fn snapshot_with_event_tail() {
     tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
 }
 
-/// Applying the embedded migrations again must be a no-op, since the store is also used against
-/// externally managed schemas.
+/// Applying the embedded migrations to an already migrated schema succeeds, so an application can
+/// run them at every start.
 #[tokio::test]
 async fn migrations_are_idempotent() {
     let (store, _container) = store().await;

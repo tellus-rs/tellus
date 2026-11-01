@@ -31,7 +31,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 static TRACING: Once = Once::new();
 
 /// Replay reconstructs the live state: a counter increments across single and atomic multi-event
-/// effects, persists a final event while stopping, and a second incarnation over the same store
+/// effects and persists a final event while stopping. A second incarnation over the same store
 /// answers with the same count, seeded by `init` and folded by `apply` alone.
 #[tokio::test]
 async fn replay_reconstructs_the_live_state() {
@@ -152,7 +152,7 @@ async fn snapshots_skip_init_and_shorten_replay() {
     );
 }
 
-/// Recovery pages through the stream across the replay page of 512 events: a stream of exactly
+/// Recovery pages through the stream across the replay page of 512 events. A stream of exactly
 /// one page, of one event more and of exactly two pages each recover in full, and every full page
 /// is followed by a read of the next one.
 #[tokio::test]
@@ -670,9 +670,9 @@ async fn terminated_signals_reach_handle() {
     assert_terminates(system, "system did not terminate").await;
 }
 
-/// After `unwatch` no terminated signal is received, even if it is already enqueued: the child
-/// says bye through the shared FIFO right before stopping, the watcher unwatches on the bye, and
-/// the signal queued behind it is dropped before `handle` ever sees it.
+/// After `unwatch` no terminated signal is received, even if it is already enqueued. The child
+/// says bye through the shared FIFO right before stopping, and the watcher unwatches on the bye.
+/// The signal queued behind it is dropped before `handle` ever sees it.
 #[tokio::test]
 async fn unwatch_drops_an_enqueued_terminated_signal() {
     let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();

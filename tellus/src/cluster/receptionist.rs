@@ -39,13 +39,13 @@ pub(crate) const MAX_SNAPSHOT_BYTES: usize = 64 << 20;
 /// Every actor registered under the key on every Up member, this node included, as far as
 /// their registrations have reached this node. Answered locally, from the replicated sets: no
 /// frame is sent, and a member's registrations are visible once its snapshot has arrived here,
-/// never before and never after that member is Down. An empty answer means that no
+/// never before and never after that member is Left or Down. An empty answer means that no
 /// registration under the key has reached this node yet, which [settled] tells apart from a
 /// complete answer.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, or if the name is registered on an Up member only for
-/// other message types.
+/// Fails if the endpoint is not started, or if no Up member has the name registered for `M` but
+/// one has it registered for another message type.
 pub fn lookup<M>(key: &Key<M>) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
     M: Manifest + Serialize + Send + 'static,
@@ -58,7 +58,7 @@ where
 /// as its registrations have reached this node. Answered locally like [lookup], so an address no
 /// Up member advertises and a member whose snapshot has not arrived here both answer an empty
 /// set. [settled] only says that a snapshot from every Up member has arrived, not that it is
-/// current: a registration or termination after that snapshot shows up with the next
+/// current. A registration or termination after that snapshot shows up with the next
 /// replication, so a caller waiting for a specific actor polls this or uses [subscribe]. This
 /// node's own address answers its own registrations.
 ///
@@ -87,9 +87,9 @@ where
 }
 
 /// Whether every member Up at the given [cluster state](crate::cluster::cluster_state) version
-/// has delivered its registrations to this node: `true` iff `version` is the current one and a
-/// snapshot from every member Up in it, other than this node, is what lookups answer from. A
-/// later version is judged on its own: a member's snapshot is evicted with its Down, and a member
+/// has delivered its registrations to this node. It is `true` iff `version` is the current one
+/// and lookups answer from a snapshot of every member Up in it, other than this node. A later
+/// version is judged on its own: a member's snapshot is evicted with its node death, and a member
 /// Up in a later version has to deliver one first.
 ///
 /// # Errors
@@ -145,7 +145,8 @@ pub struct Subscription<M> {
 }
 
 impl<M> Subscription<M> {
-    /// Resolves once the set has changed since the last [current](Subscription::current).
+    /// Resolves once the set has changed since the last [current](Subscription::current). Cancel
+    /// safe: dropping the future before it completes marks no change as seen.
     pub async fn changed(&mut self) {
         if self.listing.changed().await.is_err() {
             pending::<()>().await;
@@ -156,7 +157,8 @@ impl<M> Subscription<M> {
     /// the set as seen, so [changed](Subscription::changed) waits for the next change.
     ///
     /// # Errors
-    /// Fails if the name is registered on an Up member only for other message types.
+    /// Fails if no Up member has the name registered for `M` but one has it registered for
+    /// another message type.
     pub fn current(&mut self) -> Result<Vec<ActorRef<M>>, ReceptionistError>
     where
         M: Manifest + Serialize + Send + 'static,
@@ -182,7 +184,8 @@ pub enum ReceptionistError {
     #[error("remoting endpoint not started")]
     EndpointNotStarted,
 
-    /// The name is registered on an Up member, but only for other message types.
+    /// No Up member has the name registered for the requested message type, but one has it
+    /// registered for another.
     #[error("name registered for another message type")]
     TypeMismatch,
 }
@@ -223,8 +226,8 @@ impl Receptionist {
         replicas.settlement
     }
 
-    /// Call after the watch was written, never while it is held: the state's channel send and
-    /// the verdict for it happen under the replicas lock alone, so no verdict for the new version
+    /// Call after the watch was written, never while it is held. The state's channel send and the
+    /// verdict for it happen under the replicas lock alone, so no verdict for the new version
     /// precedes the state and no verdict for the old one follows it.
     pub(crate) fn publish(&self, state: ClusterState) {
         let mut replicas = lock(&self.replicas);

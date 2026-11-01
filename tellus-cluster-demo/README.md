@@ -3,11 +3,11 @@
 A five node tellus cluster which runs forever under continuous chaos, on Docker Compose or on
 Kubernetes.
 
-The nodes find each other through seed discovery, DNS or the Kubernetes API, a chaos agent
-crashes one node, stops one with SIGTERM or partitions two nodes off the other three every cycle, a load balancer in
-front of the nodes stays available throughout, and a verifier holds the cluster to its promises
-once every quiet window. Both stacks run the same two binaries, node and verifier, and prove the
-same things; what differs is who starts the containers and how a fault is injected.
+The nodes find each other through seed discovery, DNS or the Kubernetes API. Every cycle a chaos
+agent crashes one node, stops one with SIGTERM or partitions two nodes off the other three. A load
+balancer in front of the nodes stays available throughout, and a verifier holds the cluster to its
+promises once every quiet window. Both stacks run the same two binaries, node and verifier, and
+prove the same things; what differs is who starts the containers and how a fault is injected.
 
 ## Running it
 
@@ -27,7 +27,7 @@ just logs-cluster-demo-k8s       # follow all logs, or `just logs-cluster-demo-k
 just stop-cluster-demo-k8s       # delete the cluster
 ```
 
-It needs `kind` v0.33 or later and `kubectl`.
+It needs Docker, `kind` v0.33 or later and `kubectl`.
 
 Whichever stack runs, the same recipes look at it, since both serve the same ports:
 
@@ -53,16 +53,16 @@ on the host, not in a container, and connects to those ports.
   split.
 - `http://localhost:8091/inspect/cluster` through `http://localhost:8095/inspect/cluster` and
   `/inspect/events`: [`tellus-cluster-inspect`](../tellus-cluster-inspect), mounted as any
-  application would mount it: the node's `ClusterState` with every member's incarnation, its
-  lifecycle and the receptionist's verdict as a snapshot, and every change of them as a
-  server-sent events stream, resumable and never silently skipping; `curl -N` shows it, the
-  [terminal observer](../tellus-cluster-demo-tui) renders it.
+  application would mount it. It serves the node's `ClusterState` with every member's incarnation,
+  its lifecycle and the receptionist's verdict as a snapshot, and every change of them as a
+  server-sent events stream, resumable and never silently skipping. `curl -N` shows the stream, and
+  the [terminal observer](../tellus-cluster-demo-tui) renders it.
 - `http://localhost:8091/events` through `http://localhost:8095/events`: the demo's own stream
   beside it: the node's phase and the receptionist's counts for the demo's keys.
 - `http://localhost:8081/status`: the verifier's counters, including the load balancer's
   availability and the current chaos action.
-- `http://localhost:8081/violations`: the latest 200 of what the cluster failed to deliver, empty
-  on a healthy run; `/status` counts all of them.
+- `http://localhost:8081/violations`: the latest 200 violations the verifier found, empty on a
+  healthy run; `/status` counts all of them.
 - `http://localhost:8081/events`: the verifier's stream: chaos transitions as it observes them,
   verdicts, violations and load balancer availability changes.
 
@@ -80,42 +80,41 @@ Under Docker Compose:
   `ClusterState::diff` yields between consecutive versions of `cluster::changes`, and serves the
   demo's own facts, phase and receptionist counts, as a small stream of its own at `/events`.
 - **The load balancer** (`Caddyfile`), health checking all five nodes every two seconds, so a
-  self-downed or leaving node leaves the rotation before it stops answering, and retrying a
-  failed request on another node for up to two seconds, so a crashed node costs no request.
-- **The chaos agent** (`chaos.sh`), rotating through three faults: `pumba kill` for a crash,
-  `pumba netem loss --percent 100` in both directions between the two sides for a partition, and
-  a SIGTERM for a clean departure, which the cluster handles through `leave` rather than through
-  failure detection. A container signaled through the Docker API counts as manually stopped, so
-  no restart policy brings it back and the agent starts it again itself. It names the fault it is
-  running in a state file, which lets the verifier tell a legitimate disagreement from a
-  violation.
-- **The verifier** (`src/bin/verifier.rs`), polling the load balancer twice a second, and once
-  per quiet window checking that every node is a member, that every node sees all five as Up,
-  none of them as unreachable and no broken link between them, that every node's receptionist
-  resolves all five workers and is settled at the version it shows, that every node resolves all
-  five subscribers of the event topic and has received an event from every node within the last
-  seconds, and that every node can message every other one. Before those it checks for a split
-  brain, two members whose Up sets do not overlap, and checks nothing further if it finds one. A
-  load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. It
-  serves its own `/events` stream as well: the chaos transitions it reads from the state file,
-  each verdict, each violation and each change of the load balancer's availability.
+  self-downed or leaving node leaves the rotation before it stops answering. It retries a failed
+  request on another node for up to two seconds, so a crashed node costs no request.
+- **The chaos agent** (`chaos.sh`), rotating through three faults, one per cycle: `pumba kill` for a
+  crash, `pumba netem loss --percent 100` in both directions between the two sides for a partition,
+  and a SIGTERM for a clean departure. The cluster handles the departure through `leave` rather than
+  through failure detection. A container signaled through the Docker API counts as manually stopped,
+  so no restart policy brings it back and the agent starts it again itself. It names the fault it is
+  running in a state file, which lets the verifier tell a legitimate disagreement from a violation.
+- **The verifier** (`src/bin/verifier.rs`), polling the load balancer twice a second. Once per quiet
+  window it checks that every node is a member, that every node sees all five as Up, none of them as
+  unreachable and no broken link between them. It also checks that every node's receptionist
+  resolves all five workers and is settled at the version it shows. Every node must resolve all five
+  subscribers of the event topic and have received an event from every node within the last three
+  seconds, and every node must be able to message every other one. Before those it checks for a
+  split brain, two members whose Up sets do not overlap, and checks nothing further if it finds one.
+  A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. It
+  serves its own `/events` stream as well: the chaos transitions it reads from the state file, each
+  verdict, each violation and each change of the load balancer's availability.
 
-On Kubernetes the nodes are a StatefulSet of five behind a headless service, the load balancer is
-a service rather than Caddy, a partition is a pair of NetworkPolicies the agent switches on by
+On Kubernetes the nodes are a StatefulSet of five behind a headless service, and the load balancer
+is a service rather than Caddy. A partition is a pair of NetworkPolicies the agent switches on by
 labeling pods, and the agent shares a pod with the verifier so the two still meet over a file.
-[`k8s/README.md`](k8s/README.md) explains each of those, including why the nodes are a
-StatefulSet when a Deployment is the natural default. The verifier is the same binary with the
-same configuration, and is unaware of which stack it runs on.
+[`k8s/README.md`](k8s/README.md) explains each of those, including why the nodes are a StatefulSet
+when a Deployment is the natural default. The verifier is the same binary with the same
+configuration, and is unaware of which stack it runs on.
 
 ## What it shows
 
 - **Bootstrap**: five nodes starting at once resolve each other through seed discovery (one DNS
-  name, or the pods of a label selector on Kubernetes), none of them admits anyone until one forms,
+  name, or the pods of a label selector on Kubernetes). None of them admits anyone until one forms,
   the lowest address does, and the rest join it. A restarted node rejoins through the same
   discovery.
-- **Departure versus death**: a node stopped with SIGTERM announces its departure and is downed
-  within a gossip round, while a killed one has to be detected. Each rotation hence shows both
-  ways out of a cluster next to each other.
+- **Departure versus death**: a node stopped with SIGTERM announces its departure, and the other
+  members list it as Left within a gossip round. A killed one has to be detected and ends Down. Each
+  rotation hence shows both ways out of a cluster next to each other.
 - **Crash detection**: a killed node's silence is noticed by the survivors' failure detectors and
   turned into a death by their downing providers, each on its own clock.
 - **Partition resolution**: the majority downs the minority, and the minority, which cannot know
@@ -126,18 +125,18 @@ same configuration, and is unaware of which stack it runs on.
 - **Availability under all of it**: the load balancer answers throughout, which is the point of a
   cluster whose parts keep failing.
 - **Cluster state as a value**: every node follows `cluster::changes` and logs each transition
-  `ClusterState::diff` yields between two consecutive versions, a member joining, going Down,
-  becoming unreachable or reachable again, each named by address and incarnation; `GET /cluster`
-  answers the whole state, and `/inspect/events` streams every version of it. Versions increase
-  by one per observed change, and a subscriber that fell behind is told of the gap and handed the
-  current state instead of a transition it never saw.
+  `ClusterState::diff` yields between two consecutive versions, a member joining, leaving, going
+  Down, becoming unreachable or reachable again, each named by address and incarnation.
+  `GET /cluster` answers the whole state, and `/inspect/events` streams every version of it.
+  Versions increase by one per observed change, and a subscriber that fell behind is told of the gap
+  and handed the current state instead of a transition it never saw.
 - **Receptionist**: every node resolves all five workers by key without asking anyone, from the
   registrations the members replicated to it, and reports whether its directory is complete for
   its cluster state version; `GET /cluster` answers both. The probes resolve each member's worker
   from the same directory, at that member's address, before asking it.
 - **Pub-sub**: every node publishes an event a second to a topic every node's listener subscribes
-  to, and `GET /cluster` answers how many subscribers it resolves and whom it heard from within
-  the last seconds. A quiet window hence shows fan-out reaching every member, a restarted one
+  to, and `GET /cluster` answers how many subscribers it resolves and whom it heard from within the
+  last three seconds. A quiet window hence shows fan-out reaching every member, a restarted one
   included, through the subscription which replicated after its rejoin.
 
 ## Configuration
@@ -166,10 +165,10 @@ The relevant settings are:
   and not an elastic one.
 - `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS` and `RECOVERY_SECS` (chaos), `DEAD_SECS` (chaos,
   Compose only), `FLUSH_SETTLE_SECS` (chaos, Kubernetes only), and `TELLUS_SETTLE_SECS` and
-  `TELLUS_LB_OUTAGE_SECS` (verifier): the verifier only checks after the chaos agent has been
-  quiet for the settle window, so the settle window must stay below the quiet window, and the
-  quiet window must be long enough for a restarted node to have rejoined. A load balancer outage
-  longer than `TELLUS_LB_OUTAGE_SECS` is a violation.
+  `TELLUS_LB_OUTAGE_SECS` (verifier): the verifier only checks after the chaos agent has been quiet
+  for the settle window. So the settle window must stay below the quiet window, and the quiet window
+  must be long enough for a restarted node to have rejoined. A load balancer outage longer than
+  `TELLUS_LB_OUTAGE_SECS` is a violation.
 - The `endpoint` section spells out the pluggable provider defaults, the adaptive phi accrual
   detector and `KeepMajority` after ten seconds of unreachability, so what the demo shows is what
   a deployment gets, visibly rather than implied. Every other `EndpointConfig` field keeps its
@@ -187,20 +186,19 @@ The relevant settings are:
   one to its IP SANs.
 - Both the nodes and the containers pumba touches need `NET_ADMIN` and `iproute2`, since pumba
   installs its tc rules inside the target container. Compose only.
-- A node self-downing mid-partition exits, so its container restarts without pumba's rules, which
-  ends that node's side of the partition early. The fault is a container level one, and the
-  demo's timings are sized so the interesting part has happened by then. Compose only: on
-  Kubernetes the fault is a label on the pod, which a restarting container keeps.
+- A node which downs itself mid-partition exits, so its container restarts without pumba's rules,
+  which ends that node's side of the partition early. The fault is a container level one, and the
+  demo's timings are sized so the interesting part has happened by then. Compose only: on Kubernetes
+  the fault is a label on the pod, which a restarting container keeps.
 - The kind cluster lowers the kubelet's restart backoff to two seconds. A node downed by the
   cluster exits on purpose, which the kubelet cannot tell from a crash loop, and its default
   backoff of up to five minutes would stall a demo whose point is continuous chaos. A real
   deployment keeps the default, so a self-downed node there is away for longer.
-- The Kubernetes partition cuts with a NetworkPolicy, which drops what crosses rather than losing
-  it in transit the way pumba's packet loss does. It is a cleaner fault than the network gives
-  you, and it is why the Compose stack keeps pumba rather than being retired. A policy also only
-  applies to connections which are new when it arrives, so the fault needs a privileged helper to
-  forget the cluster's existing flows before it cuts anything at all; `k8s/README.md` explains
-  that, and it is the most surprising thing in this demo.
+- The Kubernetes partition cuts with a NetworkPolicy, which drops what crosses rather than losing it
+  in transit the way pumba's packet loss does. It is a cleaner fault than the network gives you, and
+  it is why the Compose stack keeps pumba rather than being retired. A policy also only applies to
+  connections which are new when it arrives, so the fault needs a privileged helper to forget the
+  cluster's existing flows before it cuts anything at all. `k8s/README.md` explains that.
 - The Kubernetes crash fault has no fixed dead window. Deleting a pod means the StatefulSet
   replaces it at once, and the replacement usually comes up on a different address, so the
   crashed member is gone for good and has to be detected before the cluster can converge. Compose

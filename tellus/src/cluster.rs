@@ -26,14 +26,14 @@
 //! (default: [KeepMajority]) decides when an unreachable member is *downed*, i.e. dead for good.
 //! Downing fails the member's pending asks, signals its watchers and refuses its incarnation from
 //! then on, so a downed node rejoins only as a restarted process. The default resolves a partition
-//! towards one side: the majority downs what it cannot reach, the minority downs itself. Under
+//! toward one side: the majority downs what it cannot reach, the minority downs itself. Under
 //! mutual TLS a peer's certificate must cover the address it advertises, by a `tellus://<ip:port>`
 //! URI SAN or, without one, by an IP SAN.
 //!
-//! Bootstrap goes through joining and discovery. [register] names a local actor under a [Key],
-//! which names the message type by its [Manifest]. The [receptionist] is the directory over those
-//! registrations, replicated to every Up member, so nothing but a name and the seed addresses has
-//! to be configured. [receptionist::lookup] answers every actor under a key on every Up member and
+//! Actors find each other by name. [register] names a local actor under a [Key], which names the
+//! message type by its [Manifest]. The [receptionist] is the directory over those registrations,
+//! replicated to every Up member, so nothing but a name and the seed addresses has to be
+//! configured. [receptionist::lookup] answers every actor under a key on every Up member and
 //! [receptionist::lookup_at] those on the member at one address, both without a round trip.
 //! [receptionist::subscribe] watches that set, and [receptionist::settled] tells whether every
 //! member's registrations have arrived. [pubsub] is that directory used for fan-out:
@@ -60,9 +60,9 @@
 //! Remote [ActorRef::tell] keeps the local contract: fire-and-forget, at-most-once, undeliverable
 //! messages are dropped and logged as dead letters. This covers an unreachable or crashed node, a
 //! full outbound queue and a payload which cannot be decoded on the receiving node. Messages from
-//! one sender to one target arrive in send order. All messages towards one actor ride one ordered
-//! stream of the lane towards its node, enqueued at tell time and delivered to mailboxes in arrival
-//! order, so a large message only delays frames towards actors sharing its stream. A lost
+//! one sender to one target arrive in send order. All messages toward one actor ride one ordered
+//! stream of the lane toward its node, enqueued at tell time and delivered to mailboxes in arrival
+//! order, so a large message only delays frames toward actors sharing its stream. A lost
 //! connection is reconnected with backoff; frames queued while the link is down flush in order,
 //! so per-sender FIFO across reconnects is "in order, with gaps".
 //!
@@ -82,7 +82,7 @@
 //! per-sender FIFO with the responder's other messages to the asker. The `NoReply` detection
 //! weakens to best-effort. A reply destination dropped on another node is signaled
 //! fire-and-forget, and so is a request dead-lettered undecoded on the receiving node. Downing a
-//! member fails the asks pending towards it. See docs/cluster.md for the exact contract.
+//! member fails the asks pending toward it. See docs/cluster.md for the exact contract.
 //!
 //! [Codec]: crate::cluster::codec::Codec
 //! [DowningProvider]: crate::cluster::downing::DowningProvider

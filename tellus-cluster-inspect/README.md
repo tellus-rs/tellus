@@ -25,12 +25,12 @@ cargo add tellus-cluster-inspect
 
 ## What it serves
 
-- `GET /cluster`: a `Snapshot` as JSON: the node's current `ClusterState` (version, this node's
-  address and incarnation, the cluster ID, the member list with each member's address, incarnation
-  and state, the unreachable set, the broken links between reachable members and the addresses
-  seen in foreign clusters), the endpoint's `Lifecycle` (`unformed`, `formed`, `downed`) and the
-  receptionist's `Settlement` (whether every Up member's registrations are what lookups answer
-  from, with the version it judged).
+- `GET /cluster`: a `Snapshot` as JSON, in three parts. The node's current `ClusterState` holds the
+  version, this node's address and incarnation, the cluster ID and the member list with each
+  member's address, incarnation and state. It also holds the unreachable set, the broken links
+  between reachable members and the addresses seen in foreign clusters. The endpoint's `Lifecycle`
+  is `unformed`, `formed` or `downed`, and the receptionist's `Settlement` says whether every Up
+  member's registrations are what lookups answer from, with the version it judged.
 - `GET /events`: a stream of server-sent events, one `Stamped` JSON object per message with the
   unix milliseconds it was recorded at and an `InspectEvent` tagged by `kind`:
   - `hello` opens every stream: the log's `started_at` and whether the stream `resumed` right
@@ -40,12 +40,13 @@ cargo add tellus-cluster-inspect
   - `gap`: the node's own subscriber fell behind by `dropped` changes; the current state and
     verdict follow.
 
-  These are the items of `tellus::cluster::changes`, recorded in publication order. Within the
-  live part of a stream, a verdict never precedes the state it judges and versions are consecutive
-  except across a gap. A recovery (see below) can start its history at any retained item, and the
-  current state and verdict it ends with repeat the latest ones. A client therefore derives no
-  transitions from a state of the version it already holds, but still takes that state as its
-  baseline; only an older version is ignored.
+  These are the items of `tellus::cluster::changes`, recorded in publication order. Within the live
+  part of a stream, a verdict never precedes the state it judges and versions are consecutive except
+  across a gap. A recovery (see below) can start its history at any retained item, and the current
+  state and verdict it ends with repeat the latest ones. A client therefore derives no transitions
+  from a state of the version it already holds, but still takes that state as its baseline; only an
+  older version is ignored. `Snapshot`, `Stamped` and `InspectEvent` implement `Deserialize` as well
+  as `Serialize`, so a Rust client reads both endpoints with the same types.
 
 ## Resuming
 
@@ -70,5 +71,5 @@ Its reconnect then gets `resumed: false` and a recovery.
 ## Events module
 
 The bounded log behind `GET /events` is public as `tellus_cluster_inspect::events` (`EventLog`,
-`Cursor`, `sse` and `last_event_id`), so an application can serve a resumable stream of its own
-events the same way.
+`Replay`, `Stamped`, `Cursor`, `InvalidCursor`, `sse`, `last_event_id` and `now_millis`), so an
+application can serve a resumable stream of its own events the same way.

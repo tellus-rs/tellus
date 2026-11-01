@@ -17,7 +17,7 @@ use tellus::{
 const TIMEOUT: Duration = Duration::from_secs(5);
 const IDLE_TIMEOUT: Duration = Duration::from_millis(50);
 
-/// An event sourced entity recovers its state when the next message spawns it afresh, so
+/// An event-sourced entity recovers its state when the next message spawns it afresh, so
 /// passivating it costs the replay and nothing else; the paused clock auto-advances, so the test
 /// does not actually wait.
 #[tokio::test(start_paused = true)]

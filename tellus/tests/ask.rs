@@ -177,7 +177,7 @@ async fn reply_to_delivers_the_reply_as_a_message() {
 }
 
 /// Replying after the asker has terminated drops the reply as a dead letter: the responder
-/// neither panics nor stops, proven by it still answering a probe afterwards. The coordinator
+/// neither panics nor stops, proven by it still answering a probe afterward. The coordinator
 /// replies only after the asker's terminated signal, which is sent after its mailbox is gone.
 #[tokio::test]
 async fn a_reply_after_the_asker_terminated_is_a_dead_letter() {

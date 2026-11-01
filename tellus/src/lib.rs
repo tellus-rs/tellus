@@ -33,11 +33,11 @@
 //!
 //! A [Host] hosts entities: actors identified by a key, spawned on the first [HostEnvelope] for
 //! that key and, if configured, passivated once no message has been routed to them through the
-//! host for a while, with messages routed meanwhile buffered for their next incarnation. See
-//! `docs/actors.md` in the repository for the guarantees.
+//! host for a while. Messages routed to an entity while the host passivates it are buffered for
+//! its next incarnation. See `docs/actors.md` in the repository for the guarantees.
 //!
 //! With the `persistence` feature, actors can be event sourced by implementing [EventSourced] and
-//! spawning via [ActorContext::spawn_event_sourced] or [ActorSystem::event_sourced]: commands are
+//! spawning via [ActorContext::spawn_event_sourced] or [ActorSystem::event_sourced]. Commands are
 //! handled against the current state, the events they cause are appended to an [EventStore] and
 //! only then applied, and the state is recovered by replay, optionally shortcut by snapshots. See
 //! `docs/persistence.md` in the repository for the guarantees. The `persistence-tests` feature

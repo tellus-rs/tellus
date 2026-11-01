@@ -2,12 +2,12 @@ use crate::{ActorSystem, actor_system, cluster::endpoint};
 use std::net::SocketAddr;
 use thiserror::Error;
 
-/// The report of a departure: the address of every peer connection [leave] drained, split into
-/// those which acknowledged the drain, those which did not, e.g. since the connection ended first
-/// or a stream failed, and those which had not acknowledged it within
-/// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout). Each list is in address
-/// order. A peer acknowledges once every frame queued for it reached its delivery path, a local
-/// mailbox or a logged dead letter; that does not mean any actor handled the frames.
+/// The report of a departure: the address of every peer connection [leave] drained. They are split
+/// into those which acknowledged the drain and those which did not, e.g. since the connection ended
+/// first or a stream failed. A third list holds those which had not acknowledged it within
+/// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout). Each list is in address order. A
+/// peer acknowledges once every frame queued for it reached its delivery path, a local mailbox or a
+/// logged dead letter; that does not mean any actor handled the frames.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Departure {
     pub(crate) acknowledged: Vec<SocketAddr>,
@@ -73,10 +73,10 @@ pub enum LeaveError {
 /// [leave] the cluster: what a process calls instead of [ActorSystem::terminated] where that
 /// system's lifetime is the node's lifetime.
 ///
-/// Waiting first is what makes the real terminated signals the normal case: once a root has
+/// Waiting first is what makes the real terminated signals the normal case. Once a root has
 /// terminated, every local actor has run its destructors and every terminated signal owed to a
-/// remote watcher is already queued, so the departure is queued behind them and the drain covers
-/// both. See docs/cluster.md for the race which remains.
+/// remote watcher is already queued. The departure is hence queued behind them, and the drain
+/// covers both. See docs/cluster.md for the race which remains.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node was downed before it began to leave, if the
@@ -109,10 +109,10 @@ where
 /// node which merely fell silent. A downing of this node ends that wait at once.
 ///
 /// Leaving is terminal for this process, exactly as being downed is: nothing is sent or admitted
-/// afterwards, [join](crate::cluster::join) fails as [Downed](crate::cluster::JoinError::Downed),
+/// afterward, [join](crate::cluster::join) fails as [Downed](crate::cluster::JoinError::Downed),
 /// and only a restarted process, with a fresh incarnation, rejoins, so the caller is expected to
 /// exit. A call made while another is leaving waits for that departure and returns its report,
-/// as does leaving again afterwards.
+/// as does leaving again afterward.
 ///
 /// A departure which ends without a report, e.g. since it panicked, fails safe. This node is
 /// downed and every connection severed, and only then does any caller learn of it. Every call,

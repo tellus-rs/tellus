@@ -7,16 +7,16 @@
 //! view.
 //!
 //! Then one node is killed, and at the end the survivors are stopped, which shows the two ways
-//! out of a cluster side by side: a node which vanishes is detected, a node which shuts down
+//! out of a cluster side by side. A node which vanishes is detected, while a node which shuts down
 //! cleanly announces its own departure and is listed Left within a gossip round.
 //!
 //! What happens when a node is killed? Its silence is noticed by the other nodes' failure
 //! detectors. Their downing providers turn that into a decision (three of four members are still
 //! reachable, so the majority downs the fourth). The death watch the observer holds on an actor of
 //! the killed node fires a synthesized terminated signal, the weaker of the two tiers of the watch
-//! contract (see docs/cluster.md): it promises not that the actor's destructors ran, but that
+//! contract (see docs/cluster.md). It promises not that the actor's destructors ran, but that
 //! nothing from it is ever delivered here again. Each survivor downs the node on its own clock,
-//! which the observer again proves by asking them, and the cluster keeps working afterwards: the
+//! which the observer again proves by asking them, and the cluster keeps working afterward: the
 //! survivors are stopped through ordinary messages.
 //!
 //! All four nodes run as separate processes, because a process hosts one remoting endpoint.
@@ -344,9 +344,7 @@ fn spawn_member_node(addr: SocketAddr, seed: SocketAddr) -> anyhow::Result<Child
 }
 
 /// The directory answers empty until the node there has joined and its registrations have been
-/// replicated here, which is the ordinary bootstrap answer worth retrying. One deadline bounds
-/// the whole loop: the interval only paces the retries, so the two cannot multiply into a second,
-/// accidental budget.
+/// replicated here, so the lookup is retried until one deadline passes.
 async fn lookup_worker(addr: SocketAddr) -> anyhow::Result<ActorRef<Job>> {
     let key = Key::new(WORKER_KEY);
 

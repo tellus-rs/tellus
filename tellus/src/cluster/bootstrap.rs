@@ -66,7 +66,7 @@ impl SeedDiscovery for FixedSeeds {
 }
 
 /// Configuration for [bootstrap], deserializable with the `serde` feature: every field falls
-/// back to its `DEFAULT_*` constant, and the formation provider is chosen by name, see
+/// back to its value in [BootstrapConfig::new], and the formation provider is chosen by name, see
 /// docs/cluster.md.
 #[derive(Debug, Clone)]
 #[cfg_attr(
@@ -209,7 +209,7 @@ pub enum BootstrapError {
     #[error("remoting endpoint not started")]
     EndpointNotStarted,
 
-    /// This node's incarnation has been downed by the cluster; only a restarted process, with a
+    /// This node's incarnation has been downed or has left; only a restarted process, with a
     /// fresh incarnation, can join again, so the caller should exit.
     #[error("this node has been downed")]
     Downed,
@@ -222,13 +222,13 @@ pub enum BootstrapError {
 /// formation decision waits for the view to settle: the resolved set, this node's own address
 /// included, must have held at least [min_peers](BootstrapConfig::min_peers) addresses unchanged
 /// for [settle](BootstrapConfig::settle). When no address of a settled view is a member of a
-/// cluster, the [FormationProvider] decides whether this node forms one, by default at the lowest
-/// address of the universe once a majority of it is known to be no cluster. Requiring a majority
-/// keeps a partitioned node from coming back as a cluster of its own. With `min_peers` of one, a
-/// resolved set holding nothing but this node's own address forms a cluster of one under
-/// [Majority]. A provider's decline is logged at warn level when it differs from the previous
-/// decline, at debug level otherwise, and so is a formation the endpoint refuses since a join
-/// attempt ended ambiguously, see [FormError::JoinAmbiguous].
+/// cluster, the [FormationProvider] decides whether this node forms one. By default it forms at
+/// the lowest address of the universe once a majority of it is known to be no cluster. Requiring a
+/// majority keeps a partitioned node from coming back as a cluster of its own. With `min_peers` of
+/// one, a resolved set holding nothing but this node's own address forms a cluster of one under
+/// [Majority]. A provider's decline is logged at warn level when it or the universe differs from
+/// the previous decline, at debug level otherwise. A formation the endpoint refuses since a join
+/// attempt ended ambiguously is logged the same way, see [FormError::JoinAmbiguous].
 ///
 /// Returns at once when this node is already a member, e.g. through [form](crate::cluster::form),
 /// and otherwise once this node is a member. Membership owns failure detection and downing from
@@ -246,7 +246,7 @@ pub enum BootstrapError {
 ///
 /// # Errors
 /// Fails if the configuration is invalid, if the endpoint is not started, or if this node has
-/// been downed, which can only happen when rejoining after a down.
+/// been downed or has left.
 pub async fn bootstrap<D>(discovery: D, config: BootstrapConfig) -> Result<(), BootstrapError>
 where
     D: SeedDiscovery,
@@ -303,7 +303,7 @@ where
         if endpoint.downed() {
             return Err(BootstrapError::Downed);
         }
-        // Nothing left to decide, and joining a cluster this node is in churns its lanes.
+        // Nothing left to decide, and rejoining churns this node's lane to the seed.
         if endpoint.formed() {
             return Ok(());
         }
@@ -651,8 +651,8 @@ mod tests {
     }
 
     /// A held round proves a cluster exists at the seed, so it is only observed and never a
-    /// formation decision, and so is a round which saw a cluster or nothing but foreign ones;
-    /// only a round no seed admitted is.
+    /// formation decision. The same holds for a round which saw a cluster or nothing but foreign
+    /// ones. Only a round no seed admitted is a formation decision.
     #[test]
     fn only_a_round_without_admission_is_a_formation_decision() {
         let universe = BTreeSet::from([addr(1), addr(2), addr(3)]);

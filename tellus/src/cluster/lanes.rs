@@ -36,7 +36,7 @@ pub(crate) enum LaneError {
     #[error("node {0} unreachable")]
     NodeUnreachable(NodeId),
 
-    #[error("outbound queue towards node {0} full")]
+    #[error("outbound queue toward node {0} full")]
     OutboundQueueFull(NodeId),
 }
 
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(control_rx.len(), 4);
     }
 
-    /// A send towards a peer whose lane is gone is unreachable, not full: the two failures steer
+    /// A send toward a peer whose lane is gone is unreachable, not full: the two failures steer
     /// different callers, dead-lettering versus giving up on the node.
     #[test]
     fn a_disconnected_lane_reports_the_node_unreachable() {

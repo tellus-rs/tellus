@@ -105,7 +105,7 @@ async fn restart_stops_children_before_reinitializing() {
 
 /// Watches survive a restart: the restarted state receives the terminated signal for a child the
 /// previous incarnation watched. The restart itself stops that child, so the signal is enqueued
-/// while the actor has no state at all and must still be delivered afterwards.
+/// while the actor has no state at all and must still be delivered afterward.
 #[tokio::test]
 async fn watches_survive_a_restart() {
     let (signaled_tx, mut signaled_rx) = mpsc::channel(1);

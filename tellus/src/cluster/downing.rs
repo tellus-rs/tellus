@@ -1,6 +1,6 @@
 //! Deciding when an unreachable member is dead for good: [DowningProvider] is what
 //! [EndpointConfig::downing_provider](crate::cluster::EndpointConfig::downing_provider) takes, the
-//! default is [KeepMajority], which resolves a partition towards its majority side.
+//! default is [KeepMajority], which resolves a partition toward its majority side.
 
 use crate::cluster::membership::{Member, MemberState};
 use std::{
@@ -13,7 +13,7 @@ use std::{
 pub type DowningProviderFactory = Arc<dyn Fn() -> Box<dyn DowningProvider> + Send + Sync>;
 
 /// Decides when an unreachable member is downed, polled once per heartbeat interval; the default
-/// is [KeepMajority]. A provider sees the whole membership, so it can resolve a split brain by
+/// is [KeepMajority]. A provider sees the whole membership, so it can resolve a partition by
 /// downing this node rather than the members it cannot reach; see docs/cluster.md on what a
 /// partition does to the guarantees either way.
 pub trait DowningProvider
@@ -59,7 +59,7 @@ pub enum Downing {
     SelfDown,
 }
 
-/// The default [DowningProvider], resolving a split brain. Once every unreachable member has been
+/// The default [DowningProvider], resolving a partition. Once every unreachable member has been
 /// unreachable for the given duration, the side seeing a strict majority of the Up members downs
 /// the others and any other side downs itself. An even split goes to the side holding the member
 /// with the lowest address. At most one side of a partition survives, provided the member lists

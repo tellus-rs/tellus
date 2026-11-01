@@ -11,13 +11,13 @@
 //! A pod contributes exactly one address, the primary one Kubernetes reports as `status.podIP`
 //! and repeats as the first entry of `status.podIPs`. Bootstrap counts addresses, so a dual stack
 //! pod counted twice would inflate both `min_peers` and the majority a
-//! [FormationProvider](tellus::cluster::formation::FormationProvider) counts, and only the
-//! primary address is the one a node advertises and is hence admitted at. Terminating and
-//! finished pods are left out, since they would inflate that count as well, while a pod which is
-//! merely still starting stays in: an unreachable seed is retried, a missing one shrinks the
-//! universe. An unparsable address and a missing or unusable named port skip that pod and are
-//! logged; a pod without an address yet is skipped silently. A listing yielding no address at all
-//! remains an error, so bootstrap does not settle on this node alone.
+//! [FormationProvider](tellus::cluster::formation::FormationProvider) counts. And only the primary
+//! address is the one a node advertises, hence the one it is admitted at. Terminating and finished
+//! pods are left out, since they would inflate that count as well. A pod which is merely still
+//! starting stays in: an unreachable seed is retried, a missing one shrinks the universe. An
+//! unparsable address and a missing or unusable named port skip that pod and are logged; a pod
+//! without an address yet is skipped silently. A listing yielding no address at all remains an
+//! error, so bootstrap does not settle on this node alone.
 
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
@@ -49,8 +49,7 @@ impl K8sSeeds {
     ///
     /// # Errors
     /// Fails if the given [Pods] carry a blank selector, namespace or port name, which is
-    /// decided before any client is built, or if there is no client configuration to build one
-    /// from.
+    /// decided before any client is built, or if there is no usable client configuration.
     pub async fn new(pods: Pods) -> Result<Self, K8sSeedsError> {
         validate(&pods)?;
 
@@ -153,8 +152,8 @@ pub enum InvalidPods {
     BlankPortName,
 }
 
-/// The seeds cannot be discovered; [bootstrap](tellus::cluster::bootstrap) logs and retries the
-/// failures, [InvalidPods] cannot occur there, since it is refused by the constructor.
+/// The seeds cannot be discovered. [bootstrap](tellus::cluster::bootstrap) logs and retries the
+/// failures; [InvalidPods] cannot occur there, since both constructors refuse it.
 #[derive(Debug, Error)]
 pub enum K8sSeedsError {
     /// The given [Pods] are invalid.
@@ -166,8 +165,9 @@ pub enum K8sSeedsError {
     #[error(transparent)]
     Client(#[from] kube::Error),
 
-    /// No pod contributed an address: none matched the selector, none has one yet, all are
-    /// terminating or finished, or none carries the configured port name.
+    /// No pod contributed an address: none matched the selector, or every one is terminating or
+    /// finished, has no address yet, has an unparsable one, or lacks a usable container port of the
+    /// configured name.
     #[error("no pod address for selector {selector}")]
     NoAddresses {
         /// The selector which was listed.
@@ -303,7 +303,7 @@ mod tests {
     use crate::{Pods, Port};
     use std::num::NonZeroU16;
 
-    /// The documented config form, which a config file provides: either port is one key, a zero
+    /// The documented config form, which a config file provides: either port is one key. A zero
     /// port is unrepresentable rather than resolving to unusable addresses, and a selector
     /// matching every pod in the namespace is refused rather than seeding from strangers.
     #[test]

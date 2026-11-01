@@ -1,5 +1,5 @@
 //! Step 6 of the getting started tutorial: devices fail on invalid readings and restart under the
-//! `Restart` supervision strategy, losing their last reading but keeping their mailbox; a device
+//! `Restart` supervision strategy, losing their last reading but keeping their mailbox. A device
 //! failing more than `MAX_RESTARTS` times in a row stops, and the group's watch prunes it.
 //!
 //! The average is printed to stdout and tellus logs the failures and restarts to stderr; the log

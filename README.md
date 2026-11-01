@@ -60,11 +60,11 @@ cargo add tellus
   server, answering a snapshot of the node's cluster view and streaming every change of it as
   server-sent events, resumable and never silently skipping. See
   [its README](tellus-cluster-inspect/README.md).
-- [`tellus-cluster-demo`](tellus-cluster-demo): a five node cluster running forever under
-  continuous chaos, managed by Docker Compose or in kind: DNS or Kubernetes seed discovery,
-  crashes, departures and network partitions once a cycle, and a verifier checking convergence,
-  cross-node messaging, receptionist settlement and the pub-sub publisher set in every quiet
-  window. See [its README](tellus-cluster-demo/README.md).
+- [`tellus-cluster-demo`](tellus-cluster-demo): a five node cluster running forever under continuous
+  chaos, managed by Docker Compose or in kind. Its nodes find each other through DNS or Kubernetes
+  seed discovery, and every cycle brings one fault: a crash, a departure or a network partition. A
+  verifier checks convergence, cross-node messaging, receptionist settlement and the pub-sub
+  publisher set in every quiet window. See [its README](tellus-cluster-demo/README.md).
 - [`tellus-cluster-demo-tui`](tellus-cluster-demo-tui): a terminal observer for the running demo,
   fed by the nodes' and the verifier's event streams: the membership matrix as each node sees it,
   a merged timeline of transitions and chaos, and the verifier's verdicts. See
@@ -78,15 +78,15 @@ cargo add tellus
 
 tellus is under active development and its API is still settling.
 
-Both extensions have landed: event-sourced actors and serializable actor refs, so actors on
-different nodes message and watch each other through the same API. Both are feature gated behind
-`persistence` and `cluster`, so tellus stays purely local and free of their dependencies by
-default. Remoting is clustered: nodes join through seed addresses, the member list is gossiped, and
-a pluggable failure detector plus downing provider replace vanished members with synthesized
-terminated signals. A node shutting down cleanly announces its own departure. Every node publishes
-its view of the cluster as a versioned value. A receptionist answers every actor registered under a
-name across the cluster, and pub-sub tells every subscriber of a topic the publisher's receptionist
-currently resolves.
+Two extensions have landed, each behind a feature: `persistence` adds event-sourced actors, and
+`cluster` makes actor refs serializable, so actors on different nodes message and watch each other
+through the same API. Both features are off by default, so tellus stays purely local and free of
+their dependencies. Remoting is clustered: nodes join through seed addresses, the member list is
+gossiped, and a pluggable failure detector plus downing provider down vanished members. The watchers
+of a downed member's actors get synthesized terminated signals. A node shutting down cleanly
+announces its own departure. Every node publishes its view of the cluster as a versioned value. A
+receptionist answers every actor registered under a name across the cluster, and pub-sub tells every
+subscriber of a topic the publisher's receptionist currently resolves.
 
 The open items on the remoting side are listed under the limitations in
 [docs/cluster.md](docs/cluster.md). What comes next, the cluster singleton and then sharding, is
@@ -109,13 +109,18 @@ How tellus works internally, top-down with links into the implementation:
 
 The [justfile](justfile) defines the usual tasks; `just all` runs check, fmt, lint, test and doc.
 Check and lint run across the feature combinations, test across the ones which run tests
-differently. Formatting uses nightly rustfmt options, which `just fmt` takes care of. The
-`tellus-persistence-postgres` tests run against a container, so `just all` needs Docker.
+differently. Check, lint and test need `cargo-hack`, and formatting needs `taplo` for TOML.
+Formatting runs on nightly, since the rustfmt configuration uses unstable options, and so does doc.
+The justfile picks the nightly of the date `rustc --version` reports, which must be installed. The
+`tellus-persistence-postgres` tests run against a container, so `just all` needs Docker. The
+benchmark report, the allocation checks and the demo's status recipes also use `jq`.
 
 Regression benchmarks (criterion) run with `just bench`: messaging, and persistence against an
 in-memory store. On CI every pull request is benchmarked against its merge base and the comparison
-posted as a comment, and every commit on `main` is tracked over time on the [benchmark
-dashboard][benchmarks-url].
+posted as a comment. That comparison measures one stack position and is a hint, never a verdict; the
+performance gate is the [stack sweep](.github/stack-sweep/README.md), started by the label `sweep`
+(messaging) or `sweep-persistence` (persistence) on a pull request. Every commit on `main` is
+tracked over time on the [benchmark dashboard][benchmarks-url].
 
 For a local before and after, `just bench-save <baseline>` and `just bench-compare <baseline>` (and
 the `bench-persistence-` pair) compare against a saved baseline. `just profile` and `just

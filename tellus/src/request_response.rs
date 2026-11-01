@@ -29,9 +29,11 @@ impl<M> ActorRef<M> {
     ///
     /// # Errors
     /// Fails if the request cannot be sent: the actor's bounded mailbox is full or the actor has
-    /// terminated, and with the `cluster` feature also if the request cannot be encoded, if it
-    /// exceeds the maximum frame size, or if the endpoint is not started. Once sent, fails if no
-    /// reply can arrive anymore, or if `within` elapses without one.
+    /// terminated. With the `cluster` feature it also fails if the endpoint is not started, if the
+    /// outbound queue toward a remote actor's node is full or if that node is unreachable. It
+    /// fails as well if the request cannot be encoded or exceeds the maximum frame size. Once the
+    /// request is sent, it fails if no reply can arrive anymore, or if `within` elapses without
+    /// one.
     ///
     /// [ActorSystem::terminated]: crate::ActorSystem::terminated
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -181,23 +183,26 @@ impl<R> ReplyTo<R> {
 /// The possible failures of [ActorRef::ask].
 #[derive(Debug, Error)]
 pub enum AskError {
-    /// The request was not sent: the actor's bounded mailbox was full.
+    /// The request was not sent: the actor's bounded mailbox was full. For a remote actor, the
+    /// outbound queue toward its node was full.
     #[error("mailbox full")]
     MailboxFull,
 
-    /// The request was not sent: the actor has terminated.
+    /// The request was not sent: the actor has terminated. For a remote actor, its node was
+    /// unreachable.
     #[error("actor terminated")]
     ActorTerminated,
 
-    /// The request was not sent: it could not be encoded. Unlike [AskError::MailboxFull] this
-    /// does not pass: the same request fails the same way again.
+    /// The request was not sent: it could not be encoded. Unlike [AskError::MailboxFull], this
+    /// failure is permanent: the same request fails the same way again.
     #[cfg(feature = "cluster")]
     #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
     #[error("request not encodable")]
     NotEncodable(#[source] cluster::codec::CodecError),
 
-    /// The request was not sent: encoded it exceeds the maximum frame size. Unlike
-    /// [AskError::MailboxFull] this does not pass: the same request fails the same way again.
+    /// The request was not sent: its encoding exceeds the maximum frame size. Unlike
+    /// [AskError::MailboxFull], this failure is permanent: the same request fails the same way
+    /// again.
     #[cfg(feature = "cluster")]
     #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
     #[error("encoded request of {len} bytes exceeds the maximum frame size of {max} bytes")]

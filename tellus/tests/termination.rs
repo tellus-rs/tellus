@@ -76,7 +76,7 @@ async fn stopping_a_system_terminates_the_tree_bottom_up() {
 }
 
 /// An outside stop takes effect between messages, never inside one: a message being handled when
-/// it arrives is finished first, and the tree terminates afterwards.
+/// it arrives is finished first, and the tree terminates afterward.
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_a_system_finishes_the_message_being_handled() {
     let (probe_tx, mut probe_rx) = mpsc::channel(2);
@@ -230,9 +230,9 @@ async fn panicking_state_destructor_still_signals_watchers() {
     assert_terminates(system).await;
 }
 
-/// A state destructor panicking while `receive` returns an error is contained: the state is
-/// dropped on receive's normal return path, so the panic starts a fresh unwind which is caught
-/// like any other panic and fed to supervision, here the default `Stop`. Only a destructor
+/// A state destructor panicking while `receive` returns an error is contained. The state is
+/// dropped on receive's normal return path, so the panic starts a fresh unwind. It is caught like
+/// any other panic and fed to supervision, here the default `Stop`. Only a destructor
 /// panicking during the unwind of a panicking `receive` or `init` aborts the process, as anywhere
 /// in Rust.
 #[tokio::test]
@@ -285,8 +285,8 @@ async fn panicking_error_display_and_drop_are_contained_separately() {
     }
 }
 
-/// Without a subscriber which formats fields, a logged error is never formatted.
 async fn assert_failure_terminates(failing: Failing, panics: Panics) -> Arc<Hooks> {
+    // A logged error is formatted only under a subscriber which formats fields!
     init_tracing();
 
     let hooks = Arc::new(Hooks::new(panics));

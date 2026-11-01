@@ -141,10 +141,11 @@ impl ConnectError {
         )
     }
 
-    /// A refusal as an unknown member is retryable: gossip may not have reached it yet. So is
-    /// one from a node which is no cluster yet, until it has formed one or joined one, one holding
-    /// back joins, until its unreachable member is reachable again or downed, and so is a dead
-    /// incarnation, whose successor may come up at the same address.
+    /// A refusal as an unknown member is retryable: gossip may not have reached it yet. A refusal
+    /// from a node which is no cluster yet is retryable until it has formed one or joined one. A
+    /// refusal holding back joins is retryable until the unreachable member is reachable again or
+    /// downed. A refusal of a dead incarnation is retryable, since its successor may come up at
+    /// the same address.
     fn is_retryable(&self) -> bool {
         match self {
             ConnectError::Transport(TransportError::FrameTooLarge { .. }) => false,
@@ -1010,7 +1011,6 @@ where
         let Ok(frame) = frame else {
             return Ok(frame_sender);
         };
-        // Whatever is queued already rides along, so a busy queue costs one write per batch.
         let mut next = Some(frame);
         let mut used = 0;
         let mut batched_len = 0;
@@ -1228,8 +1228,7 @@ where
 
             Frame::Gossip { .. } => unreachable!("gossip is handled before the gate"),
 
-            // Merged now, so this node's own decisions see it at once; forwarding waits for the
-            // next membership tick, which fans out everything learned since the last one.
+            // Forwarded by the next membership tick, not here.
             Frame::Reachability { observations } => endpoint.merge_reachability(&observations),
 
             Frame::Registrations {
@@ -2259,11 +2258,11 @@ mod tests {
         ));
     }
 
-    /// A transport failure, a peer closing early, a peer staying silent, a refusal as an unknown
-    /// member (gossip may not have converged yet), a held join (the unreachable member may be
-    /// downed or come back) or a dead incarnation (its successor may come up at that address) is
-    /// worth another attempt, while a peer
-    /// which does not speak this protocol never becomes one and a Down refusal is final.
+    /// A transport failure, a peer closing early or a peer staying silent is worth another
+    /// attempt. So is a refusal as an unknown member (gossip may not have converged yet), a held
+    /// join (the unreachable member may be downed or come back) or a dead incarnation (its
+    /// successor may come up at that address). A peer which does not speak this protocol never
+    /// becomes one, and a Down refusal is final.
     #[test]
     fn only_transient_failures_are_retried() {
         assert!(ConnectError::Transport(TransportError::other("boom")).is_retryable());
@@ -2845,7 +2844,7 @@ mod tests {
     }
 
     /// A leaked endpoint with its join loop running against a scripted transport. The lane dial
-    /// requests must stay receivable, since applying a snapshot opens lanes towards the members.
+    /// requests must stay receivable, since applying a snapshot opens lanes toward the members.
     struct Joining {
         endpoint: &'static EndpointInner,
         dials: UnboundedReceiver<Dial>,
@@ -3655,9 +3654,9 @@ mod tests {
         assert!(check_dialed(member, None, addr(2), None, endpoint).is_ok());
     }
 
-    /// A join naming another cluster is refused as foreign and admits nothing; a formed node's
-    /// own join names its cluster, so a seed of another cluster refuses it, and a seed answering
-    /// with another cluster fails the attempt on the joiner's side too. Both sides record the
+    /// A join naming another cluster is refused as foreign and admits nothing. A formed node's
+    /// own join names its cluster, so a seed of another cluster refuses it. A seed answering with
+    /// another cluster fails the attempt on the joiner's side too. Both sides record the
     /// other cluster as foreign.
     #[tokio::test]
     async fn a_joiner_of_another_cluster_is_refused() {
@@ -3798,8 +3797,8 @@ mod tests {
     }
 
     /// While a member is outside this node's component, a join from a new address is answered
-    /// `JoinsHeld` and admits nothing, while a younger incarnation at the unreachable member's
-    /// address supersedes it; with every member reachable again, the held joiner is admitted.
+    /// `JoinsHeld` and admits nothing, but a younger incarnation at the unreachable member's
+    /// address supersedes it. With every member reachable again, the held joiner is admitted.
     #[tokio::test]
     async fn joins_are_held_while_a_member_is_unreachable() {
         let endpoint = formed(1);
@@ -4127,8 +4126,8 @@ mod tests {
     }
 
     /// A snapshot cut short leaves the seed's cluster provisional: it is the effective one while
-    /// the pin lasts, but neither committed nor published, and once discovery drops the seed the
-    /// pin goes with it, so forming mints a cluster of its own.
+    /// the pin lasts, but neither committed nor published. Once discovery drops the seed the pin
+    /// goes with it, so forming mints a cluster of its own.
     #[tokio::test]
     async fn a_truncated_snapshot_keeps_the_cluster_provisional() {
         let mut joining = joining(1);
@@ -4492,8 +4491,8 @@ mod tests {
         }
     }
 
-    /// A departure learned from the leaver itself defers its death while its connection is open:
-    /// a message and a real terminated signal arriving on a data stream after it are delivered,
+    /// A departure learned from the leaver itself defers its death while its connection is open.
+    /// A message and a real terminated signal arriving on a data stream after it are delivered,
     /// and the synthesized signals only follow once the connection is closed.
     #[tokio::test]
     async fn a_departure_delivers_what_its_connection_still_carries_before_the_death() {
@@ -4558,7 +4557,7 @@ mod tests {
 
     /// A stream which never finishes cannot hold the death beyond `leave_timeout`: it runs at the
     /// bound, the drain marker is never acknowledged, and nothing the connection carries
-    /// afterwards is delivered.
+    /// afterward is delivered.
     #[tokio::test(start_paused = true)]
     async fn a_departure_which_never_drains_dies_at_the_leave_timeout() {
         let endpoint = formed(1);
@@ -4584,7 +4583,7 @@ mod tests {
     }
 
     /// A downing of the leaver ends the deferral at once: the death runs, the member is Down, and
-    /// nothing the connection carries afterwards is delivered.
+    /// nothing the connection carries afterward is delivered.
     #[tokio::test]
     async fn a_downing_during_a_deferred_departure_ends_it() {
         let endpoint = formed(1);
@@ -4609,9 +4608,9 @@ mod tests {
     }
 
     /// A node whose detailed entry of the leaver is swept hands out only its fence, and that
-    /// fence keeps the departure's state: arriving in a setup snapshot while the drain is pending,
-    /// it neither ends the deferral nor turns the departure into a downing, and the drain's
-    /// completion leaves the leaver Left.
+    /// fence keeps the departure's state. Arriving in a setup snapshot while the drain is pending,
+    /// it neither ends the deferral nor turns the departure into a downing. The drain's completion
+    /// leaves the leaver Left.
     #[tokio::test]
     async fn a_swept_departure_in_a_setup_snapshot_keeps_the_deferral_running() {
         let endpoint = formed(1);
@@ -4814,9 +4813,9 @@ mod tests {
     }
 
     /// A Member admission and a gossiped departure are serialized by the departures lock, so
-    /// either order ends with the connection counted and the death waiting for it: admitted Up
-    /// first, the departure is deferred for the counted connection; departed first, the
-    /// admission is one to drain.
+    /// either order ends with the connection counted and the death waiting for it. Admitted Up
+    /// first, the departure is deferred for the counted connection. Departed first, the admission
+    /// is one to drain.
     #[tokio::test]
     async fn a_member_admission_and_a_departure_serialize_either_way() {
         let endpoint = formed(1);

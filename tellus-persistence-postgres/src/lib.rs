@@ -63,7 +63,9 @@ impl PostgresStore {
     /// Apply the embedded schema migrations, idempotently.
     ///
     /// # Errors
-    /// Fails if a migration cannot be applied.
+    /// Fails if the database cannot be reached, if a migration cannot be applied, or if the
+    /// migrations recorded in the database do not match the embedded ones (one was changed, is
+    /// missing or was left partially applied).
     pub async fn migrate(&self) -> Result<(), Error> {
         MIGRATOR.run(&self.pool).await?;
         Ok(())
@@ -81,7 +83,7 @@ impl EventStore for PostgresStore {
     ) -> Result<(), AppendError<Self::Error>> {
         let next_seq_no = into_bigint(next_seq_no)?;
 
-        // Zero rows inserted matches zero rows expected, so an empty append cannot be fenced.
+        // An empty append inserts no rows, so the row count cannot reveal a conflict.
         if events.is_empty() {
             let query = "SELECT COALESCE(MAX(seq_no) + 1, 0) \
                          FROM events \

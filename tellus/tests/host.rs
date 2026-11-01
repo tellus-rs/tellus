@@ -157,7 +157,7 @@ async fn buffered_messages_keep_their_order() {
 
 /// A mailbox smaller than the host's buffer loses none of what the host accepted: the drain
 /// reserves past the capacity. Until the entity has caught up the count stays over it, so
-/// ordinary sends are refused the way a full mailbox refuses them, and work again afterwards.
+/// ordinary sends are refused the way a full mailbox refuses them, and work again afterward.
 ///
 /// Blocking the replacement blocks a worker, so this one runs on real time and several threads.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
