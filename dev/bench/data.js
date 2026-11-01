@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793536396573,
+  "lastUpdate": 1793539489627,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7619,6 +7619,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20246674,
             "range": "± 997243",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d42e526270bd7e7b202d2c6972122d633fdf63e4",
+          "message": "Merge pull request #230 from tellus-rs/test/fix-219\n\ntest: synchronize watch tests without relying on watcher order",
+          "timestamp": "2026-11-01T14:17:27+01:00",
+          "tree_id": "8500990b5a5a1dbe2aec9374964d1c80b9d4ae76",
+          "url": "https://github.com/tellus-rs/tellus/commit/d42e526270bd7e7b202d2c6972122d633fdf63e4"
+        },
+        "date": 1793539489168,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14393970,
+            "range": "± 999204",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13348065,
+            "range": "± 550092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 946875,
+            "range": "± 31260",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 828725,
+            "range": "± 4927",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5772199,
+            "range": "± 126643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4244250,
+            "range": "± 21290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19418399,
+            "range": "± 485443",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20280345,
+            "range": "± 743588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19816166,
+            "range": "± 728361",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20169491,
+            "range": "± 681051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19587087,
+            "range": "± 920889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 22004585,
+            "range": "± 1145527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27190416,
+            "range": "± 1153359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19462397,
+            "range": "± 879444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21443956,
+            "range": "± 850599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27357584,
+            "range": "± 994946",
             "unit": "ns/iter"
           }
         ]
