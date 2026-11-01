@@ -117,6 +117,11 @@ Benchmarks:
   grows depends on the scheduler, which makes their allocations vary by run. Its zero-alloc budgets
   cover `tell` and `reserve`, but not `receive_incoming`, which allocates in this benchmark. Without
   `HOTPATH_CRITERION_ITERATIONS` the adapter forwards to criterion, so `just bench` is unaffected.
+- `just check-hotpath-policies`: validate every policy in `hotpath/` against hotpath.rs with
+  `hotpath cloud validate-policy`, which needs the hotpath CLI built with its `cloud` feature. The
+  server refuses every upload judged under a policy it finds invalid. CI (`hotpath-policy.yml`)
+  runs the recipe whenever a policy, the justfile or the workflow changes, with the CLI version
+  taken from `Cargo.lock`.
 - `just bench`: tellus's own criterion regression benchmarks, messaging
   (`tellus/benches/messaging.rs`) and persistence against an in-memory store
   (`tellus/benches/persistence.rs`, features `persistence` and `persistence-in-memory`); `just
