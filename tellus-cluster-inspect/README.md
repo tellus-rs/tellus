@@ -36,7 +36,7 @@ cargo add tellus-cluster-inspect
   - `hello` opens every stream: the log's `started_at` and whether the stream `resumed` right
     after the client's `Last-Event-ID`.
   - `state`: the whole `ClusterState` at a new version, never a delta.
-  - `settled`: the receptionist's verdict flipped.
+  - `settled`: the receptionist's verdict, whenever the verdict or the version it judges changes.
   - `gap`: the node's own subscriber fell behind by `dropped` changes; the current state and
     verdict follow.
 
