@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793540439600,
+  "lastUpdate": 1793540440959,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12973,6 +12973,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 168754,
             "range": "± 4484",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fc1b3896aa5704116b05acfde6013d0f38752f89",
+          "message": "Merge pull request #215 from tellus-rs/chore/validate-hotpath-policies\n\nchore: validate the hotpath policies in CI",
+          "timestamp": "2026-11-01T14:29:18+01:00",
+          "tree_id": "5afeaf40b9fa7811b00a845365847a4cb2dd1ca3",
+          "url": "https://github.com/tellus-rs/tellus/commit/fc1b3896aa5704116b05acfde6013d0f38752f89"
+        },
+        "date": 1793540440699,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3061883,
+            "range": "± 137013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3066284,
+            "range": "± 225764",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1402236,
+            "range": "± 7802",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 166823,
+            "range": "± 3962",
             "unit": "ns/iter"
           }
         ]
