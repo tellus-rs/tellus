@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793535046787,
+  "lastUpdate": 1793535048175,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12133,6 +12133,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160633,
             "range": "± 4140",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "28c64d6b5f2038f120b215818ec6e51404e56b14",
+          "message": "Merge pull request #226 from tellus-rs/refactor/fix-224\n\nrefactor: rename identifiers with British spellings",
+          "timestamp": "2026-11-01T13:03:16+01:00",
+          "tree_id": "a55d0f3afd78d21beb08e735b2d0831e845306a7",
+          "url": "https://github.com/tellus-rs/tellus/commit/28c64d6b5f2038f120b215818ec6e51404e56b14"
+        },
+        "date": 1793535047940,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3112135,
+            "range": "± 181334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3208445,
+            "range": "± 191494",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1393976,
+            "range": "± 8214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 167303,
+            "range": "± 5724",
             "unit": "ns/iter"
           }
         ]
