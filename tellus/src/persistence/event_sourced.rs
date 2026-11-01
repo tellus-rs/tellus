@@ -1,5 +1,5 @@
 use crate::{
-    ActorContext, Incoming, TimerMode,
+    ActorContext, Incoming, StashMode, TimerMode,
     persistence::{effect::Effect, persistence_id::PersistenceId, versioned::Versioned},
 };
 use std::error::Error;
@@ -22,6 +22,10 @@ where
     /// Whether this actor uses timers: [Untimed](crate::Untimed), for an actor without timers, or
     /// [Timed](crate::Timed), which provides `start_timer` and `cancel_timer` on the context.
     type Timers: TimerMode;
+
+    /// Whether this actor stashes: [Unstashed](crate::Unstashed), for an actor without a stash, or
+    /// [Stashed](crate::Stashed), which provides `stash` and `unstash_all` on the context.
+    type Stash: StashMode;
 
     /// The type of the persisted events.
     type Event: Versioned;
@@ -74,7 +78,7 @@ where
     /// Implementations fail if they choose to, e.g. through `?` on a domain error.
     fn recovered(
         &self,
-        _context: &ActorContext<Self::Command, Self::Timers>,
+        _context: &ActorContext<Self::Command, Self::Timers, Self::Stash>,
         state: Self::State,
     ) -> Result<Self::State, Self::Error> {
         Ok(state)
@@ -94,7 +98,7 @@ where
     /// Implementations fail if they choose to, e.g. through `?` on a domain error.
     fn handle(
         &self,
-        context: &ActorContext<Self::Command, Self::Timers>,
+        context: &ActorContext<Self::Command, Self::Timers, Self::Stash>,
         incoming: Incoming<Self::Command>,
         state: &Self::State,
     ) -> Result<Effect<Self>, Self::Error>;

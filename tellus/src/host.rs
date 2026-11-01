@@ -1,4 +1,4 @@
-use crate::{Actor, ActorContext, ActorId, ActorRef, Control, Incoming, Untimed};
+use crate::{Actor, ActorContext, ActorId, ActorRef, Control, Incoming, Unstashed, Untimed};
 use std::{
     any::type_name,
     collections::{HashMap, VecDeque, hash_map::Entry as MapEntry},
@@ -196,6 +196,7 @@ where
 {
     type Message = HostEnvelope<K, M>;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = State<K, M>;
     type Error = Infallible;
 
@@ -333,6 +334,7 @@ struct Ticker {
 impl Actor for Ticker {
     type Message = Tick;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = AbortSleeping;
     type Error = Infallible;
 

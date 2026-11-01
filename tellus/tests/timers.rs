@@ -12,7 +12,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, AskError, Backoff, Control, Incoming,
-    MailboxCapacity, ReplyTo, RestartPolicy, SupervisionStrategy, Timed, Untimed,
+    MailboxCapacity, ReplyTo, RestartPolicy, SupervisionStrategy, Timed, Unstashed, Untimed,
 };
 use thiserror::Error;
 use tokio::{
@@ -608,6 +608,7 @@ struct Clock {
 impl Actor for Clock {
     type Message = Message;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Failed;
 
@@ -672,6 +673,7 @@ struct UntimedParent {
 impl Actor for UntimedParent {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -707,6 +709,7 @@ struct TimedParent {
 impl Actor for TimedParent {
     type Message = ();
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -738,6 +741,7 @@ struct Echo(mpsc::UnboundedSender<u32>);
 impl Actor for Echo {
     type Message = u32;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -792,6 +796,7 @@ struct PanickingTimer(Arc<AtomicBool>);
 impl Actor for PanickingTimer {
     type Message = PanickingMessage;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -837,6 +842,7 @@ struct Discarder {
 impl Actor for Discarder {
     type Message = Discard;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -887,6 +893,7 @@ struct Holder(mpsc::UnboundedSender<()>);
 impl Actor for Holder {
     type Message = ReplyTo<u32>;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -915,6 +922,7 @@ struct Flooder(mpsc::UnboundedSender<u32>);
 impl Actor for Flooder {
     type Message = Flood;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -966,6 +974,7 @@ struct Replacer(mpsc::UnboundedSender<()>);
 impl Actor for Replacer {
     type Message = Backlog;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -1051,6 +1060,7 @@ struct VendingMachine;
 impl Actor for VendingMachine {
     type Message = VendingMessage;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = Phase;
     type Error = Infallible;
 
@@ -1206,6 +1216,7 @@ struct Customer(mpsc::UnboundedSender<CustomerMessage>);
 impl Actor for Customer {
     type Message = CustomerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

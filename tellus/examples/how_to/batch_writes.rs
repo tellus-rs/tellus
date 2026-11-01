@@ -4,7 +4,7 @@
 
 use anyhow::Context;
 use std::{io, time::Duration};
-use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Untimed};
+use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 use thiserror::Error;
 use tokio::{
     task::{self, JoinError},
@@ -42,6 +42,7 @@ struct Journal;
 impl Actor for Journal {
     type Message = Message;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Buffer;
     type Error = WriteFailed;
 

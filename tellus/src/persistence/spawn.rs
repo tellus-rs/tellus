@@ -1,9 +1,9 @@
 use crate::{
-    ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, TimerMode,
+    ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, StashMode, TimerMode,
     actor_context::{
         PanicPayload, STATE_FAILED_TO_DROP, catch_and_log, catch_panic_and_log,
         catch_panic_and_log_async, catch_unwind_async, dispose_error, drop_containing_panic,
-        log_failure, next_incoming, next_incoming_timed, should_restart, terminate,
+        log_failure, new_context, next_incoming, next_incoming_timed, should_restart, terminate,
     },
     actor_ref::SelfRef,
     actor_system::watch_root,
@@ -20,7 +20,8 @@ use crate::{
         },
         versioned::{DecodeError, Versioned, decode_versioned},
     },
-    timers::{Sealed, Timed, Token, Untimed},
+    stash::{self, Stashed, Unstashed},
+    timers::{self, Timed, Untimed},
 };
 use std::{
     any::Any,
@@ -97,9 +98,10 @@ where
     }
 }
 
-impl<M, T> ActorContext<M, T>
+impl<M, T, St> ActorContext<M, T, St>
 where
     T: TimerMode,
+    St: StashMode,
 {
     /// Spawn an event-sourced child actor with the given [EventSourced] actor and [Persistence],
     /// using the default [ActorConfig].
@@ -182,21 +184,23 @@ where
     Encode(#[from] EncodeError),
 }
 
-/// The task future of the event-sourced run loop, expanded once per [TimerMode] with its wait
-/// macro.
+/// The task future of the event-sourced run loop, expanded once per [TimerMode] and [StashMode]
+/// with its wait macro and the stash arm of that macro.
 macro_rules! run_event_sourced {
     (
         $next_incoming:ident,
-        $actor_id:ident,
-        $self_ref:ident,
-        $mailbox:ident,
+        $stash:ident,
+        $stopped_by_parent_rx:ident,
         $actor:ident,
         $persistence:ident,
-        $config:ident,
-        $stopped_by_parent_rx:ident
-    ) => {
+        $config:ident
+    ) => {{
+        let actor_id = ActorId::new();
+        let (self_ref, mut mailbox) = SelfRef::new(actor_id, $config.mailbox_capacity);
+        let actor_ref = self_ref.actor_ref().clone();
+
         task::spawn(async move {
-            let mut context = ActorContext::new($self_ref);
+            let mut context = new_context!($stash, self_ref, $config);
 
             let mut rx = $stopped_by_parent_rx.clone();
             let mut stopped_by_parent = pin!(rx.changed());
@@ -205,16 +209,16 @@ macro_rules! run_event_sourced {
 
             'run: loop {
                 let mut recovering =
-                    Box::pin(recover_or_log_failure($actor_id, &$actor, &$persistence));
+                    Box::pin(recover_or_log_failure(actor_id, &$actor, &$persistence));
                 let recovered = select! {
                     biased;
 
                     _ = &mut stopped_by_parent => {
                         debug!(
-                            actor_id = %$actor_id,
+                            actor_id = %actor_id,
                             "stopping, because parent stopped this actor"
                         );
-                        drop_containing_panic($actor_id, VALUES_FAILED_TO_DROP, recovering);
+                        drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, recovering);
                         break 'run;
                     }
 
@@ -229,31 +233,37 @@ macro_rules! run_event_sourced {
                     mut next_seq_no,
                 }) = recovered
                 {
-                    let state = catch_and_log($actor_id, FAILED_TO_RECOVER, || {
+                    let state = catch_and_log(actor_id, FAILED_TO_RECOVER, || {
                         $actor.recovered(&context, state)
                     });
 
                     if let Some(mut state) = state {
+                        context.settle_stash_at_start();
                         up_since = Some(Instant::now());
 
                         loop {
-                            let incoming =
-                                $next_incoming!($actor_id, $mailbox, context, stopped_by_parent);
+                            let incoming = $next_incoming!(
+                                $stash,
+                                actor_id,
+                                mailbox,
+                                context,
+                                stopped_by_parent
+                            );
                             let Some(incoming) = incoming else {
-                                drop_containing_panic($actor_id, STATE_FAILED_TO_DROP, state);
+                                drop_containing_panic(actor_id, STATE_FAILED_TO_DROP, state);
                                 break 'run;
                             };
 
-                            let effect = catch_and_log($actor_id, "actor failed", || {
+                            let effect = catch_and_log(actor_id, "actor failed", || {
                                 $actor.handle(&context, incoming, &state)
                             });
                             let Some(effect) = effect else {
-                                drop_containing_panic($actor_id, STATE_FAILED_TO_DROP, state);
+                                drop_containing_panic(actor_id, STATE_FAILED_TO_DROP, state);
                                 break;
                             };
 
                             match settle_or_log_failure(
-                                $actor_id,
+                                actor_id,
                                 &$actor,
                                 &$persistence,
                                 &id,
@@ -264,16 +274,17 @@ macro_rules! run_event_sourced {
                             .await
                             {
                                 Some(settled) => {
+                                    context.settle_stash();
                                     state = settled.state;
                                     next_seq_no = settled.next_seq_no;
 
                                     if settled.stop {
                                         debug!(
-                                            actor_id = %$actor_id,
+                                            actor_id = %actor_id,
                                             "stopping as decided by actor"
                                         );
                                         drop_containing_panic(
-                                            $actor_id,
+                                            actor_id,
                                             STATE_FAILED_TO_DROP,
                                             state,
                                         );
@@ -288,7 +299,7 @@ macro_rules! run_event_sourced {
                 }
 
                 let restart = should_restart(
-                    $actor_id,
+                    actor_id,
                     $config.supervision_strategy,
                     up_since,
                     &mut restarts,
@@ -302,9 +313,11 @@ macro_rules! run_event_sourced {
                 }
             }
 
-            terminate($actor, context, $mailbox).await;
+            terminate($actor, context, mailbox).await;
         });
-    };
+
+        actor_ref
+    }};
 }
 
 fn spawn_event_sourced<A, E, S, C>(
@@ -323,8 +336,8 @@ where
     S: SnapshotStore,
     C: Codec + Send + Sync + 'static,
 {
-    <A::Timers as Sealed>::spawn_event_sourced(
-        Token(()),
+    <A::Timers as timers::Sealed>::spawn_event_sourced(
+        timers::Token(()),
         stopped_by_parent_rx,
         actor,
         persistence,
@@ -348,22 +361,13 @@ where
     S: SnapshotStore,
     C: Codec + Send + Sync + 'static,
 {
-    let actor_id = ActorId::new();
-    let (self_ref, mut mailbox) = SelfRef::new(actor_id, config.mailbox_capacity);
-    let actor_ref = self_ref.actor_ref().clone();
-
-    run_event_sourced!(
-        next_incoming,
-        actor_id,
-        self_ref,
-        mailbox,
+    <A::Stash as stash::Sealed>::spawn_event_sourced_untimed(
+        stash::Token(()),
+        stopped_by_parent_rx,
         actor,
         persistence,
         config,
-        stopped_by_parent_rx
-    );
-
-    actor_ref
+    )
 }
 
 pub(crate) fn spawn_event_sourced_timed<A, E, S, C>(
@@ -382,22 +386,117 @@ where
     S: SnapshotStore,
     C: Codec + Send + Sync + 'static,
 {
-    let actor_id = ActorId::new();
-    let (self_ref, mut mailbox) = SelfRef::new(actor_id, config.mailbox_capacity);
-    let actor_ref = self_ref.actor_ref().clone();
-
-    run_event_sourced!(
-        next_incoming_timed,
-        actor_id,
-        self_ref,
-        mailbox,
+    <A::Stash as stash::Sealed>::spawn_event_sourced_timed(
+        stash::Token(()),
+        stopped_by_parent_rx,
         actor,
         persistence,
         config,
-        stopped_by_parent_rx
-    );
+    )
+}
 
-    actor_ref
+pub(crate) fn spawn_event_sourced_untimed_unstashed<A, E, S, C>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    persistence: Persistence<E, S, C>,
+    config: ActorConfig,
+) -> ActorRef<A::Command>
+where
+    A: EventSourced<Timers = Untimed, Stash = Unstashed> + Send + Sync + 'static,
+    A::Command: Send + 'static,
+    A::State: Send + 'static,
+    A::Event: Send + 'static,
+    A::Snapshot: Send + 'static,
+    E: EventStore,
+    S: SnapshotStore,
+    C: Codec + Send + Sync + 'static,
+{
+    run_event_sourced!(
+        next_incoming,
+        unstashed,
+        stopped_by_parent_rx,
+        actor,
+        persistence,
+        config
+    )
+}
+
+pub(crate) fn spawn_event_sourced_untimed_stashed<A, E, S, C>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    persistence: Persistence<E, S, C>,
+    config: ActorConfig,
+) -> ActorRef<A::Command>
+where
+    A: EventSourced<Timers = Untimed, Stash = Stashed> + Send + Sync + 'static,
+    A::Command: Send + 'static,
+    A::State: Send + 'static,
+    A::Event: Send + 'static,
+    A::Snapshot: Send + 'static,
+    E: EventStore,
+    S: SnapshotStore,
+    C: Codec + Send + Sync + 'static,
+{
+    run_event_sourced!(
+        next_incoming,
+        stashed,
+        stopped_by_parent_rx,
+        actor,
+        persistence,
+        config
+    )
+}
+
+pub(crate) fn spawn_event_sourced_timed_unstashed<A, E, S, C>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    persistence: Persistence<E, S, C>,
+    config: ActorConfig,
+) -> ActorRef<A::Command>
+where
+    A: EventSourced<Timers = Timed, Stash = Unstashed> + Send + Sync + 'static,
+    A::Command: Send + 'static,
+    A::State: Send + 'static,
+    A::Event: Send + 'static,
+    A::Snapshot: Send + 'static,
+    E: EventStore,
+    S: SnapshotStore,
+    C: Codec + Send + Sync + 'static,
+{
+    run_event_sourced!(
+        next_incoming_timed,
+        unstashed,
+        stopped_by_parent_rx,
+        actor,
+        persistence,
+        config
+    )
+}
+
+pub(crate) fn spawn_event_sourced_timed_stashed<A, E, S, C>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    persistence: Persistence<E, S, C>,
+    config: ActorConfig,
+) -> ActorRef<A::Command>
+where
+    A: EventSourced<Timers = Timed, Stash = Stashed> + Send + Sync + 'static,
+    A::Command: Send + 'static,
+    A::State: Send + 'static,
+    A::Event: Send + 'static,
+    A::Snapshot: Send + 'static,
+    E: EventStore,
+    S: SnapshotStore,
+    C: Codec + Send + Sync + 'static,
+{
+    run_event_sourced!(
+        next_incoming_timed,
+        stashed,
+        stopped_by_parent_rx,
+        actor,
+        persistence,
+        config
+    )
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]

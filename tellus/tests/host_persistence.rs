@@ -11,7 +11,8 @@ use std::{
 };
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, Host, HostConfig, HostEnvelope, InMemoryStore,
-    Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, Untimed, Versioned,
+    Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, Unstashed, Untimed,
+    Versioned,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -84,6 +85,7 @@ struct Counter {
 impl EventSourced for Counter {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Increased;
     type State = u64;
     type Snapshot = Nothing;

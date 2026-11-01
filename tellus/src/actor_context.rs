@@ -1,10 +1,11 @@
 #[cfg(feature = "cluster")]
 use crate::cluster;
 use crate::{
-    Actor, ActorConfig, ActorId, ActorRef, Control, Incoming, SupervisionStrategy,
+    Actor, ActorConfig, ActorId, ActorRef, Control, Incoming, MailboxCapacity, SupervisionStrategy,
     actor_ref::{SelfRef, Sink},
     mailbox::Mailbox,
-    timers::{Delivery, Sealed, TIMER_FAILED_TO_DROP, Timed, TimerMode, Token, Untimed},
+    stash::{self, StashMode, Stashed, Unstashed},
+    timers::{self, Delivery, TIMER_FAILED_TO_DROP, Timed, TimerMode, Untimed},
     watch::WatcherRegistry,
 };
 use derive_more::Debug;
@@ -33,11 +34,13 @@ pub(crate) const STATE_FAILED_TO_DROP: &str = "actor state failed to drop";
 
 /// Contextual methods for a given actor, provided to [Actor::init] and [Actor::receive]. `T` is the
 /// actor's [TimerMode]: only a [Timed] context has [start_timer](ActorContext::start_timer) and
-/// [cancel_timer](ActorContext::cancel_timer).
+/// [cancel_timer](ActorContext::cancel_timer). `S` is its [StashMode]: only a [Stashed] context has
+/// [stash](ActorContext::stash) and [unstash_all](ActorContext::unstash_all).
 #[derive(Debug)]
-pub struct ActorContext<M, T = Untimed>
+pub struct ActorContext<M, T = Untimed, S = Unstashed>
 where
     T: TimerMode,
+    S: StashMode,
 {
     self_ref: SelfRef<M>,
 
@@ -51,12 +54,16 @@ where
     watched: RefCell<HashMap<ActorId, Watched>>,
 
     #[debug(skip)]
+    stash: S::Table<M>,
+
+    #[debug(skip)]
     timers: T::Table<M>,
 }
 
-impl<M, T> ActorContext<M, T>
+impl<M, T, S> ActorContext<M, T, S>
 where
     T: TimerMode,
+    S: StashMode,
 {
     /// The reference for the actor itself.
     pub fn self_ref(&self) -> &ActorRef<M> {
@@ -162,12 +169,14 @@ where
     }
 
     /// Stop watching another actor: no terminated signal for it will be received anymore, even if
-    /// it has already terminated and the signal is already enqueued. Unwatching an actor which is
-    /// not watched has no effect.
+    /// it has already terminated and the signal is already enqueued or stashed. Its stashed signals
+    /// are dropped, while one stashed after the call is kept. Unwatching an actor which is not
+    /// watched only drops its stashed signals.
     pub fn unwatch<N>(&self, other: &ActorRef<N>) {
         if let Some(watched) = self.watched.borrow_mut().remove(&other.actor_id()) {
             unwatch(self.self_ref().actor_id(), other.actor_id(), watched);
         }
+        S::drop_signals_of(stash::Token(()), &self.stash, other.actor_id());
     }
 
     /// The number of incoming items queued for this actor, messages and terminated signals alike,
@@ -191,7 +200,26 @@ where
         self.stop_children_rx.clone()
     }
 
-    pub(crate) fn new(self_ref: SelfRef<M>) -> Self {
+    pub(crate) fn with_mailbox_capacity(
+        self_ref: SelfRef<M>,
+        mailbox_capacity: MailboxCapacity,
+    ) -> Self {
+        Self::with_table(self_ref, S::make_table(stash::Token(()), mailbox_capacity))
+    }
+
+    pub(crate) fn take_watched_for(&mut self, other_id: ActorId) -> bool {
+        self.watched.get_mut().remove(&other_id).is_some()
+    }
+
+    pub(crate) fn settle_stash(&mut self) {
+        S::settle(stash::Token(()), &mut self.stash);
+    }
+
+    pub(crate) fn settle_stash_at_start(&mut self) {
+        S::settle_at_start(stash::Token(()), &mut self.stash);
+    }
+
+    fn with_table(self_ref: SelfRef<M>, stash: S::Table<M>) -> Self {
         let (stop_children_tx, stop_children_rx) = watch::channel(());
 
         Self {
@@ -199,12 +227,9 @@ where
             stop_children_tx,
             stop_children_rx,
             watched: RefCell::new(HashMap::new()),
+            stash,
             timers: Default::default(),
         }
-    }
-
-    pub(crate) fn take_watched_for(&mut self, other_id: ActorId) -> bool {
-        self.watched.get_mut().remove(&other_id).is_some()
     }
 
     async fn stop_children(&mut self) {
@@ -224,7 +249,78 @@ where
     }
 }
 
-impl<M> ActorContext<M, Timed> {
+impl<M, T> ActorContext<M, T, Unstashed>
+where
+    T: TimerMode,
+{
+    pub(crate) fn new(self_ref: SelfRef<M>) -> Self {
+        Self::with_table(self_ref, ())
+    }
+}
+
+impl<M, T> ActorContext<M, T, Stashed>
+where
+    T: TimerMode,
+{
+    /// Defer the given incoming until [ActorContext::unstash_all]: it is kept in this actor's
+    /// stash, in the order it was stashed, and received again like a queued item once it is
+    /// unstashed. Stashing the `Incoming` as [Actor::receive] got it keeps a terminated signal
+    /// behind the messages of the stopped actor, so the death watch ordering survives stashing.
+    ///
+    /// Stashing is a request, like unstashing. It takes effect once the item at hand is settled:
+    /// when [Actor::receive] or [Actor::init] has returned successfully, and for an event-sourced
+    /// actor when `recovered` has returned or once the events of a command are durable. A failure
+    /// discards it. The requests made while handling one item take effect in the order they were
+    /// made.
+    ///
+    /// The stash has the capacity of the mailbox. It counts the unstashed items not received yet
+    /// and the requests made so far, so a bounded actor holds at most twice its capacity in mailbox
+    /// and stash. A terminated signal skips the capacity and does not count, as in the mailbox. A
+    /// stashed item has left the mailbox and frees its capacity, and [ActorContext::queued] does
+    /// not count the stash. A restart hands the stash back to the new state, and termination drops
+    /// it like the mailbox.
+    ///
+    /// # Errors
+    /// Fails if the stash is full, returning the incoming, so the actor decides what to do with it.
+    pub fn stash(&self, incoming: Incoming<M>) -> Result<(), Incoming<M>> {
+        self.stash.borrow_mut().request_stash(incoming)
+    }
+
+    /// Hand every stashed item back to the run loop, which receives them one [Actor::receive] per
+    /// item, in the order they were stashed, ahead of a due timer and of the mailbox. Only a stop
+    /// by the parent comes first. Like [ActorContext::stash], this is a request which takes effect
+    /// once the item at hand is settled, so an item stashed after it stays stashed. Unstashing
+    /// nothing has no effect.
+    ///
+    /// The items handed back form a drain. An `unstash_all` made while receiving one of them is
+    /// held until the drain is over. It then takes effect right away if the stash has shrunk since
+    /// the drain began, and otherwise once an item from the mailbox has been received. A drain
+    /// hence cannot starve the mailbox, and an actor which stashes every item again waits for its
+    /// next message instead of draining forever.
+    pub fn unstash_all(&self) {
+        self.stash.borrow_mut().request_unstash_all();
+    }
+
+    pub(crate) fn has_unstashed(&mut self) -> bool {
+        self.stash.get_mut().has_unstashed()
+    }
+
+    pub(crate) fn take_unstashed(&mut self) -> Option<Incoming<M>> {
+        self.stash.get_mut().pop_unstashed()
+    }
+
+    #[cfg(feature = "test-util")]
+    pub(crate) fn take_stashed(&mut self) -> Vec<Incoming<M>> {
+        let stash = self.stash.get_mut();
+        stash.settle_at_start();
+        stash.take_stashed()
+    }
+}
+
+impl<M, S> ActorContext<M, Timed, S>
+where
+    S: StashMode,
+{
     /// Start a timer: once the delay has elapsed, the message is delivered to this actor like an
     /// [ActorRef::tell] to itself, behind the items queued for it at that moment. Hence a message
     /// which arrived before the deadline is received before the timer's message. Unlike a told
@@ -294,6 +390,10 @@ impl<M> ActorContext<M, Timed> {
         }
     }
 
+    pub(crate) fn note_timer_item(&mut self) {
+        S::note_timer_item(stash::Token(()), &mut self.stash);
+    }
+
     pub(crate) fn count_received(&mut self) {
         self.timers.get_mut().count_received();
     }
@@ -326,11 +426,58 @@ impl Display for PanicPayload<'_> {
     }
 }
 
+/// The context of a run loop. A loop without a stash does not name the capacity, so its task future
+/// does not capture it.
+macro_rules! new_context {
+    (unstashed, $self_ref:expr, $config:expr) => {
+        ActorContext::new($self_ref)
+    };
+
+    (stashed, $self_ref:expr, $config:expr) => {
+        ActorContext::with_mailbox_capacity($self_ref, $config.mailbox_capacity)
+    };
+}
+
+/// The wait for an unstashed item, expanded into the `next_incoming` macros as their `stashed` arm
+/// and to nothing as their `unstashed` arm.
+macro_rules! next_unstashed {
+    (unstashed, $label:lifetime, $actor_id:expr, $context:expr, $stopped_by_parent:expr) => {};
+
+    (stashed, $label:lifetime, $actor_id:expr, $context:expr, $stopped_by_parent:expr) => {
+        if $context.has_unstashed() {
+            tokio::select! {
+                biased;
+
+                _ = &mut $stopped_by_parent => {
+                    tracing::debug!(
+                        actor_id = %$actor_id,
+                        "stopping, because parent stopped this actor"
+                    );
+                    break $label None;
+                }
+
+                // Before a due timer and the mailbox: an unstashed item was received before both.
+                _ = std::future::ready(()) => {
+                    break $label $context.take_unstashed();
+                }
+            }
+        }
+    };
+}
+
 macro_rules! next_incoming {
-    ($actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
+    ($stash:ident, $actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
             // Flume's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
+
+            crate::actor_context::next_unstashed!(
+                $stash,
+                'next_incoming,
+                $actor_id,
+                $context,
+                $stopped_by_parent
+            );
 
             let incoming = tokio::select! {
                 biased;
@@ -365,10 +512,18 @@ macro_rules! next_incoming {
 }
 
 macro_rules! next_incoming_timed {
-    ($actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
+    ($stash:ident, $actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
             // Flume's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
+
+            crate::actor_context::next_unstashed!(
+                $stash,
+                'next_incoming,
+                $actor_id,
+                $context,
+                $stopped_by_parent
+            );
 
             let armed = $context.timer_armed();
             let deliverable = $context.timer_deliverable();
@@ -399,6 +554,7 @@ macro_rules! next_incoming_timed {
                 _ = std::future::ready(()), if deliverable => {
                     match $context.take_due_timer() {
                         Some(message) => {
+                            $context.note_timer_item();
                             break 'next_incoming Some(crate::Incoming::Message(message));
                         }
 
@@ -429,23 +585,29 @@ macro_rules! next_incoming_timed {
 }
 
 #[cfg(feature = "persistence")]
+pub(crate) use new_context;
+#[cfg(feature = "persistence")]
 pub(crate) use next_incoming;
 #[cfg(feature = "persistence")]
 pub(crate) use next_incoming_timed;
+pub(crate) use next_unstashed;
 
-/// The task future of a run loop, expanded once per [TimerMode] with its wait macro.
+/// The task future of a run loop, expanded once per [TimerMode] and [StashMode] with its wait
+/// macro and the stash arm of that macro.
 macro_rules! run_actor {
     (
         $next_incoming:ident,
-        $actor_id:ident,
-        $self_ref:ident,
-        $mailbox:ident,
+        $stash:ident,
+        $stopped_by_parent_rx:ident,
         $actor:ident,
-        $config:ident,
-        $stopped_by_parent_rx:ident
-    ) => {
+        $config:ident
+    ) => {{
+        let actor_id = ActorId::new();
+        let (self_ref, mut mailbox) = SelfRef::new(actor_id, $config.mailbox_capacity);
+        let actor_ref = self_ref.actor_ref().clone();
+
         task::spawn(async move {
-            let mut context = ActorContext::new($self_ref);
+            let mut context = new_context!($stash, self_ref, $config);
 
             let mut rx = $stopped_by_parent_rx.clone();
             let mut stopped_by_parent = pin!(rx.changed());
@@ -453,27 +615,31 @@ macro_rules! run_actor {
             let mut restarts = 0;
 
             'run: loop {
-                let state = catch_and_log($actor_id, "actor failed to initialize", || {
+                let state = catch_and_log(actor_id, "actor failed to initialize", || {
                     $actor.init(&context)
                 });
                 let mut up_since = None;
 
                 if let Some(mut state) = state {
+                    context.settle_stash_at_start();
                     up_since = Some(Instant::now());
 
                     loop {
                         let incoming =
-                            $next_incoming!($actor_id, $mailbox, context, stopped_by_parent);
+                            $next_incoming!($stash, actor_id, mailbox, context, stopped_by_parent);
                         let Some(incoming) = incoming else {
-                            drop_containing_panic($actor_id, STATE_FAILED_TO_DROP, state);
+                            drop_containing_panic(actor_id, STATE_FAILED_TO_DROP, state);
                             break 'run;
                         };
 
-                        match receive_incoming($actor_id, &$actor, &context, incoming, state) {
-                            Some(Control::Continue(next_state)) => state = next_state,
+                        match receive_incoming(actor_id, &$actor, &context, incoming, state) {
+                            Some(Control::Continue(next_state)) => {
+                                context.settle_stash();
+                                state = next_state;
+                            }
 
                             Some(Control::Stop) => {
-                                debug!(actor_id = %$actor_id, "stopping as decided by actor");
+                                debug!(actor_id = %actor_id, "stopping as decided by actor");
                                 break 'run;
                             }
 
@@ -483,7 +649,7 @@ macro_rules! run_actor {
                 }
 
                 let restart = should_restart(
-                    $actor_id,
+                    actor_id,
                     $config.supervision_strategy,
                     up_since,
                     &mut restarts,
@@ -497,9 +663,11 @@ macro_rules! run_actor {
                 }
             }
 
-            terminate($actor, context, $mailbox).await;
-        })
-    };
+            terminate($actor, context, mailbox).await;
+        });
+
+        actor_ref
+    }};
 }
 
 pub(crate) fn spawn<A>(
@@ -512,7 +680,7 @@ where
     A::Message: Send + 'static,
     A::State: Send + 'static,
 {
-    <A::Timers as Sealed>::spawn(Token(()), stopped_by_parent_rx, actor, config)
+    <A::Timers as timers::Sealed>::spawn(timers::Token(()), stopped_by_parent_rx, actor, config)
 }
 
 pub(crate) fn spawn_untimed<A>(
@@ -525,21 +693,12 @@ where
     A::Message: Send + 'static,
     A::State: Send + 'static,
 {
-    let actor_id = ActorId::new();
-    let (self_ref, mut mailbox) = SelfRef::new(actor_id, config.mailbox_capacity);
-    let actor_ref = self_ref.actor_ref().clone();
-
-    run_actor!(
-        next_incoming,
-        actor_id,
-        self_ref,
-        mailbox,
+    <A::Stash as stash::Sealed>::spawn_untimed(
+        stash::Token(()),
+        stopped_by_parent_rx,
         actor,
         config,
-        stopped_by_parent_rx
-    );
-
-    actor_ref
+    )
 }
 
 pub(crate) fn spawn_timed<A>(
@@ -552,21 +711,77 @@ where
     A::Message: Send + 'static,
     A::State: Send + 'static,
 {
-    let actor_id = ActorId::new();
-    let (self_ref, mut mailbox) = SelfRef::new(actor_id, config.mailbox_capacity);
-    let actor_ref = self_ref.actor_ref().clone();
+    <A::Stash as stash::Sealed>::spawn_timed(stash::Token(()), stopped_by_parent_rx, actor, config)
+}
 
+pub(crate) fn spawn_untimed_unstashed<A>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    config: ActorConfig,
+) -> ActorRef<A::Message>
+where
+    A: Actor<Timers = Untimed, Stash = Unstashed> + Send + 'static,
+    A::Message: Send + 'static,
+    A::State: Send + 'static,
+{
+    run_actor!(
+        next_incoming,
+        unstashed,
+        stopped_by_parent_rx,
+        actor,
+        config
+    )
+}
+
+pub(crate) fn spawn_untimed_stashed<A>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    config: ActorConfig,
+) -> ActorRef<A::Message>
+where
+    A: Actor<Timers = Untimed, Stash = Stashed> + Send + 'static,
+    A::Message: Send + 'static,
+    A::State: Send + 'static,
+{
+    run_actor!(next_incoming, stashed, stopped_by_parent_rx, actor, config)
+}
+
+pub(crate) fn spawn_timed_unstashed<A>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    config: ActorConfig,
+) -> ActorRef<A::Message>
+where
+    A: Actor<Timers = Timed, Stash = Unstashed> + Send + 'static,
+    A::Message: Send + 'static,
+    A::State: Send + 'static,
+{
     run_actor!(
         next_incoming_timed,
-        actor_id,
-        self_ref,
-        mailbox,
+        unstashed,
+        stopped_by_parent_rx,
         actor,
-        config,
-        stopped_by_parent_rx
-    );
+        config
+    )
+}
 
-    actor_ref
+pub(crate) fn spawn_timed_stashed<A>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    config: ActorConfig,
+) -> ActorRef<A::Message>
+where
+    A: Actor<Timers = Timed, Stash = Stashed> + Send + 'static,
+    A::Message: Send + 'static,
+    A::State: Send + 'static,
+{
+    run_actor!(
+        next_incoming_timed,
+        stashed,
+        stopped_by_parent_rx,
+        actor,
+        config
+    )
 }
 
 pub(crate) fn catch_and_log<T, E, F>(actor_id: ActorId, failure: &str, f: F) -> Option<T>
@@ -662,18 +877,19 @@ pub(crate) fn drop_containing_panic<T>(actor_id: ActorId, failure: &str, value: 
     }
 }
 
-pub(crate) async fn should_restart<F, M, T>(
+pub(crate) async fn should_restart<F, M, T, S>(
     actor_id: ActorId,
     supervision_strategy: SupervisionStrategy,
     up_since: Option<Instant>,
     restarts: &mut u32,
     stopped_by_parent_rx: &watch::Receiver<()>,
     stopped_by_parent: &mut Pin<&mut F>,
-    context: &mut ActorContext<M, T>,
+    context: &mut ActorContext<M, T, S>,
 ) -> bool
 where
     F: Future,
     T: TimerMode,
+    S: StashMode,
 {
     let delay = match next_restart(supervision_strategy, up_since, restarts) {
         Restart::After(delay) => delay,
@@ -692,7 +908,8 @@ where
     }
     debug!(%actor_id, restarts = *restarts, ?delay, "restarting");
 
-    T::drop_timer_messages(Token(()), actor_id, &mut context.timers);
+    T::drop_timer_messages(timers::Token(()), actor_id, &mut context.timers);
+    S::hand_back_stash(stash::Token(()), actor_id, &mut context.stash);
     context.stop_children().await;
 
     match await_backoff(delay, stopped_by_parent.as_mut()).await {
@@ -706,16 +923,17 @@ where
 }
 
 /// The state must already have been dropped by the caller. The channel is dropped before the
-/// destructors of the queued messages run, and the messages of the timers are dropped right after
-/// the queued ones. The watchers are signaled last, since a terminated signal must prove that the
-/// actor's destructors have run.
+/// destructors of the queued messages run, and the stashed items and the messages of the timers
+/// are dropped right after the queued ones. The watchers are signaled last, since a terminated
+/// signal must prove that the actor's destructors have run.
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub(crate) async fn terminate<A, M, T>(
+pub(crate) async fn terminate<A, M, T, S>(
     actor: A,
-    mut context: ActorContext<M, T>,
+    mut context: ActorContext<M, T, S>,
     mailbox: Mailbox<M>,
 ) where
     T: TimerMode,
+    S: StashMode,
 {
     let actor_id = context.self_ref().actor_id();
 
@@ -725,8 +943,8 @@ pub(crate) async fn terminate<A, M, T>(
     for incoming in drained {
         drop_containing_panic(actor_id, "queued message failed to drop", incoming);
     }
-
-    T::drop_timer_messages(Token(()), actor_id, &mut context.timers);
+    S::drop_stashed_messages(stash::Token(()), actor_id, &mut context.stash);
+    T::drop_timer_messages(timers::Token(()), actor_id, &mut context.timers);
 
     for (other_id, watched) in context.take_watched() {
         unwatch(actor_id, other_id, watched);
@@ -786,7 +1004,7 @@ fn unwatch(watcher_id: ActorId, other_id: ActorId, watched: Watched) {
 fn receive_incoming<A>(
     actor_id: ActorId,
     actor: &A,
-    context: &ActorContext<A::Message, A::Timers>,
+    context: &ActorContext<A::Message, A::Timers, A::Stash>,
     incoming: Incoming<A::Message>,
     state: A::State,
 ) -> Option<Control<A::State>>
@@ -834,9 +1052,11 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorContext, ActorId, Backoff, RestartPolicy, SupervisionStrategy, Untimed,
+        ActorContext, ActorId, Backoff, MailboxCapacity, RestartPolicy, Stashed,
+        SupervisionStrategy, Untimed,
         actor_context::{Interrupted, PanicPayload, Restart, Watched, await_backoff, next_restart},
         actor_ref::SelfRef,
+        stash::Stash,
     };
     use std::{
         cell::RefCell, collections::HashMap, future, num::NonZeroU32, pin::pin, time::Duration,
@@ -857,6 +1077,24 @@ mod tests {
                 + size_of::<watch::Receiver<()>>()
                 + size_of::<RefCell<HashMap<ActorId, Watched>>>()
         );
+    }
+
+    /// The unstashed mode adds no bytes to the context: its stash table is `()`, and the stashed
+    /// mode adds the stash.
+    #[test]
+    fn an_unstashed_context_has_no_stash_state() {
+        assert_eq!(
+            size_of::<ActorContext<u32, Untimed, Stashed>>(),
+            size_of::<ActorContext<u32>>() + size_of::<RefCell<Stash<u32>>>()
+        );
+    }
+
+    /// A context formats as `Debug`, skipping its stash like its other bookkeeping.
+    #[test]
+    fn a_context_is_debug() {
+        let (self_ref, _mailbox) = SelfRef::<u32>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        let context = ActorContext::<u32, Untimed>::new(self_ref);
+        assert!(format!("{context:?}").starts_with("ActorContext"));
     }
 
     #[tokio::test(start_paused = true)]

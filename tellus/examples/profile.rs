@@ -15,7 +15,7 @@ use anyhow::Context;
 use std::{convert::Infallible, num::NonZeroUsize, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Control, Incoming, MailboxCapacity, ReplyTo,
-    Untimed,
+    Unstashed, Untimed,
 };
 use tokio::runtime;
 
@@ -92,6 +92,7 @@ struct Countdown {
 impl Actor for Countdown {
     type Message = Tick;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -118,6 +119,7 @@ struct Echo {
 impl Actor for Echo {
     type Message = Request;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 

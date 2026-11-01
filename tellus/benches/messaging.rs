@@ -25,7 +25,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Incoming, MailboxCapacity,
-    Timed, Untimed,
+    Timed, Unstashed, Untimed,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -266,6 +266,7 @@ struct Countdown {
 impl Actor for Countdown {
     type Message = Tick;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -299,6 +300,7 @@ struct Probing {
 impl Actor for Probing {
     type Message = Tick;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -342,6 +344,7 @@ struct IdleTimeout {
 impl Actor for IdleTimeout {
     type Message = Tick;
     type Timers = Timed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -382,6 +385,7 @@ struct PingPongRoot {
 impl Actor for PingPongRoot {
     type Message = Go;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -421,6 +425,7 @@ struct Pinger {
 impl Actor for Pinger {
     type Message = Pong;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Pinging;
     type Error = Infallible;
 
@@ -467,6 +472,7 @@ struct Ponger {
 impl Actor for Ponger {
     type Message = Ping;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -494,6 +500,7 @@ struct FanOutRoot {
 impl Actor for FanOutRoot {
     type Message = Go;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = FanningOut;
     type Error = Infallible;
 

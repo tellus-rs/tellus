@@ -1,5 +1,5 @@
 use std::{convert::Infallible, time::Duration};
-use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Untimed};
+use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 use tokio::{sync::mpsc, time::timeout};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -37,6 +37,7 @@ struct SelfFlooder {
 impl Actor for SelfFlooder {
     type Message = Message;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::{convert::Infallible, env, time::Duration};
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, Incoming, Persistence, PersistenceId, ReplyTo,
-    SchemaVersion, Untimed, Versioned,
+    SchemaVersion, Unstashed, Untimed, Versioned,
 };
 use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
 
@@ -52,6 +52,7 @@ struct Device;
 impl EventSourced for Device {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Recorded;
     type State = Readings;
     type Snapshot = Readings;

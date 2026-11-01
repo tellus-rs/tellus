@@ -20,7 +20,7 @@ use std::{
     time::Duration,
 };
 use tellus::{
-    Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Untimed,
+    Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
     cluster::{self, EndpointConfig, transport::QuicTransport},
 };
 use tokio::{
@@ -178,6 +178,7 @@ struct Counter;
 impl Actor for Counter {
     type Message = Count;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u64;
     type Error = Infallible;
 
