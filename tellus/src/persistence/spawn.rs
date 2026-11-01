@@ -667,18 +667,17 @@ where
     A: EventSourced,
     C: Codec,
 {
-    events
-        .iter()
-        .map(|event| {
-            let payload = codec.encode(event)?;
-
-            Ok(EncodedEvent {
-                manifest: Cow::Borrowed(A::Event::MANIFEST),
-                schema_version: A::Event::VERSION,
-                payload,
-            })
-        })
-        .collect()
+    // Not collect(): collecting into a Result cannot reserve events.len(), see
+    // https://github.com/rust-lang/rust/blob/1.99.0/library/core/src/iter/adapters/mod.rs#L180
+    let mut encoded = Vec::with_capacity(events.len());
+    for event in events {
+        encoded.push(EncodedEvent {
+            manifest: Cow::Borrowed(A::Event::MANIFEST),
+            schema_version: A::Event::VERSION,
+            payload: codec.encode(event)?,
+        });
+    }
+    Ok(encoded)
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
