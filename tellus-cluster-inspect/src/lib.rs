@@ -85,7 +85,8 @@ pub enum InspectEvent {
     /// The node's view at a new version.
     State(ClusterState),
 
-    /// The receptionist's verdict flipped, or is repeated after a gap.
+    /// The receptionist's verdict, sent whenever the verdict or the version it judges changes, or
+    /// repeated after a gap.
     Settled(Settlement),
 
     /// The node's own subscriber fell behind: this many changes were overwritten. The current
