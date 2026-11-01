@@ -15,6 +15,27 @@ cargo add tellus --features persistence
 cargo add tellus-persistence-postgres
 ```
 
+## Usage
+
+`PostgresStore::new` takes a `PgPool` of the sqlx version this crate depends on. The crate
+re-exports sqlx, so an application builds the pool through it and needs no sqlx dependency of its
+own. One store serves as both event store and snapshot store:
+
+```rust
+use tellus::Persistence;
+use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
+
+let pool = PgPool::connect("postgres://tellus:tellus@localhost:5432/tellus").await?;
+let store = PostgresStore::new(pool);
+store.migrate().await?;
+
+let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
+```
+
+`migrate` applies the embedded schema, idempotently; skip it if the schema is managed externally.
+The re-export also gives access to `sqlx::postgres::PgPoolOptions`, which configures the pool,
+for example its size.
+
 ## Schema
 
 Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,

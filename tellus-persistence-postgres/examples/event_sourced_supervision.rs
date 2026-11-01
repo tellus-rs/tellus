@@ -13,14 +13,13 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use std::{convert::Infallible, env, io, num::NonZeroU32, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Backoff, Control, Effect, EventSourced,
     Incoming, Nothing, Persistence, PersistenceId, RestartPolicy, SchemaVersion,
     SupervisionStrategy, Untimed, Versioned,
 };
-use tellus_persistence_postgres::PostgresStore;
+use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
 use thiserror::Error;
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
