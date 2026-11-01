@@ -1,9 +1,9 @@
 //! Clustered remoting integration: a client node in this process runs scenarios against server
 //! nodes in child processes. The scenarios prove reference serialization, discovery from the
 //! replicated registrations at an address, replies through `reply_to`, per-sender FIFO across the
-//! wire and per-target streams (a bulk message towards one actor does not delay messages towards
-//! others). They also prove the remote death watch contract: a real termination signals behind all
-//! delivered messages, every watcher of one actor gets its own signal, watching an already
+//! wire and per-target streams (a bulk message toward one actor does not delay messages toward
+//! others). They also prove the remote death watch contract. A real termination signals behind
+//! all delivered messages, and every watcher of one actor gets its own signal. Watching an already
 //! terminated actor signals immediately, unwatch suppresses the signal, and a killed node yields a
 //! synthesized signal via failure detection.
 //!
@@ -12,14 +12,14 @@
 //! receive the publishes in order, interleaved with the messages told to them directly.
 //!
 //! The reconnect path is covered by an oversize message dead-lettering locally while its lane
-//! stays usable, by a mid-stream sever proving per-sender FIFO stays "in order, with gaps" over
-//! the reconnected lane, by a terminated frame dropped on the watched node being healed by the
-//! watch refresh, and by a node killed under a watch and restarted at its old address. In that
-//! last case the tombstone kills the old incarnation, not the address, and the directory plus
-//! FIFO work against the new one.
+//! stays usable, and by a mid-stream sever proving per-sender FIFO stays "in order, with gaps"
+//! over the reconnected lane. It is also covered by a terminated frame dropped on the watched node
+//! being healed by the watch refresh, and by a node killed under a watch and restarted at its old
+//! address. In that last case the tombstone kills the old incarnation, not the address, and the
+//! directory plus FIFO work against the new one.
 //!
 //! Request-response crosses nodes through the serializable `ReplyTo`. A remote `ask` resolves
-//! with the reply, a reply stays FIFO with the responder's other messages to the asker, a
+//! with the reply, and a reply stays FIFO with the responder's other messages to the asker. A
 //! forwarded `ReplyTo` chains its reply over two hops, and a `ReplyTo` serialized and resolved on
 //! its own node comes home (and refuses a second serialization). An ask resolves as `NoReply`
 //! rather than by timeout when the responder drops its `ReplyTo` and when the reply is oversize.
@@ -40,19 +40,19 @@
 //! Downing derives from the relayed reachability graph, not from this node's own detector alone.
 //! The change stream carries every version the watch shows, and `diff` yields a joining member
 //! Up, a killed one unreachable and then Down, and a leaving one Left. Downing a live node by
-//! hand fails the asks towards it and signals its watchers, and a fresh incarnation at its
-//! address is admitted afterwards. Every member lists a leaving node Left at once, and this node
+//! hand fails the asks toward it and signals its watchers, and a fresh incarnation at its
+//! address is admitted afterward. Every member lists a leaving node Left at once, and this node
 //! delivers what the leaver's connection still carries before the node death. A node leaving
 //! while its lanes may still be connecting is acknowledged by every member all the same. A
 //! `SelfDown` verdict severs everything, and the node refuses to rejoin. Under mutual TLS a joiner
 //! is admitted only if its certificate proves the address it advertises.
 //!
-//! Two independently formed clusters never merge: a join towards the other one is refused, while
+//! Two independently formed clusters never merge: a join toward the other one is refused, while
 //! every member of one cluster reports the same cluster ID. Two clusters formed on one seed list
 //! find each other through bootstrap's probe and report each other as foreign clusters.
 //!
 //! Every spawned node but the majority, mutual TLS, cluster ID, foreign probe and bootstrap
-//! nodes joins the cluster through the client as its seed; scenarios hence also exercise the join
+//! nodes joins the cluster through the client as its seed. Scenarios hence also exercise the join
 //! handshake, the member snapshot and the supersession of a restarted incarnation on every
 //! bootstrap.
 
@@ -241,8 +241,7 @@ fn announce_bound(addr: SocketAddr) {
     println!("{ADDR_PREFIX}{addr}");
 }
 
-/// The role a spawned copy of this process plays; the closed set keeps a spawn site and the
-/// dispatch in `main` from drifting apart, where a typo would spawn a second client.
+/// The role a spawned copy of this process plays.
 #[derive(Debug, Clone, Copy)]
 enum Role {
     Echo,
@@ -293,9 +292,9 @@ fn keeper_node() -> anyhow::Result<()> {
 }
 
 /// The mutual TLS node, with certificates from the paths named by [CERT_ENV], [KEY_ENV] and
-/// [ROOTS_ENV]: forms a cluster of one when started without seeds, staying up until killed; with
-/// seeds it joins, prints the verdict and exits, so the client can assert which certificates
-/// the cluster admits.
+/// [ROOTS_ENV]. Started without seeds, it forms a cluster of one and stays up until killed. With
+/// seeds it joins, prints the verdict and exits, so the client can assert which certificates the
+/// cluster admits.
 fn mutual_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -343,9 +342,9 @@ fn mutual_node() -> anyhow::Result<()> {
     })
 }
 
-/// The self downing node: it joins the cluster with a downing provider which gives way as soon as
-/// it has a peer, then tries to rejoin until it is refused and prints that verdict, so the client
-/// can assert what a provider's `SelfDown` does to the node deciding it.
+/// The node which downs itself: it joins the cluster with a downing provider which gives way as
+/// soon as it has a peer. Then it tries to rejoin until it is refused and prints that verdict, so
+/// the client can assert what a provider's `SelfDown` does to the node deciding it.
 fn self_down_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -493,8 +492,8 @@ fn leave_node() -> anyhow::Result<()> {
     })
 }
 
-/// The zombie node: a member which never downs anybody, so whatever happens while it is frozen,
-/// it keeps dialing the client once resumed and can only learn its fate from the refusal; it
+/// The zombie node: a member which never downs anybody. So whatever happens while it is frozen,
+/// it keeps dialing the client once resumed and can only learn its fate from the refusal. It
 /// prints that verdict once its lifecycle says so.
 fn zombie_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
@@ -1116,7 +1115,7 @@ impl Manifest for KeeperMessage {
 }
 
 /// Streams `count` numbered messages to `reply_to` and stops on `Go`, so its terminated signal
-/// must arrive behind all of them; acknowledges a `Bulk` with its sequence number and keeps
+/// must arrive behind all of them. Acknowledges a `Bulk` with its sequence number and keeps
 /// running, so a payload's size only ever delays the stream it rides.
 struct Streamer;
 
@@ -1728,7 +1727,7 @@ fn percentile(latencies: &[Duration], per_mille: usize) -> Duration {
         .unwrap_or_default()
 }
 
-/// The duration of one bulk transfer and the sorted ask latencies towards the echoes on the
+/// The duration of one bulk transfer and the sorted ask latencies toward the echoes on the
 /// target's node and on the other node during it.
 struct BulkRound {
     elapsed: Duration,
@@ -1738,7 +1737,7 @@ struct BulkRound {
 
 /// Round trip and per-sender FIFO: ordered pings, ordered replies. The reference bytes must
 /// resolve as the type they were serialized for and be refused as any other. Then the node is
-/// killed and told anyway, and a second node is served afterwards: only that further round trip
+/// killed and told anyway, and a second node is served afterward: only that further round trip
 /// proves the dead letters left the endpoint usable, which the sends alone cannot show.
 fn echo_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut echo_process = KillOnDrop(spawn_node(Role::Echo)?);
@@ -1936,7 +1935,7 @@ fn two_watchers_scenario(
     Ok(())
 }
 
-/// A large message towards one remote actor must not delay messages towards others: the busy
+/// A large message toward one remote actor must not delay messages toward others: the busy
 /// target's stream is not the one they ride. Told first and by far the largest, the busy target's
 /// acknowledgment would be the first to arrive over a single lane.
 fn head_of_line_scenario(
@@ -1953,7 +1952,7 @@ fn head_of_line_scenario(
 }
 
 /// A message encoding beyond `max_frame_size` becomes a local dead letter instead of tearing down
-/// the lane: an empty bulk told right behind it to the same target, riding the same stream, must
+/// the lane. An empty bulk told right behind it to the same target, riding the same stream, must
 /// still be acknowledged, and the oversize one must never be.
 fn oversize_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> anyhow::Result<()> {
     let event_rx = run_client(runtime, "oversize client termination", |event_tx| {
@@ -2066,8 +2065,8 @@ fn lost_terminated_scenario(
     expect_done(&event_rx)
 }
 
-/// An ask towards a terminated remote actor is dead-lettered on the receiving node without being
-/// decoded, so no proxy exists whose drop could answer; the reply tags riding the message frame
+/// An ask toward a terminated remote actor is dead-lettered on the receiving node without being
+/// decoded, so no proxy exists whose drop could answer. The reply tags riding the message frame
 /// let that node answer nonetheless, resolving the ask as `NoReply` rather than by timeout.
 fn dead_target_ask_scenario(
     runtime: &Runtime,
@@ -2078,14 +2077,14 @@ fn dead_target_ask_scenario(
     let asked =
         runtime.block_on(dead_child.ask(TIMEOUT, |reply_to| StreamerMessage::Ask { reply_to }));
     if !matches!(asked, Err(AskError::NoReply)) {
-        bail!("ask towards a terminated actor resolved to {asked:?}");
+        bail!("ask toward a terminated actor resolved to {asked:?}");
     }
     Ok(())
 }
 
-/// A remote `ask` resolves with the reply; a responder dropping its `ReplyTo` resolves the ask as
-/// `NoReply` via the reply-dropped notification rather than by timeout; a request beyond
-/// `max_frame_size` fails the ask at the send and an oversize reply resolves it as `NoReply` via
+/// A remote `ask` resolves with the reply. A responder dropping its `ReplyTo` resolves the ask as
+/// `NoReply` via the reply-dropped notification rather than by timeout. A request beyond
+/// `max_frame_size` fails the ask at the send, and an oversize reply resolves it as `NoReply` via
 /// the reply-dropped notification, both instead of by timeout.
 fn remote_ask_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<()> {
     for seq in 0..ASKS {
@@ -2131,7 +2130,7 @@ fn reply_to_fifo_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow
 }
 
 /// A `ReplyTo` forwarded to a third actor still resolves its ask: the echo node re-serializes it
-/// towards a responder on the client node, chaining the reply over two hops.
+/// toward a responder on the client node, chaining the reply over two hops.
 fn forwarded_reply_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<()> {
     let system = ActorSystem::new(Responder);
     let responder = system.root().clone();
@@ -2214,7 +2213,7 @@ fn ask_node_death_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Killing a node nothing watches still fails the pending ask as `NoReply`: every member is
-/// heartbeated, so downing, not the ask's timeout, settles asks towards a dead member. The
+/// heartbeated, so downing, not the ask's timeout, settles asks toward a dead member. The
 /// connections are severed after the kill, since noticing the loss is the transport's business
 /// and not what this scenario proves; a probe ask behind the hold proves the hold arrived before
 /// the node is killed.
@@ -2381,9 +2380,9 @@ fn restart_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// The change stream carries every version the watch shows, consecutively and without a gap
-/// under this load, and every state keeps the invariants of the type; `diff` yields a joining
+/// under this load, and every state keeps the invariants of the type. `diff` yields a joining
 /// member Up, a killed member unreachable and then Down, and a leaving member Left without ever
-/// being unreachable; every verdict names a version already streamed as a state; and the stream
+/// being unreachable. Every verdict names a version already streamed as a state, and the stream
 /// ends where the watch stands.
 fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut changes = cluster::changes()?;
@@ -2625,10 +2624,10 @@ fn is_unreachable(state: &ClusterState, addr: SocketAddr) -> bool {
         .any(|member| member.addr() == addr)
 }
 
-/// The receptionist converges across nodes and shrinks on every kind of departure: a local
-/// registration and two remote ones make three everywhere; a child spawned and registered on a
-/// running node comes and goes through termination eviction while its node stays Up; a killed
-/// node's actor is gone the moment its Down is published; and a wrong message type is refused.
+/// The receptionist converges across nodes and shrinks on every kind of departure. A local
+/// registration and two remote ones make three everywhere. A child spawned and registered on a
+/// running node comes and goes through termination eviction while its node stays Up. A killed
+/// node's actor is gone the moment its Down is published, and a wrong message type is refused.
 fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let key = Key::<Request>::new(ECHO_KEY);
     let mut state_rx = cluster::cluster_state()?;
@@ -2757,8 +2756,8 @@ fn await_directory(
 }
 
 /// A publish reaches every subscriber the publishing node resolves, wherever it lives, and the
-/// set shrinks with a departure: a killed node's subscriber is gone the moment its Down is
-/// published, a local one's with its termination, and a topic of another message type is refused
+/// set shrinks with a departure. A killed node's subscriber is gone the moment its Down is
+/// published, and a local one's with its termination. A topic of another message type is refused
 /// rather than published to nobody. Several subscribers on one node receive the publishes in
 /// order, interleaved with the messages told to them directly.
 fn pubsub_scenario(runtime: &Runtime) -> anyhow::Result<()> {
@@ -2865,7 +2864,7 @@ fn pubsub_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Subscribes two further recorders on the given node, which holds one already, and alternates
-/// publishes with direct tells to the two: each recorder receives exactly what was sent to it, in
+/// publishes with direct tells to the two. Each recorder receives exactly what was sent to it, in
 /// the order sent, since a publish rides the stream of each recipient like a direct tell.
 fn interleaved_pubsub(
     runtime: &Runtime,
@@ -2996,7 +2995,7 @@ fn publish_at(
 }
 
 /// Awaits a node holding every published note, each publisher's in ascending order: the notes of
-/// one publisher ride one stream towards one subscriber, so their order is the publish order.
+/// one publisher ride one stream toward one subscriber, so their order is the publish order.
 fn await_notes(
     runtime: &Runtime,
     echo: &ActorRef<Request>,
@@ -3036,8 +3035,8 @@ fn own_addr(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<Socke
         .own)
 }
 
-/// Every node bootstraps from the identical address list instead of being told whom to join:
-/// each resolves the list and tries to join through every address other than its own, lowest
+/// Every node bootstraps from the identical address list instead of being told whom to join.
+/// Each resolves the list and tries to join through every address other than its own, lowest
 /// first, on every resolution; only forming waits for the list to settle. That keeps the join
 /// graph connected, so all three nodes end up in one cluster whichever of them happens to hold
 /// the lowest address.
@@ -3089,10 +3088,10 @@ fn bootstrap_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// Downing a live node this endpoint merely messages: the pending ask fails as `NoReply`, the
-/// watcher receives the synthesized signal although the node is alive, the member is listed
-/// Down, and the retention forgets the entry; a fresh incarnation joining at the same address
-/// afterwards proves the fence binds the incarnation, never the address. Downing this node's
+/// Downing a live node this endpoint merely messages: the pending ask fails as `NoReply`, and the
+/// watcher receives the synthesized signal although the node is alive. The member is listed Down,
+/// and the retention forgets the entry. A fresh incarnation joining at the same address afterward
+/// proves the fence binds the incarnation, never the address. Downing this node's
 /// own address, or one no member advertises, is refused with its own error, so a caller can tell
 /// either apart from a down which took effect.
 fn down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
@@ -3285,7 +3284,7 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     expect_exit(&mut witness, "witness zombie")
 }
 
-/// [KeepMajority] resolves a partition towards one side, which a frozen node stands in for here,
+/// [KeepMajority] resolves a partition toward one side, which a frozen node stands in for here,
 /// in clusters of their own apart from the client's. Of three nodes the two which still see each
 /// other down the third. Of two every failure is an even split, decided by the lowest address:
 /// freezing the higher one, the lower survives; freezing the lower one, the higher downs itself
@@ -3361,7 +3360,7 @@ fn majority_pair() -> anyhow::Result<[MajorityNode; 2]> {
 }
 
 /// A node leaving right after the cluster converged, while its lane to another member may still
-/// be connecting, is acknowledged by every member: a member which learns the departure by gossip
+/// be connecting, is acknowledged by every member. A member which learns the departure by gossip
 /// first waits for the leaver's connection instead of running its death at once.
 fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut state_rx = cluster::cluster_state()?;
@@ -3389,9 +3388,9 @@ fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
 /// A node which leaves announces it: every member lists it Left right away, well inside the
 /// window in which failure detection plus downing could not have concluded anything. The
-/// departure rides the control stream, the replies and the terminated signal a data stream, and
-/// this node delivers what the leaver's connection still carries before the node death: every
-/// one of [DEPARTURE_PINGS] replies arrives, in order, before the real terminated signal. The
+/// departure rides the control stream, the replies and the terminated signal a data stream. This
+/// node delivers what the leaver's connection still carries before the node death: every one of
+/// [DEPARTURE_PINGS] replies arrives, in order, before the real terminated signal. The
 /// leaving node checks its departure report itself and fails its exit otherwise.
 fn leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut process = KillOnDrop(spawn_node_at(Role::Leave, None)?);
@@ -3428,7 +3427,7 @@ fn leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// A `SelfDown` verdict from the downing provider runs the node death sequence on the node which
-/// decides it: the endpoint severs everything and refuses to rejoin, so the losing side of a
+/// decides it. The endpoint severs everything and refuses to rejoin, so the losing side of a
 /// partition gives way instead of downing the side it cannot reach.
 fn self_down_scenario() -> anyhow::Result<()> {
     let mut process = KillOnDrop(spawn_node(Role::SelfDown)?);
@@ -3437,8 +3436,8 @@ fn self_down_scenario() -> anyhow::Result<()> {
     expect_exit(&mut process, "self down")
 }
 
-/// Under mutual TLS a node's certificate must prove the address it advertises: a joiner whose
-/// certificate carries its IP or its exact `tellus://` URI is admitted, one whose certificate
+/// Under mutual TLS a node's certificate must prove the address it advertises. A joiner whose
+/// certificate carries its IP or its exact `tellus://` URI is admitted. One whose certificate
 /// proves no address, or whose URI names another port of its IP, is dropped without an answer and
 /// its join runs into its timeout. The nodes form their own cluster with their own certificate
 /// authority; the dev-transport client is not part of it.
@@ -3548,7 +3547,7 @@ fn identity_binding_scenario() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A node formed on its own is a cluster of its own, and the client's join towards it is refused
+/// A node formed on its own is a cluster of its own, and the client's join toward it is refused
 /// as foreign rather than merging the two. A node joining either cluster reports that cluster's
 /// ID, so every member of one cluster names the same one.
 fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
@@ -3586,10 +3585,10 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
     let joined = runtime
         .block_on(timeout(TIMEOUT, cluster::join(&[foreign_addr])))
-        .context("the join towards the foreign cluster ends within the timeout")?;
+        .context("the join toward the foreign cluster ends within the timeout")?;
     anyhow::ensure!(
         matches!(joined, Err(JoinError::ForeignCluster)),
-        "the join towards the foreign cluster ended as {joined:?}"
+        "the join toward the foreign cluster ended as {joined:?}"
     );
     anyhow::ensure!(
         cluster::cluster_state()?.borrow().cluster() == Some(this_cluster),
@@ -3599,7 +3598,7 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Two nodes forming clusters of their own on one fixed seed list, as a split cold start leaves
-/// them: each one's probe reports the other's address and cluster as foreign within a probe
+/// them. Each one's probe reports the other's address and cluster as foreign within a probe
 /// interval of both being up, plus the time a probe takes.
 fn foreign_probe_scenario() -> anyhow::Result<()> {
     let addrs = reserved_addrs(2)?;
@@ -4334,7 +4333,7 @@ impl Actor for Oversize {
     }
 }
 
-/// Keeps `window` requests outstanding towards the echo server until `total` replies arrived; a
+/// Keeps `window` requests outstanding toward the echo server until `total` replies arrived; a
 /// window of one measures serial latency, a large one pipelined throughput.
 struct BenchEcho {
     server: ActorRef<Request>,
@@ -4412,7 +4411,7 @@ struct BenchState {
     received: u32,
 }
 
-/// Keeps [BENCH_BULK_WINDOW] bulks of [BENCH_BULK_PAYLOAD] bytes outstanding towards a streamer
+/// Keeps [BENCH_BULK_WINDOW] bulks of [BENCH_BULK_PAYLOAD] bytes outstanding toward a streamer
 /// until [BENCH_BULKS] acknowledgments arrived.
 struct BenchBulk {
     keeper: ActorRef<KeeperMessage>,
@@ -4912,8 +4911,8 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
 /// Deterministic failure detection for the scenarios: a fixed deadline instead of the adaptive
 /// default, unilateral downing on a short deadline instead of the keep majority default, and a
 /// short retention so downed members do not pile up across scenarios. The keep majority default's
-/// even split tie break would self down this process whenever the killed node holds the lower
-/// address.
+/// even split tie break would make this process down itself whenever the killed node holds the
+/// lower address.
 fn test_config(addr: SocketAddr) -> EndpointConfig {
     let deadline = Deadline::new(Duration::from_secs(3)).expect("3s is not zero");
 
@@ -4950,7 +4949,7 @@ async fn bootstrap_cluster(seeds: Vec<SocketAddr>) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// QUIC abandons a dial towards a silent address only after its 30 s handshake timeout, which
+/// QUIC abandons a dial toward a silent address only after its 30 s handshake timeout, which
 /// would stretch a lane's give-up over minutes; every scenario waiting on failed dials needs
 /// each attempt bounded instead.
 struct TimeoutTransport(QuicTransport);

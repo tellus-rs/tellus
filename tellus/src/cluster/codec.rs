@@ -82,8 +82,7 @@ impl Codec for Postcard {
     }
 }
 
-/// A message payload which cannot be encoded or decoded, naming which of the two failed: the same
-/// payload reaches a log site from both directions, so the error has to say which way it went.
+/// A message payload which cannot be encoded or decoded, naming which of the two failed.
 #[derive(Debug, ThisError)]
 pub enum CodecError {
     /// A message which cannot be encoded into payload bytes.

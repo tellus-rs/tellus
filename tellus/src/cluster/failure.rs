@@ -124,10 +124,10 @@ impl TryFrom<UncheckedDeadline> for Deadline {
 /// effective deadline and a steady one a shorter one.
 ///
 /// Every inbound frame counts as a heartbeat, so a burst of traffic shrinks the learned
-/// intervals; the acceptable pause is added to the learned mean before any suspicion accrues,
-/// absorbing the silence until the next periodic heartbeat after such a burst, provided the
-/// longer of the heartbeat interval and the watch refresh interval stays below the acceptable pause
-/// plus the margin the threshold and the minimum standard deviation add.
+/// intervals. The acceptable pause is added to the learned mean before any suspicion accrues. It
+/// absorbs the silence until the next periodic heartbeat after such a burst. That holds as long as
+/// the longer of the heartbeat interval and the watch refresh interval stays below the acceptable
+/// pause plus the margin the threshold and the minimum standard deviation add.
 /// [start_endpoint](crate::cluster::start_endpoint) refuses a configuration which does not. Before
 /// two intervals are observed the detector falls back to the warmup deadline.
 #[derive(Debug)]

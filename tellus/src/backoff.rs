@@ -1,8 +1,8 @@
 use std::time::Duration;
 use thiserror::Error;
 
-/// The bounds of an exponential backoff, kept as one value so they cannot be transposed and so an
-/// invalid pair is unrepresentable, whether it comes from code or from a deserialized config.
+/// The bounds of an exponential backoff: a nonzero `min` and a `max` not below it, whether built
+/// in code or deserialized from a config.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(
     feature = "serde",
@@ -24,8 +24,7 @@ impl Backoff {
     /// The bounds of an exponential backoff starting at `min` and capped at `max`.
     ///
     /// # Errors
-    /// Fails if `min` is zero, which would make every step zero and hence the backoff no
-    /// backoff at all, or if `max` is below `min`.
+    /// Fails if `min` is zero or if `max` is below `min`.
     pub fn new(min: Duration, max: Duration) -> Result<Self, InvalidBackoff> {
         if min.is_zero() {
             return Err(InvalidBackoff::ZeroMin);

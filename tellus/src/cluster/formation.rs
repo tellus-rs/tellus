@@ -1,8 +1,8 @@
 //! Deciding whether this node forms a new cluster when a [bootstrap](fn@crate::cluster::bootstrap)
-//! round found none: [FormationProvider] is what
-//! [BootstrapConfig::formation](crate::cluster::BootstrapConfig::formation) takes, the default is
-//! [Majority], whose majority rule stops a downed minority from re-forming inside a partition and
-//! whose lowest-address rule makes the former unique.
+//! round found none. [FormationProvider] is what
+//! [BootstrapConfig::formation](crate::cluster::BootstrapConfig::formation) takes, and the default
+//! is [Majority]. Its majority rule stops a downed minority from re-forming inside a partition,
+//! and its lowest-address rule makes the forming node unique.
 
 use std::{
     borrow::Cow,
@@ -40,7 +40,8 @@ where
     /// round over a settled universe of at least
     /// [min_peers](crate::cluster::BootstrapConfig::min_peers) addresses which no seed admitted,
     /// after [observe](FormationProvider::observe) for the same round. Bootstrap logs a decline
-    /// at warn level when it differs from the previous one, at debug level otherwise.
+    /// at warn level when it or the universe differs from the previous decline, at debug level
+    /// otherwise.
     fn form(&mut self, formation: &Formation) -> Decision;
 }
 
@@ -57,14 +58,16 @@ pub enum Decision {
 /// Why this node does not form a cluster now.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum Declined {
-    /// Another address is the one which may form.
+    /// Another address is the one which may form: the lowest of the universe for [Majority] and
+    /// [Unanimous], the lowest not passed over for [MajorityWithFallback].
     NotLowest {
         /// The address which may form.
         lowest: SocketAddr,
     },
 
     /// Fewer addresses of the universe than the provider's rule requires are known to be no
-    /// cluster: a strict majority for [Majority], every one for [Unanimous].
+    /// cluster: a strict majority for [Majority] and [MajorityWithFallback], every one for
+    /// [Unanimous].
     NoMajority {
         /// How many addresses of the universe are known to be no cluster, this node included.
         no_cluster: usize,
@@ -135,7 +138,7 @@ pub struct Formation {
 }
 
 impl Formation {
-    /// This node holds the lowest address of the universe, hence the only one which may form.
+    /// Whether this node holds the lowest address of the universe.
     pub fn is_lowest(&self) -> bool {
         self.universe.first() == Some(&self.self_addr)
     }
@@ -171,7 +174,7 @@ impl Formation {
 /// What one join attempt against one address yielded, short of admitting this node.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JoinOutcome {
-    /// It answered that it is a member of no cluster, so it counts towards forming one.
+    /// It answered that it is a member of no cluster, so it counts toward forming one.
     NoCluster,
 
     /// It answered that it is a member of a cluster which holds back joins while one of its
@@ -180,20 +183,20 @@ pub enum JoinOutcome {
     Held,
 
     /// It did not answer, or answered something which is not an admission: unreachable, but also
-    /// a refused identity, a protocol mismatch, an undecodable frame. Nothing about whether a
-    /// cluster exists there follows from it.
+    /// a refused identity, a protocol mismatch, an undecodable frame or a member of another
+    /// cluster. Nothing about whether a cluster this node may join exists there follows from it.
     Unavailable,
 }
 
 /// The default [FormationProvider]: forms once a strict majority of the universe, this node
 /// included, is known to be no cluster, and only at the lowest address of the universe.
 ///
-/// The lowest address makes the former unique, so nodes deciding on the same universe cannot
+/// The lowest address makes the forming node unique, so nodes deciding on the same universe cannot
 /// form two clusters. The majority is what keeps a partitioned minority from forming one at all,
 /// which is the failure this exists for: its nodes are downed, restart, and would otherwise come
-/// back as a cluster of their own. Both conditions are on the universe rather than on who
-/// answered, so a node which cannot reach the lowest address forms nothing; formation liveness
-/// is hence a requirement on discovery, to stop resolving nodes which are gone.
+/// back as a cluster of their own. Both conditions are on the universe rather than on who answered,
+/// so a node which cannot reach the lowest address forms nothing; formation liveness is hence a
+/// requirement on discovery, to stop resolving nodes which are gone.
 #[derive(Debug, Default)]
 pub struct Majority;
 
@@ -210,9 +213,9 @@ impl FormationProvider for Majority {
     }
 }
 
-/// The opt-in [FormationProvider] trading uniqueness for liveness: like [Majority] it forms only
-/// once a strict majority of the universe, this node included, is known to be no cluster, but
-/// the address which may form is the lowest one of the universe minus every address which has
+/// The opt-in [FormationProvider] trading uniqueness for liveness. Like [Majority] it forms only
+/// once a strict majority of the universe, this node included, is known to be no cluster. But the
+/// address which may form is the lowest one of the universe minus every address which has
 /// answered nothing but [Unavailable](JoinOutcome::Unavailable) for at least `after`.
 ///
 /// An address's timer starts with the first round it is unavailable in. Any other answer, or a

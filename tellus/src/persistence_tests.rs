@@ -165,8 +165,8 @@ where
 
 /// Concurrent appends racing on one expected next sequence number are fenced: exactly one writer
 /// wins, every loser fails with [AppendError::Conflict], and the stream holds exactly the
-/// winner's events, gapless from sequence number 0. This is the race fencing exists for; a
-/// non-atomic check-then-insert implementation passes the sequential checks but fails here.
+/// winner's events, gapless from sequence number 0. This is the race fencing exists for. A
+/// non-atomic check-then-insert implementation passes the sequential checks but can fail here.
 pub async fn concurrent_appends_are_fenced<E>(store: E)
 where
     E: EventStore,
@@ -508,8 +508,8 @@ where
 }
 
 /// The recovery read path across both stores: with 5 events and a snapshot covering the first 3,
-/// loading the snapshot and reading from its sequence number yields exactly the tail, which is
-/// what makes a snapshot plus its tail equal to full replay.
+/// loading the snapshot and reading from its sequence number yields exactly the tail. That makes a
+/// snapshot plus its tail equal to full replay.
 pub async fn snapshot_with_event_tail<E, S>(event_store: E, snapshot_store: S)
 where
     E: EventStore,

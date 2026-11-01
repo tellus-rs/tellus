@@ -80,8 +80,8 @@ thread_local! {
 }
 
 /// Configuration for [start_endpoint], deserializable with the `serde` feature: the advertised
-/// address is required, every other field falls back to its `DEFAULT_*` constant, and the
-/// pluggable families are chosen by name, see docs/cluster.md.
+/// address is required, every other field falls back to its value in [EndpointConfig::new], and
+/// the pluggable families are chosen by name, see docs/cluster.md.
 #[derive(Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -95,13 +95,14 @@ pub struct EndpointConfig {
     pub advertised_addr: SocketAddr,
 
     /// The capacity of the outbound queue per peer node; messages told to a full queue are
-    /// dropped as dead letters, while system frames like terminated signals bypass the capacity
-    /// and are never dropped. The capacity covers the whole peer, however many streams carry it.
-    /// Defaults to [EndpointConfig::DEFAULT_OUTBOUND_CAPACITY].
+    /// dropped as dead letters. System frames like terminated signals bypass the capacity, so a
+    /// full queue never drops one, but frames in flight can still be lost with the connection.
+    /// The capacity covers the whole peer, however many streams carry it. Defaults to
+    /// [EndpointConfig::DEFAULT_OUTBOUND_CAPACITY].
     pub outbound_capacity: NonZeroUsize,
 
     /// The upper bound on the data streams opened per peer connection, which frames are spread
-    /// over by the actor they are delivered to, so a large message only delays frames towards
+    /// over by the actor they are delivered to, so a large message only delays frames toward
     /// targets hashing onto the same stream. A transport without streams lowers this to zero data
     /// streams, so every frame rides the control stream. `1` keeps one data stream for every
     /// frame delivered to an actor, beside the control stream. A transport with fewer streams
@@ -114,11 +115,10 @@ pub struct EndpointConfig {
     /// Defaults to [EndpointConfig::DEFAULT_MAX_STREAMS_PER_PEER].
     pub max_streams_per_peer: NonZeroUsize,
 
-    /// The maximum size of an encoded frame in bytes: an outbound frame beyond it becomes a
-    /// local dead letter before reaching the transport, an inbound one is refused.
-    /// [start_endpoint] refuses a value too small to hold one member or one reachability record
-    /// of a snapshot chunk.
-    /// Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
+    /// The maximum size of an encoded frame in bytes. An outbound frame beyond it becomes a local
+    /// dead letter before reaching the transport, and an inbound one is refused. [start_endpoint]
+    /// refuses a value too small to hold one member or one reachability record of a snapshot
+    /// chunk. Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
     pub max_frame_size: NonZeroUsize,
 
     /// The codec encoding and decoding message payloads. Defaults to [Postcard]; from a config
@@ -147,9 +147,9 @@ pub struct EndpointConfig {
     /// remains the deterministic choice, e.g. for tests. From a config file one of the provided
     /// detectors is chosen by name, carrying its own tuning, see docs/cluster.md.
     ///
-    /// [start_endpoint] arms one detector, feeds it a burst of heartbeats with no time between
-    /// them and refuses the configuration unless the member is still available after the longer
-    /// of `heartbeat_interval` and `watch_refresh_interval`: every inbound frame is a heartbeat,
+    /// [start_endpoint] arms one detector and feeds it a burst of heartbeats with no time between
+    /// them. It refuses the configuration unless the member is still available after the longer
+    /// of `heartbeat_interval` and `watch_refresh_interval`. Every inbound frame is a heartbeat,
     /// so traffic teaches a detector the shortest intervals there are.
     ///
     /// [DeadlineFailureDetector]: crate::cluster::failure::DeadlineFailureDetector
@@ -160,7 +160,7 @@ pub struct EndpointConfig {
 
     /// Creates the [DowningProvider] deciding when a member outside this node's connected
     /// reachability component is downed; the default is [KeepMajority] with its own default
-    /// deadline, which resolves a partition towards one side, see docs/cluster.md. From a config
+    /// deadline, which resolves a partition toward one side, see docs/cluster.md. From a config
     /// file one of the provided providers is chosen by name, carrying its own deadline.
     ///
     /// [DowningProvider]: crate::cluster::downing::DowningProvider
@@ -205,13 +205,13 @@ pub struct EndpointConfig {
     /// After this many failed connection attempts an address no Up member advertises is given up
     /// and its queued messages become dead letters; a member's address is retried until the
     /// downing provider settles its fate. Giving up is not final: a later message dials again.
-    /// An address no Up member advertises whose answer retrying cannot change is refused instead:
-    /// it does not speak this protocol or shares no version with it, fails the identity or
-    /// address check, belongs to another cluster or sends a frame beyond `max_frame_size`. Sends
-    /// towards a refused address fail without dialing for 10 s, doubling with every further
-    /// refusal up to 10 min. A refusal expired for 10 min is forgotten. An inbound handshake from
-    /// the address, an admitted join from it or a gossiped Up member at it lifts the refusal at
-    /// once.
+    /// An address no Up member advertises whose answer retrying cannot change is refused
+    /// instead. Such an address does not speak this protocol or shares no version with it,
+    /// fails the identity or address check, belongs to another cluster or sends a frame beyond
+    /// `max_frame_size`. Sends toward a refused address fail without dialing for 10 s,
+    /// doubling with every further refusal up to 10 min. A refusal expired for 10 min is
+    /// forgotten. An inbound handshake from the address, an admitted join from it or a
+    /// gossiped Up member at it lifts the refusal at once.
     ///
     /// Defaults to [EndpointConfig::DEFAULT_MAX_CONNECT_ATTEMPTS].
     pub max_connect_attempts: NonZeroU32,
@@ -493,7 +493,7 @@ pub enum FormError {
     #[error("already a member of a cluster")]
     AlreadyFormed,
 
-    /// This node's incarnation has been downed by the cluster; only a restarted process, with a
+    /// This node's incarnation has been downed or has left; only a restarted process, with a
     /// fresh incarnation, can be a member again.
     #[error("this node has been downed")]
     Downed,
@@ -522,7 +522,7 @@ pub enum FormError {
 /// another node's. References can only be serialized and deserialized after this.
 ///
 /// # Errors
-/// Fails if the endpoint has been started already, there is one per process, or if the
+/// Fails if the endpoint has been started already (there is one per process), or if the
 /// configuration is invalid.
 ///
 /// # Panics
@@ -564,12 +564,13 @@ where
 
 /// Form a cluster of this node alone, for a deployment deciding formation itself rather than
 /// leaving it to [bootstrap](fn@crate::cluster::bootstrap): a started endpoint is not a cluster, so
-/// nothing can join this node until it has formed one or joined one.
+/// nothing can join this node until it has formed one or joined one. A refusal because of a join
+/// attempt is transient and worth retrying.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, if this node is already a member, if it has been
-/// downed, or if a join attempt could be making it a member of another cluster right now or may
-/// have made it one, which is transient and worth retrying.
+/// Fails if the endpoint is not started, if this node is already a member, or if it has been
+/// downed or has left. Fails as well if a join attempt could be making it a member of another
+/// cluster right now or may have made it one.
 pub fn form() -> Result<(), FormError> {
     get().ok_or(FormError::EndpointNotStarted)?.form_cluster()
 }
@@ -651,8 +652,7 @@ pub(crate) struct EndpointInner {
 }
 
 impl EndpointInner {
-    /// Leaked, since everything downstream takes the endpoint by `'static` reference, and none of
-    /// the loops is started: a test spawns the one it exercises.
+    /// Leaked, and none of the loops is started: a test spawns the one it exercises.
     #[cfg(test)]
     pub(crate) fn for_tests(
         config: EndpointConfig,
@@ -996,7 +996,7 @@ impl EndpointInner {
         }
     }
 
-    /// Published at once, so the cluster state names the cluster as soon as it exists.
+    /// The cluster state naming the new cluster is published before this returns.
     pub(crate) fn form_cluster(&self) -> Result<(), FormError> {
         let now = tokio_time::Instant::now();
         self.lifecycle
@@ -1006,7 +1006,7 @@ impl EndpointInner {
     }
 
     /// Observed by [form]; exclusivity itself comes from the single join loop, not from this.
-    /// `false` if this node is downed, which no attempt may outlive.
+    /// `false` if this node is downed.
     pub(crate) fn enter_join(&self) -> bool {
         self.lifecycle.coordinate(Coordinator::enter_join)
     }
@@ -1157,9 +1157,7 @@ impl EndpointInner {
         .collect()
     }
 
-    /// One fan-out per tick carries everything learned since the last one, so a relayed statement
-    /// costs a round rather than a flood of its own; like gossip it skips a disconnected lane,
-    /// whose uncounted queues would otherwise grow.
+    /// Skips a disconnected lane, whose uncounted queues would otherwise grow.
     pub(crate) fn push_reachability(&self, observations: Vec<WireReachability>) {
         if observations.is_empty() || self.downed() {
             return;
@@ -1577,8 +1575,7 @@ impl EndpointInner {
         self.lanes.drain()
     }
 
-    /// The same end, chosen and announced, hence logged as a departure rather than an error. This
-    /// node's own entry stays Left: only a downing moves it to Down.
+    /// This node's own entry stays Left: only a downing moves it to Down.
     fn leave_down(&self) {
         if self.lifecycle.coordinate(Coordinator::down) {
             self.sever();
@@ -2564,7 +2561,7 @@ mod tests {
     }
 
     /// A push skips a member whose lane is known disconnected, so a partition cannot turn every
-    /// observation into another dial at the peers which just went silent; a member with no lane at
+    /// observation into another dial at the peers which just went silent. A member with no lane at
     /// all is still dialed, exactly as gossip does it.
     #[test]
     fn a_reachability_push_skips_a_disconnected_lane() {
@@ -2689,7 +2686,7 @@ mod tests {
         assert_eq!(state_of(&state, younger), Some(MemberState::Up));
     }
 
-    /// A self down decided by the same merge neither skips the other outcomes nor publishes
+    /// A self-down decided by the same merge neither skips the other outcomes nor publishes
     /// twice: one value shows the superseded peer Down, the successor Up and this node Down.
     #[test]
     fn a_self_down_merge_still_applies_every_outcome() {
@@ -2723,7 +2720,7 @@ mod tests {
         assert_eq!(state_of(&state, endpoint.node()), Some(MemberState::Down));
     }
 
-    /// A self down's fence covers this node's own observations, so pruning them can make a
+    /// A self-down's fence covers this node's own observations, so pruning them can make a
     /// survivor reachable again; that happens inside the merge's update, never as a second value.
     #[test]
     fn a_self_down_merge_prunes_before_publishing() {
@@ -2810,7 +2807,7 @@ mod tests {
         );
     }
 
-    /// A self down publishes this node's own Down, the last value before the loops end.
+    /// A self-down publishes this node's own Down, the last value before the loops end.
     #[test]
     fn a_self_down_publishes_its_own_down() {
         let (endpoint, _dial_requests, _join_requests) =
@@ -3152,9 +3149,9 @@ mod tests {
         let mut dials = dial_requests.try_iter().collect::<Vec<_>>();
         dials.sort_by_key(|dial| dial.addr);
         let mut dials = dials.into_iter();
-        let acknowledged = dials.next().expect("a lane towards port 2");
-        let unacknowledged = dials.next().expect("a lane towards port 3");
-        let _silent = dials.next().expect("a lane towards port 4");
+        let acknowledged = dials.next().expect("a lane toward port 2");
+        let unacknowledged = dials.next().expect("a lane toward port 3");
+        let _silent = dials.next().expect("a lane toward port 4");
         let _ = acknowledged.done_tx.send(Drain::Acknowledged);
         drop(unacknowledged);
 
@@ -3928,8 +3925,8 @@ mod tests {
         assert_eq!(coordinator.release_pin_if_gone(&universe), None);
         assert_eq!(pinned_addr(&coordinator), Some(addr(2)));
     }
-    /// A down may land anywhere inside an attempt, and must win everywhere: no attempt starts on
-    /// a downed node, no pin is written after it, and whatever the attempt's raw outcome, its
+    /// A down may land anywhere inside an attempt, and must win everywhere. No attempt starts on
+    /// a downed node, and no pin is written after it. Whatever the attempt's raw outcome, its
     /// caller learns of the down and nothing stays pinned.
     #[test]
     fn a_down_dominates_every_stage_of_a_join() {

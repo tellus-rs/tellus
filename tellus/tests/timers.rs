@@ -330,9 +330,9 @@ async fn a_reply_to_in_a_pending_timer_resolves_as_no_reply_at_termination() {
     assert!(matches!(reply, Err(AskError::NoReply)), "{reply:?}");
 }
 
-/// A mailbox which never runs empty does not starve a due timer: the run loop fires a due timer
+/// A mailbox which never runs empty does not starve a due timer. The run loop fires a due timer
 /// before it receives the next item, so the timer lands behind the one tick queued at that moment
-/// rather than behind the whole flood, and the flood stops long before its bound.
+/// rather than behind the whole flood. The flood stops long before its bound.
 #[tokio::test(start_paused = true)]
 async fn a_flooded_mailbox_does_not_starve_a_due_timer() {
     let (ticks_tx, mut ticks_rx) = mpsc::unbounded_channel();

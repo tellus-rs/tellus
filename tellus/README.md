@@ -33,8 +33,6 @@ clustered remoting over QUIC. Inspired by Carl Hewitt's
 [Actor Model](https://en.wikipedia.org/wiki/Actor_model) and strongly influenced by Akka, continued
 as open source by [Apache Pekko](https://pekko.apache.org).
 
-tellus is under active development and its API is still settling.
-
 ## Highlights
 
 - **Typed actors as state machines**: `receive` maps the current state and a message to the next
@@ -152,9 +150,9 @@ that cannot fail). Inside `receive`, use `?` to escalate a failure to supervisio
 `match` to handle it as part of the domain.
 
 `receive` is synchronous and runs on a Tokio worker: an actor cannot be stopped while `receive` is
-running, so a `receive` which never completes keeps all its ancestors from terminating. For long
-running or blocking work, use `ActorContext::pipe_to_self`: it runs a future on its own task and
-delivers the output to the actor as an ordinary message, which a full bounded mailbox does not
+running, so a `receive` which never completes keeps all its ancestors from terminating. For
+long-running or blocking work, use `ActorContext::pipe_to_self`: it runs a future on its own task
+and delivers the output to the actor as an ordinary message, which a full bounded mailbox does not
 refuse. For a deadline, a retry or an idle timeout, declare `type Timers = Timed;` and use
 `ActorContext::start_timer`: it delivers a message to the actor itself once a delay has elapsed. A
 timer replaced under its key or canceled with `ActorContext::cancel_timer` is never received. An
@@ -163,10 +161,11 @@ actor with `type Timers = Untimed;` has no timers and pays nothing for them.
 ### The actor tree and termination
 
 Creating an `ActorSystem` spawns the root actor; every actor can spawn children via
-`ActorContext::spawn`. When an actor stops (by returning `Control::Stop`, by failing under the
-`Stop` strategy, or because its parent stopped), its children are stopped first; only once all
-descendants have terminated does it terminate itself. Consequently `ActorSystem::terminated`
-resolves exactly when the entire tree has terminated.
+`ActorContext::spawn`. An actor stops by returning `Control::Stop`, by failing under the `Stop`
+strategy, by failing once more after its restart limit is exhausted, or because its parent stopped
+it. Its children are stopped first; only once all descendants have terminated does it terminate
+itself. `ActorSystem::stop` stops the root, and with it the whole tree, from the outside.
+`ActorSystem::terminated` resolves exactly when the entire tree has terminated.
 
 ### Messaging
 
@@ -268,10 +267,11 @@ and it reports the key path along with any error. Note that `serde_yaml` deseria
 same types differently, expecting a YAML tag (`supervision_strategy: !restart`) instead.
 
 Anything omitted falls back to its default, except `max_restarts`, which a `restart` section must
-name. Invalid backoff bounds are rejected rather than silently repaired: `Backoff::new` is fallible
-and deserialization goes through it, so an invalid pair is unrepresentable whether it comes from
-code or from a file. Bounds which contradict each other are one case, a zero minimum the other,
-since that would make every step zero and hence the backoff no backoff at all:
+name, and the bounds of a `backoff` table, which needs both `min` and `max`. Invalid backoff bounds
+are rejected rather than silently repaired: `Backoff::new` is fallible and deserialization goes
+through it, so an invalid pair is unrepresentable whether it comes from code or from a file. Bounds
+which contradict each other are one case, a zero minimum the other, since that would make every step
+zero and hence the backoff no backoff at all:
 
 ```text
 max backoff 1s below min backoff 10s for key `supervision_strategy.backoff`
@@ -313,14 +313,14 @@ transport:
   server_name: tellus
 ```
 
-A custom codec, failure detector, downing provider or formation provider is not something a
-config file can name, so those stay code: the fields are public and take the implementation after
-the config was loaded. Validation holds across the boundary here too: deserialization refuses
-exactly what `start_endpoint` and `bootstrap` refuse, for example an advertised address with an
-unspecified IP or a zero port, a zero heartbeat interval, a frame size too small for one member or
-one reachability record and a zero resolve interval. `InvalidEndpointConfig` and
-`InvalidBootstrapConfig` list every case. The seed addresses are configuration as well: a plain
-list for `FixedSeeds`, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
+A custom codec, failure detector, downing provider or formation provider is not something a config
+file can name, so those stay code: the fields are public and take the implementation after the
+config was loaded. Validation holds across the boundary here too: deserialization refuses exactly
+what `start_endpoint` and `bootstrap` refuse. Examples are an advertised address with an unspecified
+IP or a zero port, a zero heartbeat interval, a frame size too small for one member or one
+reachability record and a zero resolve interval. `InvalidEndpointConfig` and
+`InvalidBootstrapConfig` list every case. The seed addresses are configuration as well: a plain list
+for `FixedSeeds`, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
 selector of [tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by
 path, which `QuicTransport::from_config` reads.
 
@@ -352,9 +352,9 @@ returned by `handle` against the entity's state, without a store. See the Testin
 
 The examples in [`examples/tutorials/getting_started`](examples/tutorials/getting_started) are the
 code of the [getting started tutorial](https://tellus.rs/docs/tutorials/getting-started/), one
-program per step: from a single actor via child actors, watch and a per-request query to
-supervision, a device manager on top and readings which go stale through timers. Each step builds
-on the previous one. All examples print their results to stdout; those which set up logging log to
+program per step. They lead from a single actor via child actors, watch and a per-request query to
+supervision, a device manager on top and readings which go stale through timers. Each step builds on
+the previous one. All examples print their results to stdout; those which set up logging log to
 stderr, with the log level configured via `RUST_LOG`.
 
 ```shell
@@ -363,9 +363,9 @@ cargo run --quiet -p tellus --example getting_started_01_hello
 
 The examples in [`examples/tutorials/clustered`](examples/tutorials/clustered) are the code of the
 [clustered actors tutorial](https://tellus.rs/docs/tutorials/clustered-actors/), which spreads the
-device manager over a cluster: two nodes bootstrapping from fixed seeds, messages that cross the
-wire, the receptionist, a node that dies and one that leaves. Each step starts its other nodes as
-child processes, so one command runs the whole cluster:
+device manager over a cluster. Its steps cover two nodes bootstrapping from fixed seeds, messages
+that cross the wire, the receptionist, a node that dies and one that leaves. Each step starts its
+other nodes as child processes, so one command runs the whole cluster:
 
 ```shell
 cargo run --quiet -p tellus --features cluster-dev --example clustered_01_two_nodes

@@ -12,7 +12,7 @@ use std::{
     convert::Infallible,
     env,
     net::{Ipv4Addr, SocketAddr},
-    num::NonZeroU16,
+    num::{NonZeroU16, NonZeroUsize},
     path::Path,
     sync::{
         Arc,
@@ -38,8 +38,10 @@ const PORT: NonZeroU16 = NonZeroU16::new(7878).expect("7878 is not zero");
 const HTTP_PORT: u16 = 8080;
 const TLS_DIR: &str = "/etc/tellus/tls";
 const SERVER_NAME: &str = "tellus";
+// Must match the manifest's `replicas`.
+const REPLICAS: NonZeroUsize = NonZeroUsize::new(3).expect("3 is not zero");
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(60);
-// Must exceed the time the readiness probe takes to fail: periodSeconds times failureThreshold.
+// Must cover the propagation of the endpoint removal to kube-proxy, ingresses and load balancers.
 const UNREADY_LINGER: Duration = Duration::from_secs(5);
 const TERMINATION_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -84,9 +86,13 @@ async fn main() -> anyhow::Result<()> {
     })
     .await
     .context("Kubernetes seed discovery")?;
+    let bootstrap_config = BootstrapConfig {
+        min_peers: REPLICAS,
+        ..BootstrapConfig::new()
+    };
     timeout(
         BOOTSTRAP_TIMEOUT,
-        cluster::bootstrap(seeds, BootstrapConfig::new()),
+        cluster::bootstrap(seeds, bootstrap_config),
     )
     .await
     .context("no cluster within the timeout")?

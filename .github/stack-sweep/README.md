@@ -146,9 +146,10 @@ directory under `target/`. It then runs:
 
 Three null runs of `main` (`ac59a98`) per bench, plus the label runs of #188 (`b49a9f5` against
 `ac59a98`), whose base and candidate executables had one hash and which therefore count as null
-runs, too. Every bench run reported `stack_shift_threads` of at least 4. Treating a row differently
-because of these data is a separate decision, which names either replacement coverage or the
-coverage it gives up.
+runs, too. They predate the `timers` group, so the messaging figures cover the other 10 rows and
+none of the 6 `timers` rows. Every bench run reported `stack_shift_threads` of at least 4. Treating
+a row differently because of these data is a separate decision, which names either replacement
+coverage or the coverage it gives up.
 
 ### Messaging
 

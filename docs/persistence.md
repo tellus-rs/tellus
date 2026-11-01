@@ -23,6 +23,13 @@ bytes; implementations live in separate backend crates, except the in-memory one
 `tellus` provides behind the `persistence-in-memory` feature. Everything below holds for any
 conforming store.
 
+A conforming store reads back every event and snapshot with manifest, schema version and payload
+exactly as written. The `persistence-tests` feature, which implies `persistence`, adds the contract
+test suite [`tellus::persistence_tests`](../tellus/src/persistence_tests.rs) which every store
+implementation must pass. `event_store_contract` and `snapshot_store_contract` run all checks of
+one store, and `snapshot_with_event_tail` checks the recovery read path across both. A backend crate
+runs the suite from its integration tests against a real server, under a Tokio runtime.
+
 ## Defining an event-sourced actor
 
 The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
@@ -53,11 +60,14 @@ for plain actors.
 
 ## Identity
 
-An event stream is identified by a `PersistenceId`, an application-chosen pair of `entity_type`
-and `entity_id` which is stable across incarnations: every spawn of "order 42" names the same
-stream. The identity remains stable across time and nodes. It is unrelated to `ActorId`, which is
-fresh per spawn and distinguishes incarnations; over time many `ActorId`s serve one
-`PersistenceId`.
+An event stream is identified by a `PersistenceId`, an application-chosen pair of `entity_type` and
+`entity_id` which is stable across incarnations, time and nodes: every spawn of "order 42" names the
+same stream. It is unrelated to `ActorId`, which is fresh per spawn and distinguishes incarnations;
+over time many `ActorId`s serve one `PersistenceId`.
+
+`PersistenceId::new` fails unless both segments are non-empty, at most 255 bytes long and free of
+slashes. The text form joins them as `entity_type/entity_id`; `Display` writes it and `FromStr`
+parses it back.
 
 ## Recovery
 
@@ -91,11 +101,11 @@ never run during replay; recovery is observable only through `recovered`.
 
 ## Effects and durability
 
-`handle` returns an `Effect`: which events to persist, whether to stop, and what to do afterwards.
+`handle` returns an `Effect`: which events to persist, whether to stop, and what to do afterward.
 Events are durable, as defined by the store, before they are applied. A continuation attached via
-`then` runs after its events are durable and applied, and never on replay: it is the only safe
-place for outward-facing actions such as replying to an ask or telling another actor. On an effect
-without events, `then` runs right after `handle`.
+`then` runs after its events are durable and applied, and never on replay: it is the only safe place
+for outward-facing actions such as replying to an ask or telling another actor. On an effect without
+events, `then` runs right after `handle`.
 
 All events of one `Effect` are appended atomically: after a crash the stream contains all of them
 or none, never a prefix.
@@ -107,12 +117,14 @@ durable, and the continuations after it are lost like those of a crash.
 
 ## Ordering
 
-Writes are strict: a command is fully settled, meaning its events are durable and applied and its
-`then` has run, before the next incoming is taken from the mailbox. The mailbox guarantees of
-[actors.md](actors.md) carry over unchanged: messages from one sender arrive in send order, and a
-terminated signal arrives behind all messages the terminated actor delivered. A parent's stop is
-honored between commands and at any point during recovery, never in the middle of one command
-settling, and the termination sequence is the same as for any actor.
+Writes are strict: a command is fully settled before the next incoming is taken from the mailbox.
+Fully settled means that its events are durable and applied, its `then` has run and the save of a
+due snapshot has been attempted. A failed snapshot save is logged at warn level, and settlement
+still completes. The mailbox guarantees of [actors.md](actors.md) carry over unchanged: messages
+from one sender arrive in send order, and a terminated signal arrives behind all messages the
+terminated actor delivered. A parent's stop is honored between commands and at any point during
+recovery, never in the middle of one command settling, and the termination sequence is the same as
+for any actor.
 
 ## Failure and supervision
 
@@ -129,12 +141,13 @@ restart fails identically, and so it escalates through the restart limit to a st
 snapshot is the one exception, discarded in favor of full replay (see schema evolution below). A
 failure of `recovered`, or a failure or panic of a store itself while loading the snapshot or
 reading events, is an ordinary startup failure, e.g. a struggling dependency, which a restart with
-backoff may well fix. A failed snapshot load is deliberately not traded for full replay: only an
-undecodable snapshot is discarded; a snapshot store failure surfaces through supervision instead of
-silently turning every recovery into a full replay.
+backoff may well fix. A failed snapshot load is deliberately not traded for full replay, so a
+snapshot store failure surfaces through supervision instead of silently turning every recovery into
+a full replay.
 
 A failure to save a snapshot is logged and never fails the actor: losing a snapshot only makes the
-next recovery replay more events.
+next recovery replay more events. `NoSnapshots`, the snapshot store of a `Persistence` without one,
+drops an offered snapshot with a warning.
 
 ## Fencing
 
@@ -155,30 +168,29 @@ fence in the store, which tellus does not provide.
 ## Sequence numbers
 
 Sequence numbers are per `PersistenceId`, gapless, and start at 0, carried by the `SeqNo` type. A
-`SeqNo` names either a stored event's position or the position at which the next event is
-appended, which is `SeqNo::ZERO` for an empty stream. One type covers both because every use is a
-position replay resumes at, never one it resumes after: a snapshot records the sequence number at
-which replay resumes, the fencing expectation is the position the next append claims, and a read
-starts at the given position inclusively. No position is ever converted between a position
-replay resumes at and one it resumes after.
+`SeqNo` names either a stored event's position or the position at which the next event is appended,
+which is `SeqNo::ZERO` for an empty stream. One type covers both because every use is a position
+replay resumes at, never one it resumes after. A snapshot records the sequence number at which
+replay resumes, the fencing expectation is the position the next append claims, and a read starts at
+the given position inclusively. No position is ever converted between a position replay resumes at
+and one it resumes after.
 
 ## Schema evolution
 
-Events outlive the code that wrote them, so the stored representation carries what evolution
-needs. Every stored event and snapshot carries a manifest, a stable name independent of the Rust
-type path, and a schema version, both outside the payload
+Events outlive the code that wrote them, so the stored representation carries what evolution needs.
+Every stored event and snapshot carries a manifest, a stable name independent of the Rust type path,
+and a schema version, both outside the payload
 ([`Versioned`](../tellus/src/persistence/versioned.rs)); the payload itself is encoded
 self-describingly by a [`Codec`](../tellus/src/persistence/codec.rs), CBOR by default.
 `Persistence::with_codec` selects another codec, such as the provided `Json`, whose payloads are
-readable in the store. Stored records do not name their codec, so it must not change once events
-are written. A custom codec wraps its serializer's errors via `EncodeError::new` and
+readable in the store. Stored records do not name their codec, so it must not change once events are
+written. A custom codec wraps its serializer's errors via `EncodeError::new` and
 `PayloadError::new`. Old versions can be upcast on read by overriding `Versioned::decode`: the
-current code declares which versions it still decodes and converts them while replaying; a version
+current code declares which versions it still decodes and converts them while replaying. A version
 which is neither current nor upcast is rejected on read, and the store is never rewritten. A stored
-manifest other than the type's `Versioned::MANIFEST` is rejected as well, before
-`Versioned::decode` is called. A rejected event fails recovery; a snapshot that can no longer be
-decoded is discarded and recovery falls back to full replay, so snapshots never need migration
-code.
+manifest other than the type's `Versioned::MANIFEST` is rejected as well, before `Versioned::decode`
+is called. A rejected event fails recovery; a snapshot that can no longer be decoded is discarded
+and recovery falls back to full replay, so snapshots never need migration code.
 
 `EncodedEvent::manifest` and `EncodedSnapshot::manifest` are `Cow<'static, str>`: framework-created
 values borrow `Versioned::MANIFEST` without allocating per event, while stores use the owned form
@@ -188,13 +200,14 @@ and build a value read from storage with `.into()` on the `String`.
 ## Testing
 
 The methods of `EventSourced` are plain synchronous functions, so an entity's logic can be unit
-tested without a system, a mailbox or a store. `init`, `init_from_snapshot`, `apply` and
-`snapshot` take no context at all; replaying events is a fold of `apply` over `init`. `handle` and
-`recovered` need an `ActorContext`, which `TestContext` provides with the `test-util` feature.
-`Effect` is inspectable with `events` and `stop_requested`, and `settle` runs it the way
-settlement does once the events are durable: it applies the events to the state in order and then
-runs the `then` continuations in order on the resulting state. Whatever a continuation sends to
-the entity itself is read back with `take_incoming`.
+tested without a system, a mailbox or a store. `init`, `init_from_snapshot`, `apply` and `snapshot`
+take no context at all; replaying events is a fold of `apply` over `init`. `handle` and `recovered`
+need an `ActorContext`, which `TestContext` provides with the `test-util` feature. `Effect::none`
+persists nothing, e.g. for a command which only reads the state. With `test-util`, an `Effect` is
+inspectable with `events` and `stop_requested`. `settle` runs it the way settlement does once the
+events are durable: it applies the events to the state in order and then runs the `then`
+continuations in order on the resulting state. Whatever a continuation sends to the entity itself is
+read back with `take_incoming`.
 
 ```rust
 use serde::{Deserialize, Serialize};

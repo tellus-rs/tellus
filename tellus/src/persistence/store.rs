@@ -21,12 +21,12 @@ where
     /// atomically: after a crash the stream contains all of them or none. The append is
     /// conditional on `next_seq_no`, which fences concurrent incarnations. `next_seq_no` is
     /// [SeqNo::ZERO] for an empty stream. An empty `events` appends nothing but is still
-    /// conditional.
+    /// conditional. A failed append leaves the stream untouched, whatever the cause.
     ///
     /// # Errors
     /// Implementations fail with a conflict if the stream's actual next sequence number differs
-    /// from `next_seq_no`, below or above, leaving the stream untouched, or with their own error
-    /// if the events cannot be written; either way the append is all or nothing.
+    /// from `next_seq_no`, below or above, or with their own error if the events cannot be
+    /// written.
     async fn append(
         &self,
         id: &PersistenceId,

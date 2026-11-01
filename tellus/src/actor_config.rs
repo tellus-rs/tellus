@@ -82,10 +82,12 @@ pub enum SupervisionStrategy {
     Stop,
 
     /// Stop the child actors and replace the current state with a newly initialized one, limited
-    /// and paced by the given [RestartPolicy].
+    /// and paced by the given [RestartPolicy]. A restart cancels the actor's timers and keeps its
+    /// mailbox.
     ///
     /// [Actor::init] is re-run on the same actor value: anything the actor itself carries survives
-    /// the restart; only the state is rebuilt.
+    /// the restart, and only the state is rebuilt. An event-sourced actor recovers its state by
+    /// replay instead of running [Actor::init].
     ///
     /// [Actor::init]: crate::Actor::init
     Restart(RestartPolicy),

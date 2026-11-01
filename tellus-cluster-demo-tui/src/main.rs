@@ -1,7 +1,8 @@
-//! A terminal observer for the cluster demo: it follows every node's and the verifier's event
-//! stream and shows the membership matrix (what each node says about every address), the
-//! selected node's detail, the verifier's counters and a merged timeline, ordered by the servers'
-//! own timestamps. It changes nothing; the chaos agent keeps running.
+//! A terminal observer for the cluster demo: it follows two event streams per node (the inspect
+//! crate's `/inspect/events` and the demo's `/events`) plus the verifier's, and polls `/cluster`,
+//! `/probe` and `/status` slowly. It shows the membership matrix (what each node says about every
+//! address), the selected node's detail, the verifier's counters and a merged timeline, ordered by
+//! the servers' own timestamps. It changes nothing; the chaos agent keeps running.
 
 mod config;
 mod model;

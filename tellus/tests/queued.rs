@@ -6,7 +6,7 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 const MESSAGES: usize = 1_000;
 
 /// An actor which floods itself sees, on each of those messages, exactly the ones still queued
-/// behind it: nothing else sends to it, and only the actor itself removes items, so the depth
+/// behind it. Nothing else sends to it, and only the actor itself removes items, so the depth
 /// counts down from all but the first to none.
 #[tokio::test]
 async fn an_actor_sees_what_is_queued_behind_the_current_message() {

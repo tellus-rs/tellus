@@ -1,7 +1,7 @@
-//! An axum [Router] which lets an operator or a tool inspect the tellus cluster node it runs in:
-//! `GET /cluster` answers a [Snapshot] of the node's view, `GET /events` streams every change of
-//! it as server-sent events, resumable with `Last-Event-ID` from a bounded log. Mount it into the
-//! application's own server, behind whatever protects that server, since it reveals the
+//! An axum [Router] which lets an operator or a tool inspect the tellus cluster node it runs in.
+//! `GET /cluster` answers a [Snapshot] of the node's view, and `GET /events` streams every change
+//! of it as server-sent events, resumable with `Last-Event-ID` from a bounded log. Mount it into
+//! the application's own server, behind whatever protects that server, since it reveals the
 //! cluster's topology:
 //!
 //! ```ignore
@@ -70,10 +70,10 @@ pub enum InspectError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum InspectEvent {
-    /// Opens every stream. A changed `started_at` on a reconnect means the node restarted;
+    /// Opens every stream. A changed `started_at` on a reconnect means the node restarted.
     /// `resumed` is `false` when the stream does not continue right after the client's
-    /// `Last-Event-ID`, in which case the retained history and the current state and verdict
-    /// follow, and only the last of those carries an id.
+    /// `Last-Event-ID`. Then the retained history and the current state and verdict follow, and
+    /// only the last of those carries an id.
     Hello {
         /// Unix milliseconds at which the log started, the first half of every id.
         started_at: u64,

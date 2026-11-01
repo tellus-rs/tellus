@@ -13,8 +13,8 @@ const SELECTOR: &str = "app=tellus";
 const PORT: NonZeroU16 = NonZeroU16::new(7_878).expect("7878 is not zero");
 
 /// Every pod which is running and has an address contributes it, paired with the one configured
-/// port; a terminating, a finished and an address-less pod contribute nothing, since counting
-/// them would inflate the universe bootstrap decides over.
+/// port. A terminating and a finished pod contribute nothing, since counting them would inflate
+/// the universe bootstrap decides over, and a pending pod has no address to contribute yet.
 #[tokio::test]
 async fn test_number_port() -> anyhow::Result<()> {
     let pods = pod_list(vec![
@@ -59,7 +59,7 @@ async fn test_primary_address_only() -> anyhow::Result<()> {
 }
 
 /// A named port is taken from each pod's own specification, so nodes can advertise differing
-/// ports; a pod which does not carry that name, or carries a number outside the port range, is
+/// ports. A pod which does not carry that name, or carries a number outside the port range, is
 /// skipped instead of contributing an address nothing listens at.
 #[tokio::test]
 async fn test_named_port() -> anyhow::Result<()> {

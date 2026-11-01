@@ -1,5 +1,5 @@
 //! A flaky `Loader` under the `Restart` supervision strategy, event-sourced: the count is a fold of
-//! persisted events, so the restart after a toxic value recovers it by replay from PostgreSQL
+//! persisted events. So the restart after a toxic value recovers it by replay from PostgreSQL
 //! instead of starting over at 0, and a rerun of the whole process counts on where the last one
 //! stopped. The mailbox survives a restart as before, so the values queued behind a toxic one
 //! still get loaded.

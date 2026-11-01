@@ -49,31 +49,30 @@ nothing. Each denies its side ingress from the other:
   which restarts mid-partition can still bootstrap.
 
 Blocking ingress on both sides cuts both directions, which is what the Compose stack's two pumba
-rules do. Unlike those rules, the label survives a container restart, so a node self-downing
-mid-partition stays cut off; that retires a Compose caveat rather than inheriting it. A pod which
-is deleted and recreated does come back unlabeled, which is fine, because that is the crash
-fault and not a partition.
+rules do. Unlike those rules, the label survives a container restart, so a node which downs itself
+mid-partition stays cut off; that retires a Compose caveat rather than inheriting it. A pod which is
+deleted and recreated does come back unlabeled, which is fine, because that is the crash fault and
+not a partition.
 
-**The labels alone cut nothing**, which is the one thing about this fault worth knowing. A
-NetworkPolicy is evaluated when a connection is new: kindnetd queues the first packet of a flow
-to its policy engine, and once the flow is admitted it carries a conntrack label which the
-`established,related` rule accepts directly from then on. The cluster's QUIC connections are long
-lived and its one second heartbeats keep the conntrack entries fresh indefinitely, so a policy
-applied to a running cluster never sees a packet it could drop. Labeling five pods and waiting
-changes nothing at all; every node keeps seeing every other as Up.
+**The labels alone cut nothing.** A NetworkPolicy is evaluated when a connection is new. kindnetd
+queues the first packet of a flow to its policy engine, and once the flow is admitted it carries a
+conntrack label which the `established,related` rule accepts directly from then on. The cluster's
+QUIC connections are long-lived and its one second heartbeats keep the conntrack entries fresh
+indefinitely, so a policy applied to a running cluster never sees a packet it could drop. Labeling
+five pods and waiting changes nothing at all; every node keeps seeing every other as Up.
 
 [`flush.yaml`](flush.yaml) is what closes that gap: a DaemonSet holding nothing but a sleeping
-container, which the agent execs into after labeling to delete every conntrack entry of every
-node. The flows are forgotten, their next packets count as new, and the policy finally applies.
-With the flush the minority self-downs and the majority keeps quorum; without it the partition is
-a no-op which still looks like a perfectly healthy run.
+container, which the agent execs into after labeling to delete every conntrack entry of every node.
+The flows are forgotten, their next packets count as new, and the policy finally applies. With the
+flush the minority downs itself and the majority keeps quorum; without it the partition is a no-op
+which still looks like a perfectly healthy run.
 
-Two details of that flush are not optional, and both were found the hard way:
+Two details of that flush are required:
 
-- **It comes after the labels have settled, and it runs twice.** kindnetd's policy engine learns
-  the labels through an informer, and a flush racing ahead of it deletes flows which are then
-  re-admitted under the old view and pinned for the rest of the window. The agent waits, flushes,
-  waits again and flushes again, which also clears anything admitted in between.
+- **It comes after the labels have settled, and it runs twice.** kindnetd's policy engine learns the
+  labels through an informer. A flush racing ahead of it deletes flows which are then re-admitted
+  under the old view and pinned for the rest of the window. The agent waits, flushes, waits again
+  and flushes again, which also clears anything admitted in between.
 - **It deletes by address, not by port.** `conntrack -D -p udp --dport 7878` matches the original
   direction only and leaves most of the cluster's entries in place; deleting `-s` and `-d` for
   each node's address is what actually empties them.
@@ -89,9 +88,9 @@ the policy hooks consult is the node's, so the flush has to happen there; keepin
 node also keeps the demo image free of it. It is node level access, which is why it is a separate
 pod with one job rather than a capability handed to the chaos agent.
 
-This is worth remembering beyond the demo: a NetworkPolicy is not a way to interrupt traffic
-which is already flowing, whatever the protocol, and a cluster held together by long lived
-connections will not notice one.
+This is worth remembering beyond the demo: a NetworkPolicy is not a way to interrupt traffic which
+is already flowing, whatever the protocol, and a cluster held together by long-lived connections
+will not notice one.
 
 ## The faults
 
@@ -110,12 +109,12 @@ better than the Compose pair.
 **Why force deletion.** It is the only crash reachable from inside the cluster. A process cannot
 SIGKILL PID 1 of its own PID namespace, so `kubectl exec -- kill -KILL 1` returns success and does
 nothing, and SIGTERM is the departure fault rather than a crash. Kubernetes warns against force
-deleting StatefulSet pods because it frees the name before the kubelet confirms the process is
-gone, which breaks applications needing at most one instance per identity. That does not apply
-here: these pods hold no volume, identity in tellus is the advertised address together with the
-incarnation, so a replacement is a distinct member even at an address its predecessor held, and
-stale members are exactly what incarnations and downing exist for. A duplicate which did survive
-would show up as a sixth Up member and fail the verifier's next check.
+deleting StatefulSet pods because it frees the name before the kubelet confirms the process is gone,
+which breaks applications needing at most one instance per identity. That does not apply here: these
+pods hold no volume. Identity in tellus is the advertised address together with the incarnation, so
+a replacement is a distinct member even at an address its predecessor held. Stale members are
+exactly what incarnations and downing exist for. A duplicate which did survive would show up as a
+sixth Up member and fail the verifier's next check.
 
 **Why there is no dead window.** The StatefulSet replaces a deleted pod at once, so nothing keeps
 a node down for a fixed time, and the Compose agent's `DEAD_SECS` has no counterpart. It is not

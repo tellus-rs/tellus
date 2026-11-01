@@ -17,8 +17,8 @@ use std::{
 };
 use thiserror::Error;
 
-/// The name an actor is registered under for discovery, typed by the actor's message type: the
-/// type's [Manifest] travels with the name, so a [lookup](receptionist::lookup_at) naming another
+/// The name an actor is registered under for discovery, typed by the actor's message type. The
+/// type's [Manifest] travels with the name, so a [lookup](receptionist::lookup) naming another
 /// type is refused rather than resolved into a reference which drops every message it is told.
 pub struct Key<M> {
     kind: KeyKind,
@@ -130,9 +130,9 @@ pub enum RegisterError {
 /// returns `Ok`.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, if the reference names an actor on another node, if the
-/// registration does not fit one frame, or if this node already holds the most registrations or
-/// bytes of registrations one node may.
+/// Fails if the endpoint is not started, if the reference names an actor on another node, or if
+/// the registration does not fit one frame. Fails as well if this node already holds the most
+/// registrations or bytes of registrations one node may.
 pub fn register<M>(key: &Key<M>, actor_ref: &ActorRef<M>) -> Result<(), RegisterError>
 where
     M: Manifest + DeserializeOwned + Send + 'static,

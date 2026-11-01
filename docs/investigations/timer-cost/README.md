@@ -9,10 +9,11 @@ reuses.
 
 ## Status
 
-As of 2026-10-27, #174 is open and not merged. Its head is `283e5e7`, one commit on top of `main`
-at `39aec83`. It may only be merged once actors without timers are no measurably slower, i.e.
-every messaging row passes the protocol below. The results are posted on #174; the tracking issue
-#178 is closed in favor of the PR.
+#174 was closed unmerged on 2026-10-27. Its head is `283e5e7`, one commit on top of `main` at
+`39aec83`. It could only be merged once actors without timers were no measurably slower, i.e. every
+messaging row passed the protocol below. The results are posted on #174; the tracking issue #178 is
+closed in favor of the PR. Timers shipped with #185 (`8252b06`), opt-in per actor type, and the
+variants are kept as patches in [`patches/`](patches) (#190).
 
 A diagnostic with the mailbox item `Queued<M>` and its gate alone reproduces most of the cost. That
 isolates a configuration, not an instruction-level cause. Two designs which keep timer items out of
@@ -1268,31 +1269,31 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
   up to 18% and fails `ping_pong`. The single select variant restores `main`'s recv inlining and
   still fails five x86_64 rows by 7.5 to 13.6%; its per-message additions over the cursor's untimed
   loop (the third branch's poll, the `count_received` check, the larger select, the channel code's
-  register allocation) are not separated. The combined waiting future fails eight x86_64 rows by
-  7.4 to 17.4%. #174's own candidate fails two. With four loop variants on `main`'s receive failing
-  the x86_64 throughput rows, the next decision is one of scope, not another loop variant: the
-  timer API (what an actor without timers may pay, or whether timers are opt-in per actor at spawn
-  so the untimed loop stays `main`'s), or the performance requirement. A calibration of how much
-  added work in `main`'s loop costs on the sweep's runners would describe the gate; it does not
-  authorize relaxing it. Decided on 2026-10-27: the gate stays, and timers become opt-in at the
-  type level. `Actor` and `EventSourced` gain an associated type `type Timers: TimerMode;` with
-  `Untimed` and `Timed`, the context becomes `ActorContext<M, T>`, and `start_timer` and
-  `cancel_timer` exist only on `ActorContext<M, Timed>`. `spawn` picks one of two task futures by
-  `T` before spawning; the untimed one is `main`'s loop over `main`'s context. The mode is fixed
-  per spawn and survives restarts. Opt-in alone establishes nothing: the untimed loop's generated
-  code must match `main`'s per function on both architectures, and the unchanged sweep decides.
-  Done, see the opt-in section above: the message path matches per function, and the two whole
-  sweeps accept the candidate under the confirmation rule. The code review on #185 found one
-  ordering defect in the timed path, fixed (see above); the fix is accepted on the persistence
-  bench, and on the messaging bench as a maintainer's exception for N2 `flood/bounded`. What
-  remains is the API
-  discussion on #174 and the `armed_idle` rows of the `timers` group, 5.6 to 5.9% slower than the
-  plain cursor at one local position with the table inline instead of boxed.
+  register allocation) are not separated. The combined waiting future fails eight x86_64 rows by 7.4
+  to 17.4%. #174's own candidate fails two. With four loop variants on `main`'s receive failing the
+  x86_64 throughput rows, the next decision is one of scope, not another loop variant: the timer API
+  (what an actor without timers may pay, or whether timers are opt-in per actor at spawn so the
+  untimed loop stays `main`'s), or the performance requirement. A calibration of how much added work
+  in `main`'s loop costs on the sweep's runners would describe the gate; it does not authorize
+  relaxing it. Decided on 2026-10-27: the gate stays, and timers become opt-in at the type level.
+  `Actor` and `EventSourced` gain an associated type `type Timers: TimerMode;` with `Untimed` and
+  `Timed`, the context becomes `ActorContext<M, T>`, and `start_timer` and `cancel_timer` exist only
+  on `ActorContext<M, Timed>`. `spawn` picks one of two task futures by `T` before spawning; the
+  untimed one is `main`'s loop over `main`'s context. The mode is fixed per spawn and survives
+  restarts. Opt-in alone establishes nothing: the untimed loop's generated code must match `main`'s
+  per function on both architectures, and the unchanged sweep decides. Done, see the opt-in section
+  above: the message path matches per function, and the two whole sweeps accept the candidate under
+  the confirmation rule. The code review on #185 found one ordering defect in the timed path, fixed
+  (see above); the fix is accepted on the persistence bench, and on the messaging bench as a
+  maintainer's exception for N2 `flood/bounded`. #185 was merged on 2026-10-28 (`8252b06`) and #174
+  closed unmerged. What remains is the `armed_idle` rows of the `timers` group, 5.6 to 5.9% slower
+  than the plain cursor at one local position with the table inline instead of boxed.
 - **The receive optimization.** `main` plus the inlined recv future is faster than `main` on every
   row but N2 `fan_out/workers/16` (+9.0%). It is a core change with its own tradeoff and stays
   experimental until that row is decided; it is not part of the timer decision.
 - **Placement.** One validated placement moved nothing; a second one with a different shift would
   widen that, if a later result rests on it.
+
 ## How to measure
 
 - **Rebuilding a variant:** each variant is a patch in [`patches/`](patches) against its parent
@@ -1311,8 +1312,8 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
   over both runs.
 - **Locally on aarch64:** build the shift library and the probe as the workflow does, check the
   probe with `.github/stack-sweep/probe.sh`, and run `.github/stack-sweep/sweep.py run`. The
-  binaries go before `--rows` and `--shifts`, since both take a variable number of values. A run
-  takes about 1 s here, so a full sweep of 1440 runs takes about 25 minutes.
+  binaries go before `--rows` and `--shifts`, since both take a variable number of values. A full
+  messaging sweep is 2304 runs.
 - **A confirmation run.** Added on 2026-10-27, before the first such run (opt-in timers), and not
   shaped by its result. The rule now lives in the
   [stack sweep protocol](../../../.github/stack-sweep/README.md#a-confirmation-run).
@@ -1334,7 +1335,7 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
 - A single stack position decides nothing: unrelated changes move rows by tens of percent. That
   includes the PR comparison in `bench.yml`, where the head also always runs second.
 - `/tmp` is a 12 GB RAM tmpfs. Keep Cargo output under `target/` on `/`, and delete extra target
-  directories afterwards.
+  directories afterward.
 - Worktrees must not share a `CARGO_TARGET_DIR`. Cargo reuses an output whose sources look older
   than it, so a second worktree's bench came out byte-identical to the first one's.
 - `39aec83` predates `.github/stack-sweep/`; take the tools from `main` for a local sweep.

@@ -1,12 +1,12 @@
 //! A node of the cluster demo: a tellus remoting endpoint which bootstraps via DNS or Kubernetes
-//! seed discovery, registers a worker under a well known key and serves an HTTP API answering
+//! seed discovery and registers a worker under a well known key. It serves an HTTP API answering
 //! what it sees of the cluster and whether it can still message every other member.
 //!
 //! Configured by `config/default.yaml` plus one of the `config/dns.yaml` and `config/k8s.yaml`
-//! overlays, which is what chooses the discovery, plus the per-node `CFG__` environment overrides
+//! overlays, which is what chooses the discovery. The per-node `CFG__` environment overrides
 //! [configured](https://github.com/hseeberger/configured) layers on top, see `Config`. A node
-//! downed by the cluster, e.g. the minority side of a partition self-downing, exits, so the
-//! orchestrator's restart mints the fresh incarnation which alone can rejoin.
+//! downed by the cluster exits, e.g. on the minority side of a partition, which downs itself. The
+//! orchestrator's restart then mints the fresh incarnation which alone can rejoin.
 
 use anyhow::{Context, anyhow};
 use axum::{
@@ -331,9 +331,7 @@ impl Manifest for Event {
     const MANIFEST: &'static str = "event";
 }
 
-/// QUIC gives up on a silent address only after its own handshake timeout, tens of seconds, and
-/// a partition leaves three of the four seeds silent: unbounded, one bootstrap round would
-/// outlast the fault it is meant to survive.
+/// A [QuicTransport] whose connect gives up after `CONNECT_TIMEOUT`.
 struct BoundedConnect(QuicTransport);
 
 impl Transport for BoundedConnect {
@@ -369,9 +367,8 @@ fn init_tracing() {
 /// The dev transport, which does not verify certificates: this cluster runs on a private network,
 /// a production one would use [QuicTransport::mutual_tls].
 ///
-/// Binding the advertised address rather than the unspecified one is what makes the dev
-/// certificate cover it, since it carries the bind address's IP and peers bind an advertised
-/// address to the identity proving it.
+/// Must bind the advertised address, not the unspecified one: the dev certificate carries the bind
+/// address's IP, which the dialer's identity check requires to match the advertised address.
 fn start_endpoint(config: EndpointConfig) -> anyhow::Result<()> {
     let transport = QuicTransport::dev(config.advertised_addr).context("dev QUIC transport")?;
     let transport = BoundedConnect(transport);

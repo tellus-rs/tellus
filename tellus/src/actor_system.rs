@@ -12,8 +12,8 @@ use tokio::sync::{oneshot, watch};
 /// An actor system, hosting the tree of actors below its root actor.
 ///
 /// Dropping an actor system does not stop its actors: the root actor stops on its own terms and
-/// the tree keeps running detached; all that is lost is the ability to await
-/// [ActorSystem::terminated].
+/// the tree keeps running detached. What is lost is the ability to call [ActorSystem::stop] and
+/// [ActorSystem::root] and to await [ActorSystem::terminated].
 #[must_use = "dropping an actor system does not stop its actors"]
 #[derive(Debug)]
 pub struct ActorSystem<M> {
@@ -65,7 +65,7 @@ where
     /// Stop the root actor, and with it the whole tree, children first.
     ///
     /// The root stops between messages, never inside one, exactly as it would if a parent
-    /// stopped it: the message it is handling is finished first, and for an event sourced actor
+    /// stopped it: the message it is handling is finished first, and for an event-sourced actor
     /// so is its settlement. Await [ActorSystem::terminated] for the tree to be gone.
     pub fn stop(&self) {
         self.stop_root_tx.send_replace(());
@@ -96,7 +96,7 @@ where
 /// Errors possibly returned by [ActorSystem::terminated].
 #[derive(Debug, Error)]
 pub enum TerminatedError {
-    /// Unexpected failure during watching the root actor.
+    /// Watching the root actor failed unexpectedly.
     #[error("root watch failed unexpectedly")]
     WatchRoot(#[from] oneshot::error::RecvError),
 }

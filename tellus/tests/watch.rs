@@ -189,7 +189,7 @@ async fn unwatch_suppresses_the_enqueued_signal() {
     assert_terminates(system, "actor system did not terminate").await;
 }
 
-/// Unwatching does not poison the pair: watching the target again afterwards delivers its
+/// Unwatching does not poison the pair: watching the target again afterward delivers its
 /// terminated signal, which stops the root and hence terminates the system.
 #[tokio::test]
 async fn rewatching_after_unwatch_signals() {

@@ -34,7 +34,7 @@ impl<E> EventLog<E>
 where
     E: Clone,
 {
-    /// An empty log for a process started at `started_at` unix milliseconds.
+    /// An empty log which started at `started_at` unix milliseconds.
     pub fn new(started_at: u64, capacity: NonZeroUsize) -> Self {
         Self {
             started_at,
@@ -47,7 +47,7 @@ where
         }
     }
 
-    /// Unix milliseconds at which the logging process started, the first half of every cursor.
+    /// Unix milliseconds at which the log started, the first half of every cursor.
     pub fn started_at(&self) -> u64 {
         self.started_at
     }
@@ -78,9 +78,10 @@ where
         }
     }
 
-    /// The retained events after the cursor, if it names a position of this process which is
-    /// still retained, else the whole retained history; either way with the anchor to follow
-    /// from, read together with the entries.
+    /// The retained events after the cursor, if the cursor comes from this log, does not lie
+    /// ahead of its latest event and no event after it has been forgotten, else the whole
+    /// retained history. Either way the replay carries the anchor to follow from, read together
+    /// with the entries.
     pub fn replay(&self, after: Option<Cursor>) -> Replay<E> {
         let ring = self.ring.lock().expect("not poisoned");
         let anchor = ring.next_seq - 1;
@@ -211,14 +212,14 @@ pub struct Stamped<E> {
     pub event: E,
 }
 
-/// The id of a logged event, `{started_at}:{seq}`, so a cursor names the process it came from
-/// and a restarted process never resumes a client at a stranger's position.
+/// The id of a logged event, `{started_at}:{seq}`, so a cursor names the log it came from and a
+/// restarted process never resumes a client at a stranger's position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Cursor {
-    /// Unix milliseconds at which the logging process started.
+    /// Unix milliseconds at which the log started.
     pub started_at: u64,
 
-    /// The event's sequence number within that process, starting at one.
+    /// The event's sequence number within that log, starting at one.
     pub seq: u64,
 }
 

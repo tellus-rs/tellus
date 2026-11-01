@@ -7,7 +7,7 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-/// A message type named for the cluster: discovery keys, topics and serialized references carry
+/// A message type named for the cluster. Discovery keys, topics and serialized references carry
 /// the manifest instead of the Rust type, so a lookup or a resolution as another type is refused
 /// rather than answered with a reference which drops every message told to it.
 ///

@@ -36,7 +36,7 @@ pub enum MemberState {
     #[display("left")]
     Left,
 
-    /// Dead for good: its handshakes are refused and sends towards it fail, which is what makes
+    /// Dead for good: its handshakes are refused and sends toward it fail, which is what makes
     /// the synthesized terminated signals true.
     #[display("down")]
     Down,
@@ -121,7 +121,7 @@ pub enum JoinError {
     #[error("no seed addresses")]
     NoSeeds,
 
-    /// This node's incarnation has been downed by the cluster; only a restarted process, with a
+    /// This node's incarnation has been downed or has left; only a restarted process, with a
     /// fresh incarnation, can join again.
     #[error("this node has been downed")]
     Downed,
@@ -160,27 +160,29 @@ pub enum DownError {
     ThisNode,
 }
 
-/// Join the cluster one of the seed addresses is a member of, which is one of the two ways this
-/// node becomes a member of anything: a started endpoint is no cluster, and only
-/// [form](crate::cluster::form) or [bootstrap](fn@crate::cluster::bootstrap) turns it into one. A
-/// cluster is hence the transitive closure of joins, and independent clusters must not share
-/// seeds.
+/// Join the cluster one of the seed addresses is a member of. A started endpoint is no cluster,
+/// and it becomes a member of one only through this function, [form](crate::cluster::form) or
+/// [bootstrap](fn@crate::cluster::bootstrap), which itself forms or joins. A cluster is hence the
+/// transitive closure of joins, and independent clusters must not share seeds.
 ///
 /// The seeds are tried in order, with the reconnect backoff between rounds, until one admits
-/// this node: there is no internal timeout, so wrap the call in [timeout](tokio::time::timeout)
+/// this node. There is no internal timeout, so wrap the call in [timeout](tokio::time::timeout)
 /// to bound it. A seed which is a member of no cluster refuses, so a seed list shared by nodes
 /// which are all still starting forms nothing on its own. This node's own address is skipped in
 /// every position. Once a cluster has admitted this node, only that cluster is tried, even if the
-/// attempt failed before its member snapshot arrived: no other seed can be proven to be that same
+/// attempt failed before its member snapshot arrived. No other seed can be proven to be that same
 /// cluster, and another cluster refuses this node from then on. Joining again when already a
-/// member refreshes the member snapshot and is harmless, while a seed of another cluster refuses
-/// a member. A seed holds back joins from new addresses while one of its members is unreachable,
-/// and the round is retried until that member is reachable again or downed.
+/// member refreshes the member snapshot, but the seed replaces its inbound connection from this
+/// node with the join's, so this node's lane to that seed reconnects. A seed of another cluster
+/// refuses a member. A seed holds back joins from new addresses while one of its members is
+/// unreachable, and the round is retried until that member is reachable again or downed.
+///
+/// Only a restarted process recovers from [JoinError::Downed].
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if the seeds name nothing but this node's own address,
-/// if this node has been downed, which only a restarted process recovers from, or if every seed
-/// tried in a round is a member of another cluster than this node's.
+/// or if this node has been downed or has left. Fails as well if every seed tried in a round is a
+/// member of another cluster than this node's.
 pub async fn join(seeds: &[SocketAddr]) -> Result<(), JoinError> {
     let endpoint = endpoint::get().ok_or(JoinError::EndpointNotStarted)?;
     if seeds.iter().all(|seed| *seed == endpoint.node().addr()) {
@@ -297,7 +299,7 @@ pub fn members() -> Result<Vec<Member>, MembersError> {
         .ok_or(MembersError::EndpointNotStarted)
 }
 
-/// Down the Up member at the given address, running the node death sequence: pending asks towards
+/// Down the Up member at the given address, running the node death sequence: pending asks toward
 /// it fail, its watchers receive synthesized terminated signals, and its incarnation is refused
 /// from then on.
 ///
@@ -562,7 +564,7 @@ pub(crate) struct Merge {
     pub(crate) self_down: bool,
 }
 
-/// `state` is what the node holds afterwards, Left or Down.
+/// `state` is what the node holds afterward, Left or Down.
 #[derive(Clone, Copy)]
 pub(crate) struct DownOutcome {
     pub(crate) member_changed: bool,
@@ -802,7 +804,7 @@ impl Entries {
         members
     }
 
-    /// Moves the node to `state`, Left or Down, never backwards along the lattice.
+    /// Moves the node to `state`, Left or Down, never backward along the lattice.
     fn retire(&mut self, node: NodeId, state: MemberState, now: Instant) -> DownOutcome {
         let watermark_changed = self.merge_fence(node, state, now);
         let member_changed = self
@@ -998,7 +1000,7 @@ mod tests {
         assert!(membership.up_peers().is_empty());
     }
 
-    /// The lattice never moves backwards: Down wins over Up, once Down always Down, and merging
+    /// The lattice never moves backward: Down wins over Up, once Down always Down, and merging
     /// is idempotent, so duplicated or reordered gossip cannot flip a state.
     #[test]
     fn down_is_terminal_and_merge_is_idempotent() {
@@ -1167,7 +1169,7 @@ mod tests {
     /// An older incarnation learned after the younger one at its address is downed rather than
     /// adopted, so both sides of a gossip exchange converge on the same member.
     #[test]
-    fn merge_supersedes_towards_the_younger_incarnation() {
+    fn merge_supersedes_toward_the_younger_incarnation() {
         let shared = addr(2);
         let older = NodeId::new(shared);
         let younger = NodeId::new(shared);
@@ -1182,7 +1184,7 @@ mod tests {
     }
 
     #[test]
-    fn a_join_supersedes_towards_the_younger_incarnation() {
+    fn a_join_supersedes_toward_the_younger_incarnation() {
         let shared = addr(2);
         let older = NodeId::new(shared);
         let younger = NodeId::new(shared);
@@ -1221,9 +1223,9 @@ mod tests {
         ));
     }
 
-    /// A join from a new address is held while an Up member is outside this node's component,
-    /// while a younger incarnation at that member's address supersedes it all the same; a broken
-    /// link between two members inside the component holds nothing.
+    /// A join from a new address is held while an Up member is outside this node's component, but
+    /// a younger incarnation at that member's address supersedes it all the same. A broken link
+    /// between two members inside the component holds nothing.
     #[test]
     fn a_join_is_held_while_a_member_is_unreachable_unless_it_supersedes() {
         let node = NodeId::new(addr(1));
@@ -1489,7 +1491,7 @@ mod tests {
         assert!(!absent.is_up(downed));
     }
 
-    /// A covering watermark at this node's address self-downs the endpoint.
+    /// A covering watermark at this node's address makes this node down itself.
     #[test]
     fn merge_self_downs_against_a_down_watermark_at_its_address() {
         let shared = addr(1);
@@ -1731,8 +1733,8 @@ mod tests {
     }
 
     /// A younger incarnation at this node's address makes this node the stale one, which is what
-    /// every other node concludes about it, so it downs itself rather than staying Up against a
-    /// cluster which has moved on, and still downs what the snapshot superseded before.
+    /// every other node concludes about it. So it downs itself rather than staying Up against a
+    /// cluster which has moved on, and it still downs what the snapshot superseded before.
     #[test]
     fn a_self_down_on_the_early_return_still_downs_the_earlier_supersession() {
         let (membership, predecessor, successor) = superseded_pair();

@@ -2,16 +2,18 @@
 
 Kubernetes seed discovery for [tellus](../tellus) cluster bootstrap: `K8sSeeds` implements
 `SeedDiscovery`, listing the pods matching a label selector through the Kubernetes API and pairing
-each pod's address with a port, either one number for all of them or the number a named container
-port carries in each pod. Unlike a headless service, which publishes ready pods only, this sees a
-pod as soon as it has an address, so a readiness probe may gate on cluster membership.
+each pod's address with a port. The port is either one number for all of them or the number a named
+container port carries in each pod. Unlike a headless service, which publishes ready pods only, this
+sees a pod as soon as it has an address, so a readiness probe may gate on cluster membership.
 
 A pod contributes exactly one address, the primary one Kubernetes reports as `status.podIP` and
 repeats as the first entry of `status.podIPs`. Bootstrap counts addresses, so a dual stack pod
 counted twice would inflate both `min_peers` and the majority the formation provider counts, and
 only the primary address is the one a node advertises and is hence admitted at. Terminating and
-finished pods are left out, since they would inflate that count as well, while a pod which is
-merely still starting stays in: an unreachable seed is retried, a missing one shrinks the universe.
+finished pods are left out, since they would inflate that count as well, while a pod which is merely
+still starting stays in: an unreachable seed is retried, a missing one shrinks the universe. A pod
+whose address does not parse, or whose named container port is missing or out of range, is skipped
+and logged at warn level; a pod without an address yet is skipped silently.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
 lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
@@ -22,12 +24,13 @@ tellus-bootstrap-k8s is available on [crates.io](https://crates.io/crates/tellus
 ```sh
 cargo add tellus --features cluster
 cargo add tellus-bootstrap-k8s
-cargo add k8s-openapi --features v1_33
+cargo add k8s-openapi@0.28 --features v1_33
 ```
 
-The last one is not optional. `k8s-openapi` requires the minimum Kubernetes version to be chosen
-by a feature, and only the binary may choose it, so a library crate cannot do it for you: without
-it your build fails with "None of the v1_* features are enabled".
+The last one is not optional. `k8s-openapi` requires the minimum Kubernetes version to be chosen by
+a feature, and only the binary may choose it. A library crate cannot do it for you, and without it
+your build fails with "None of the v1_* features are enabled". The feature has to reach the
+`k8s-openapi` this crate depends on, so the version must be the same, 0.28.
 
 Start the endpoint, then bootstrap through the discovered seeds, bounded by a timeout of your
 choosing:
@@ -72,8 +75,7 @@ the namespace it runs in.
 A listing which yields no address at all is a resolve failure rather than an empty seed list, so
 bootstrap retries it and its settle window starts over rather than this node settling on itself.
 That happens while the matching pods have no address yet, when all of them are terminating or
-finished, when none of them carries the configured port name, and of course when the selector
-matches nothing.
+finished, when none of them carries the configured port name, and when the selector matches nothing.
 
 ## Deploying
 
