@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793571564478,
+  "lastUpdate": 1793571566023,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -13477,6 +13477,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 109764,
             "range": "± 4831",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3e7cded1d22e2c465e4c4e6e185627e6ee205c29",
+          "message": "Merge pull request #233 from tellus-rs/docs/inspect-settled-wording\n\ndocs: describe when the inspect stream sends a verdict",
+          "timestamp": "2026-11-01T23:12:43+01:00",
+          "tree_id": "c059b4e3289ad28a78fb882fdda608f510c9d2d3",
+          "url": "https://github.com/tellus-rs/tellus/commit/3e7cded1d22e2c465e4c4e6e185627e6ee205c29"
+        },
+        "date": 1793571565634,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2210558,
+            "range": "± 116817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2253940,
+            "range": "± 128894",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 922082,
+            "range": "± 28497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 108334,
+            "range": "± 3530",
             "unit": "ns/iter"
           }
         ]
