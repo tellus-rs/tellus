@@ -7,6 +7,10 @@
 //! terminated actor signals immediately, unwatch suppresses the signal, and a killed node yields a
 //! synthesized signal via failure detection.
 //!
+//! The receptionist converges across nodes and shrinks with every kind of departure. A publish
+//! reaches every subscriber the receptionist resolves, and several subscribers on one node
+//! receive the publishes in order, interleaved with the messages told to them directly.
+//!
 //! The reconnect path is covered by an oversize message dead-lettering locally while its lane
 //! stays usable, by a mid-stream sever proving per-sender FIFO stays "in order, with gaps" over
 //! the reconnected lane, by a terminated frame dropped on the watched node being healed by the
@@ -33,13 +37,24 @@
 //!
 //! A join is held back while a frozen member is unreachable and admitted once it is downed.
 //!
+//! Downing derives from the relayed reachability graph, not from this node's own detector alone.
+//! The change stream carries every version the watch shows, and `diff` yields a joining member
+//! Up, a killed one unreachable and then Down, and a leaving one Left. Downing a live node by
+//! hand fails the asks towards it and signals its watchers, and a fresh incarnation at its
+//! address is admitted afterwards. Every member lists a leaving node Left at once, and this node
+//! delivers what the leaver's connection still carries before the node death. A node leaving
+//! while its lanes may still be connecting is acknowledged by every member all the same. A
+//! `SelfDown` verdict severs everything, and the node refuses to rejoin. Under mutual TLS a joiner
+//! is admitted only if its certificate proves the address it advertises.
+//!
 //! Two independently formed clusters never merge: a join towards the other one is refused, while
 //! every member of one cluster reports the same cluster ID. Two clusters formed on one seed list
 //! find each other through bootstrap's probe and report each other as foreign clusters.
 //!
-//! Every spawned node but the majority, mutual TLS, cluster ID and bootstrap nodes joins the
-//! cluster through the client as its seed; scenarios hence also exercise the join handshake, the
-//! member snapshot and the supersession of a restarted incarnation on every bootstrap.
+//! Every spawned node but the majority, mutual TLS, cluster ID, foreign probe and bootstrap
+//! nodes joins the cluster through the client as its seed; scenarios hence also exercise the join
+//! handshake, the member snapshot and the supersession of a restarted incarnation on every
+//! bootstrap.
 
 use anyhow::{Context, bail};
 use derive_more::{Deref, DerefMut};
@@ -414,10 +429,6 @@ impl DowningProvider for SelfDownWithPeers {
     }
 }
 
-/// The leaving node: an echo server which announces its departure once its actor system has
-/// terminated, instead of exiting silently and leaving the cluster to detect the silence. It
-/// checks its own departure report: the seed it joined through acknowledged the drain, and a
-/// second leave returns the same report.
 /// Joins, and leaves as soon as it sees the whole cluster Up, while its lanes to the other
 /// members may still be connecting: every member must acknowledge the departure all the same.
 fn quick_leave_node() -> anyhow::Result<()> {
@@ -442,6 +453,10 @@ fn quick_leave_node() -> anyhow::Result<()> {
     })
 }
 
+/// The leaving node: an echo server which announces its departure once its actor system has
+/// terminated, instead of exiting silently and leaving the cluster to detect the silence. It
+/// checks its own departure report: the seeds it joined through acknowledged the drain, and a
+/// second leave returns the same report.
 fn leave_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -1923,7 +1938,7 @@ fn two_watchers_scenario(
 
 /// A large message towards one remote actor must not delay messages towards others: the busy
 /// target's stream is not the one they ride. Told first and by far the largest, the busy target's
-/// acknowledgement would be the first to arrive over a single lane.
+/// acknowledgment would be the first to arrive over a single lane.
 fn head_of_line_scenario(
     runtime: &Runtime,
     keeper: &ActorRef<KeeperMessage>,
@@ -1951,7 +1966,7 @@ fn oversize_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> any
 }
 
 /// Severing every connection mid-stream loses frames but never reorders or duplicates them: the
-/// acknowledgements arrive strictly ascending, i.e. "in order, with gaps", and a marker told
+/// acknowledgments arrive strictly ascending, i.e. "in order, with gaps", and a marker told
 /// after the sever arrives over the reconnected lane, proving it survived with its queue. This
 /// also exercises inbound reader supersession: the reconnected connection's reader takes over
 /// from the severed one.
@@ -2367,7 +2382,7 @@ fn restart_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
 /// The change stream carries every version the watch shows, consecutively and without a gap
 /// under this load, and every state keeps the invariants of the type; `diff` yields a joining
-/// member Up, a killed member unreachable and then Down, and a leaving member Down without ever
+/// member Up, a killed member unreachable and then Down, and a leaving member Left without ever
 /// being unreachable; every verdict names a version already streamed as a state; and the stream
 /// ends where the watch stands.
 fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
@@ -3022,9 +3037,10 @@ fn own_addr(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<Socke
 }
 
 /// Every node bootstraps from the identical address list instead of being told whom to join:
-/// each resolves the list, waits for it to settle and joins through the lowest address other
-/// than its own, which keeps the join graph connected, so all three nodes end up in one cluster
-/// whichever of them happens to hold the lowest address.
+/// each resolves the list and tries to join through every address other than its own, lowest
+/// first, on every resolution; only forming waits for the list to settle. That keeps the join
+/// graph connected, so all three nodes end up in one cluster whichever of them happens to hold
+/// the lowest address.
 fn bootstrap_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
     let addrs = reserved_addrs(2)?;
@@ -4153,7 +4169,7 @@ impl Actor for ChildWatcher {
 }
 
 /// Bulk messages to one of [BULK_TARGETS] remote actors, a tiny one to each of the others, all
-/// told in that order: the first acknowledgement must come from one of the others.
+/// told in that order: the first acknowledgment must come from one of the others.
 struct HeadOfLine {
     keeper: ActorRef<KeeperMessage>,
     event_tx: mpsc::Sender<TestEvent>,
@@ -4250,7 +4266,7 @@ impl Actor for HeadOfLine {
     }
 }
 
-/// `ahead` counts the bulk target's acknowledgements arriving before any other target's, which is
+/// `ahead` counts the bulk target's acknowledgments arriving before any other target's, which is
 /// all of them when one lane carries everything and the bulk messages were told first.
 enum HeadOfLineState {
     AwaitingTargets(Vec<ActorRef<StreamerMessage>>),
@@ -4397,7 +4413,7 @@ struct BenchState {
 }
 
 /// Keeps [BENCH_BULK_WINDOW] bulks of [BENCH_BULK_PAYLOAD] bytes outstanding towards a streamer
-/// until [BENCH_BULKS] acknowledgements arrived.
+/// until [BENCH_BULKS] acknowledgments arrived.
 struct BenchBulk {
     keeper: ActorRef<KeeperMessage>,
     event_tx: mpsc::Sender<TestEvent>,
@@ -4467,8 +4483,8 @@ struct BenchBulkState {
     counts: BenchState,
 }
 
-/// Fires a burst of bulks at the streamer and validates every acknowledgement arrives strictly
-/// ascending; a `Probe` tells one further marker bulk, whose acknowledgement completes the run.
+/// Fires a burst of bulks at the streamer and validates every acknowledgment arrives strictly
+/// ascending; a `Probe` tells one further marker bulk, whose acknowledgment completes the run.
 struct SeverFifo {
     keeper: ActorRef<KeeperMessage>,
     event_tx: mpsc::Sender<TestEvent>,

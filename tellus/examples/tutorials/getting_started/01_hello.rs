@@ -1,7 +1,5 @@
 //! Step 1 of the getting started tutorial: the minimal tellus program, a root actor which greets
 //! for the one message it receives and then stops, terminating the actor system.
-//!
-//! Keep this example in sync with the getting started snippet in the README, line by line.
 
 use anyhow::Context;
 use std::convert::Infallible;

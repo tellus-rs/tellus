@@ -51,7 +51,7 @@ nothing. Each denies its side ingress from the other:
 Blocking ingress on both sides cuts both directions, which is what the Compose stack's two pumba
 rules do. Unlike those rules, the label survives a container restart, so a node self-downing
 mid-partition stays cut off; that retires a Compose caveat rather than inheriting it. A pod which
-is deleted and recreated does come back unlabelled, which is fine, because that is the crash
+is deleted and recreated does come back unlabeled, which is fine, because that is the crash
 fault and not a partition.
 
 **The labels alone cut nothing**, which is the one thing about this fault worth knowing. A
@@ -59,11 +59,11 @@ NetworkPolicy is evaluated when a connection is new: kindnetd queues the first p
 to its policy engine, and once the flow is admitted it carries a conntrack label which the
 `established,related` rule accepts directly from then on. The cluster's QUIC connections are long
 lived and its one second heartbeats keep the conntrack entries fresh indefinitely, so a policy
-applied to a running cluster never sees a packet it could drop. Labelling five pods and waiting
+applied to a running cluster never sees a packet it could drop. Labeling five pods and waiting
 changes nothing at all; every node keeps seeing every other as Up.
 
 [`flush.yaml`](flush.yaml) is what closes that gap: a DaemonSet holding nothing but a sleeping
-container, which the agent execs into after labelling to delete every conntrack entry of every
+container, which the agent execs into after labeling to delete every conntrack entry of every
 node. The flows are forgotten, their next packets count as new, and the policy finally applies.
 With the flush the minority self-downs and the majority keeps quorum; without it the partition is
 a no-op which still looks like a perfectly healthy run.
@@ -95,8 +95,8 @@ connections will not notice one.
 
 ## The faults
 
-[`chaos.sh`](chaos.sh) keeps the shape of the Compose agent, including the state file the
-verifier reads, and expresses each fault in kubectl:
+[`chaos.sh`](chaos.sh) keeps the Compose agent's cycle of faults and the state file the verifier
+reads, and expresses each fault in kubectl:
 
 | Fault | Command |
 |---|---|

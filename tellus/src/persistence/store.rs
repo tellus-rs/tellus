@@ -34,7 +34,8 @@ where
     ) -> Result<(), AppendError<Self::Error>>;
 
     /// Read up to `limit` events from the given sequence number on, inclusive, in ascending
-    /// order. Replay pages through this until a page is short.
+    /// order. The events are consecutive, the first one at `from_seq_no`. Replay pages through
+    /// this until a page is short.
     ///
     /// # Errors
     /// Implementations fail if the events cannot be read; a stream with nothing from

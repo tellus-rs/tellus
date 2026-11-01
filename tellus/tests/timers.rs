@@ -159,7 +159,8 @@ async fn canceling_the_earliest_timer_keeps_the_next_on_time() {
     stop(system).await;
 }
 
-/// A timer canceled once it is due is never received, although its item is queued already.
+/// A timer canceled once it is due is never received, although it has fired already and waits for
+/// its position.
 #[tokio::test(start_paused = true)]
 async fn a_timer_canceled_once_due_is_never_received() {
     let (system, mut events) = probe_system(ActorConfig::default(), None);
@@ -238,8 +239,9 @@ async fn a_deadline_passing_during_receive_lands_behind_messages_arriving_meanwh
     stop(system).await;
 }
 
-/// A full bounded mailbox still receives its timer: the woken run loop enqueues the due timer past
-/// the capacity, after the test has filled the mailbox and a second `Ping` was a dead letter.
+/// A full bounded mailbox still receives its timer: a fired timer takes no place in the mailbox,
+/// so it does not count against the capacity. The test fills the mailbox and a second `Ping` is a
+/// dead letter before the run loop fires the timer.
 #[tokio::test(start_paused = true)]
 async fn a_full_bounded_mailbox_still_receives_its_timer() {
     let config =
@@ -328,8 +330,9 @@ async fn a_reply_to_in_a_pending_timer_resolves_as_no_reply_at_termination() {
     assert!(matches!(reply, Err(AskError::NoReply)), "{reply:?}");
 }
 
-/// A mailbox which never runs empty does not starve a due timer: the run loop takes a due timer
-/// ahead of the queued messages, so the flood stops long before its bound.
+/// A mailbox which never runs empty does not starve a due timer: the run loop fires a due timer
+/// before it receives the next item, so the timer lands behind the one tick queued at that moment
+/// rather than behind the whole flood, and the flood stops long before its bound.
 #[tokio::test(start_paused = true)]
 async fn a_flooded_mailbox_does_not_starve_a_due_timer() {
     let (ticks_tx, mut ticks_rx) = mpsc::unbounded_channel();

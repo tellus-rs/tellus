@@ -50,7 +50,8 @@ tellus is under active development and its API is still settling.
 - **Supervision strategies**: on an error or panic, `Restart` with a restart limit and exponential
   backoff, or `Stop`.
 - **Bounded or unbounded mailboxes**: bounded ones drop messages beyond capacity as dead letters but
-  never drop terminated signals, the outputs of piped futures or `reply_to` replies.
+  never drop terminated signals, the outputs of piped futures, `reply_to` replies or the messages a
+  `Host` buffered for an entity.
 - **Event-sourced persistence** (feature `persistence`): events are appended to a pluggable store
   and only then applied, the state is recovered by replay, and conditional appends fence
   concurrent incarnations.
@@ -125,8 +126,8 @@ supervision strategy.
 
 For remoting, enable the `cluster` feature:
 
-```toml
-tellus = { git = "https://github.com/tellus-rs/tellus", features = [ "cluster" ] }
+```sh
+cargo add tellus --features cluster
 ```
 
 For development and tests there is also `cluster-dev`, which adds `QuicTransport::dev`, a transport
@@ -198,7 +199,7 @@ signals are delivered even when a bounded mailbox is full. `ActorContext::unwatc
 after it returns, no terminated signal for that actor is received, even if the signal was already
 enqueued.
 
-Actors on other nodes are watched the same way. A signal travelling from there keeps the ordering
+Actors on other nodes are watched the same way. A signal traveling from there keeps the ordering
 guarantee, but one synthesized because the node was downed can only promise that no further
 message from that actor will ever arrive; see [docs/cluster.md](../docs/cluster.md).
 
@@ -210,6 +211,14 @@ and re-runs `init` for a fresh state. Restarts are limited and paced by a `Resta
 back off exponentially between the backoff's `min` and `max`, the actor stops when it fails again
 after `max_restarts` restarts, and running for `reset_after` without failure resets that count.
 Failures are logged at error level either way.
+
+### Hosts
+
+A `Host` is an actor hosting entities: children identified by a key, spawned on the first
+`HostEnvelope` for that key. With `HostConfig::with_idle_timeout` it passivates an entity to which
+no message has been routed through the host for that long. The messages routed to an entity while
+it stops are buffered, up to the configured buffer, and delivered to its next incarnation. See
+[docs/actors.md](../docs/actors.md#hosts) for the guarantees.
 
 ### Configuration
 
@@ -258,11 +267,11 @@ every format into one value tree before deserializing, which makes the YAML abov
 and it reports the key path along with any error. Note that `serde_yaml` deserializes the
 same types differently, expecting a YAML tag (`supervision_strategy: !restart`) instead.
 
-Anything omitted falls back to its default. Invalid backoff bounds are rejected rather than
-silently repaired: `Backoff::new` is fallible and deserialization goes through it, so an invalid
-pair is unrepresentable whether it comes from code or from a file. Bounds which contradict each
-other are one case, a zero minimum the other, since that would make every step zero and hence the
-backoff no backoff at all:
+Anything omitted falls back to its default, except `max_restarts`, which a `restart` section must
+name. Invalid backoff bounds are rejected rather than silently repaired: `Backoff::new` is fallible
+and deserialization goes through it, so an invalid pair is unrepresentable whether it comes from
+code or from a file. Bounds which contradict each other are one case, a zero minimum the other,
+since that would make every step zero and hence the backoff no backoff at all:
 
 ```text
 max backoff 1s below min backoff 10s for key `supervision_strategy.backoff`
@@ -306,14 +315,14 @@ transport:
 
 A custom codec, failure detector, downing provider or formation provider is not something a
 config file can name, so those stay code: the fields are public and take the implementation after
-the config was loaded. Validation holds across the boundary here too. An advertised address with
-an unspecified IP or a zero port, a zero heartbeat interval, a frame size too small for one member
-or one reachability record and a zero resolve interval are refused by deserialization exactly as by
-`start_endpoint` and `bootstrap`. The seed
-addresses are configuration as well: a plain list for `FixedSeeds`, the DNS query of
-[tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod selector of
-[tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by path,
-which `QuicTransport::from_config` reads.
+the config was loaded. Validation holds across the boundary here too: deserialization refuses
+exactly what `start_endpoint` and `bootstrap` refuse, for example an advertised address with an
+unspecified IP or a zero port, a zero heartbeat interval, a frame size too small for one member or
+one reachability record and a zero resolve interval. `InvalidEndpointConfig` and
+`InvalidBootstrapConfig` list every case. The seed addresses are configuration as well: a plain
+list for `FixedSeeds`, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
+selector of [tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by
+path, which `QuicTransport::from_config` reads.
 
 ### Event-sourced persistence
 
@@ -362,14 +371,28 @@ child processes, so one command runs the whole cluster:
 cargo run --quiet -p tellus --features cluster-dev --example clustered_01_two_nodes
 ```
 
+The examples in [`examples/tutorials/event_sourced`](examples/tutorials/event_sourced) are the
+code of the [event-sourced actors tutorial](https://tellus.rs/docs/tutorials/event-sourced-actors/):
+a device which persists its readings, recovers them by replay after a restart and shortcuts the
+replay with snapshots. They run against the in-memory store, so they need no database:
+
+```shell
+cargo run --quiet -p tellus --features persistence-in-memory --example event_sourced_01_device
+```
+
 The examples in [`examples/how_to`](examples/how_to) belong to the
 [how-to guides](https://tellus.rs/docs/how-to/), among them batching writes by mailbox depth
-(`how_to_batch_writes`), shutting a node down gracefully (`how_to_shut_down_gracefully`), observing
-a cluster (`how_to_observe_a_cluster`) and securing it with mutual TLS
-(`how_to_secure_with_mutual_tls`, which needs `--features cluster,serde`). The
-guides for running on Kubernetes and for serving the cluster state over HTTP use examples in
+(`how_to_batch_writes`) and configuring supervision from a file (`how_to_configure_supervision`,
+which needs `--features serde`). Shutting a node down gracefully (`how_to_shut_down_gracefully`)
+and observing a cluster (`how_to_observe_a_cluster`) need `--features cluster-dev`; securing it
+with mutual TLS (`how_to_secure_with_mutual_tls`) needs `--features cluster,serde`. The guides for
+running on Kubernetes and for serving the cluster state over HTTP use examples in
 [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s/examples) and
 [`tellus-cluster-inspect`](../tellus-cluster-inspect/examples).
+
+[`explanation_state_machine`](examples/explanation/state_machine.rs) is the example of the
+[state machines explanation](https://tellus.rs/docs/explanation/state-machines/): a device which
+ignores readings until it is calibrated.
 
 Beyond the tutorials:
 
@@ -404,16 +427,16 @@ Beyond the tutorials:
   RUST_LOG=tellus=debug cargo run --quiet -p tellus --example work_pulling
   ```
 
-The event-sourced examples live with the PostgreSQL stores in
-[`tellus-persistence-postgres`](../tellus-persistence-postgres); both need the `postgres` service
-from the root `docker-compose.yaml`:
+Further event-sourced examples, against PostgreSQL, live with the stores in
+[`tellus-persistence-postgres`](../tellus-persistence-postgres); all three of them need the
+`postgres` service from the root `docker-compose.yaml`:
 
 ```shell
 docker compose up -d --wait postgres
-RUST_LOG=tellus=debug cargo run --quiet -p tellus-persistence-postgres \
-  --example event_sourced_counter
+cargo run --quiet -p tellus-persistence-postgres --example event_sourced_counter
 RUST_LOG=tellus=debug cargo run --quiet -p tellus-persistence-postgres \
   --example event_sourced_supervision
+cargo run --quiet -p tellus-persistence-postgres --example event_sourced_04_postgres
 ```
 
 ## Status and roadmap

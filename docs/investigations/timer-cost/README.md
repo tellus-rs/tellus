@@ -294,11 +294,15 @@ This local machine showed the cursor's `ping_pong` cost only weakly before (+1.8
 
 ## The cursor without its timed loop
 
-`diag/timer-switch-off` (`ff5950f`, one commit on `39aec83`) is the cursor with both run loops
-reduced to `main`'s `next_incoming!`. The timer table, the context field and the restart and
-termination paths stay. A first attempt only made `has_timers` return `false`. That removed
-nothing: the timed select's await points stay reachable through the future's resume switch, which
-dispatches on a state stored in memory. Checked before sweeping, both architectures:
+The `diag/*` branches named from here on have been deleted, and with them the workflows
+`diag-receive.yml` and `diag-burst.yml`, which were on two of them. Their names and commit IDs
+identify the builds measured; only the variants in [`patches/`](patches) are kept.
+
+`ff5950f` (one commit on `39aec83`, was on `diag/timer-switch-off`) is the cursor with both run
+loops reduced to `main`'s `next_incoming!`. The timer table, the context field and the restart and
+termination paths stay. A first attempt only made `has_timers` return `false`. That removed nothing:
+the timed select's await points stay reachable through the future's resume switch, which dispatches
+on a state stored in memory. Checked before sweeping, both architectures:
 
 - No timed select is left. The selects are `main`'s sizes and the `Ping` and `Pong` recv futures
   are inlined as on `main`.
@@ -329,10 +333,10 @@ both runner types. `fan_out/workers/16` on Neoverse-N2 is borderline, where the 
 
 ## Placement control
 
-`diag/placement-control` (`d51c268`, one commit on `39aec83`) is `main` plus 1056 bytes placed in
-front of `.text` at link time. The padding is an assembly file, passed to the bench link alone by a
-build script (`cargo::rustc-link-arg-benches`), with a linker script that inserts its section before
-`.text`. Two earlier attempts failed their checks:
+`d51c268` (one commit on `39aec83`, was on `diag/placement-control`) is `main` plus 1056 bytes
+placed in front of `.text` at link time. The padding is an assembly file, passed to the bench link
+alone by a build script (`cargo::rustc-link-arg-benches`), with a linker script that inserts its
+section before `.text`. Two earlier attempts failed their checks:
 
 - `global_asm!` in the bench crate was discarded by `--gc-sections`. It also changed the generated
   code anyway: `Probing::receive` was no longer inlined, and aarch64 reordered functions.
@@ -456,8 +460,9 @@ Every position is below the cursor; the per-position range is -24.0% to -0.4%.
 ## `fan_out/workers/16` against the message count
 
 Two sweeps vary `FAN_OUT_MESSAGES` at fixed worker counts. Each base is `39aec83` with the constant
-changed (`diag/fan-out-25k-base` `756c86a`, `diag/fan-out-400k-base` `be7c1d9`), each candidate the
-full `b30e728` change on top of it (`diag/fan-out-25k` `c7ab1af`, `diag/fan-out-400k` `68eec1b`):
+changed (`756c86a` and `be7c1d9`, which were on `diag/fan-out-25k-base` and
+`diag/fan-out-400k-base`), each candidate the full `b30e728` change on top of it (`c7ab1af` and
+`68eec1b`, which were on `diag/fan-out-25k` and `diag/fan-out-400k`):
 runs 40294926674 and 40294931397. On aarch64 the constant changes `messaging::main` by two or three
 instructions and the erratum stubs; the run loops, the mailbox and flume are identical to the sweep
 binaries. Every stub replaces an `adrp` in the drop glue of a mutex guard or in criterion's plotting
@@ -497,20 +502,20 @@ hypothesis.
 
 Do the `/16` workers wait for messages, and does the variant make them wait more often? Three
 diagnostic commits add the same counters to `main`, the cursor and the variant
-(`diag/recv-counts-main` `da9f028`, `diag/recv-counts-cursor` `400de4b`, `diag/recv-counts-inline`
-`5c3c4ec`): a per-mailbox counter of completed receives (an item delivered), of completed receives
-whose flume future returned `Pending` at least once, and of `Pending` returns, the last including
-receives later canceled. A mailbox's counter adds itself to a process-wide table keyed by message
-type when it is dropped, so the hot path writes plain fields and the table is locked once per actor.
-The bench takes the table before each `fan_out` row and prints it after, so a row's counts, warm-up
-included, are isolated; the ratios per delivered message do not depend on criterion's iteration
-count. `Tick` is the workers' type, `Go` the root's.
+(`da9f028`, `400de4b` and `5c3c4ec`, which were on `diag/recv-counts-main`,
+`diag/recv-counts-cursor` and `diag/recv-counts-inline`): a per-mailbox counter of completed
+receives (an item delivered), of completed receives whose flume future returned `Pending` at least
+once, and of `Pending` returns, the last including receives later canceled. A mailbox's counter adds
+itself to a process-wide table keyed by message type when it is dropped, so the hot path writes
+plain fields and the table is locked once per actor. The bench takes the table before each `fan_out`
+row and prints it after, so a row's counts, warm-up included, are isolated; the ratios per delivered
+message do not depend on criterion's iteration count. `Tick` is the workers' type, `Go` the root's.
 
 The counters change the generated code: the run loops grow by 40 to 90 instructions, `Mailbox`'s
 drop glue by 16, and the recv future by 21 where it is out of line. They preserve what is under
 investigation: the recv future stays out of line for `Go` and `Tick` on `main`, for all four types
-in the cursor and for none in the variant. The workflow `diag-receive.yml` on
-`diag/recv-counts-workflow` runs one `ubuntu-24.04-arm` job: the three plain binaries and the three
+in the cursor and for none in the variant. The workflow `diag-receive.yml`, which was on
+`diag/recv-counts-workflow`, ran one `ubuntu-24.04-arm` job: the three plain binaries and the three
 counted ones on `fan_out/workers/4` and `/16` at four stack positions and three repetitions, then
 each counted binary once per row for its counts. Run 40306893604:
 
@@ -559,24 +564,24 @@ the next worker, so a worker's mailbox holds several items when it wakes and it 
 without parking in between. Each worker still gets its 6250 messages in order, and the total
 stays at 100000. Four commits, each one commit on its parent:
 
-- `diag/fan-out-burst-base` (`1863d07`): `39aec83` plus the bench change. `FanOutRoot` gets a
-  `burst` field; the rows `fan_out/workers/4` and `/16` run with bursts of one, which is the
+- `1863d07` (was on `diag/fan-out-burst-base`): `39aec83` plus the bench change. `FanOutRoot`
+  gets a `burst` field; the rows `fan_out/workers/4` and `/16` run with bursts of one, which is the
   send sequence of `main`'s round-robin loop, and the rows `fan_out/burst/4` and `/16` run
   sixteen workers with bursts of four and sixteen. The burst is a runtime parameter of one binary,
   so the four rows share one layout. 6250 is not a multiple of four or sixteen; the last burst is
   shorter.
-- `diag/fan-out-burst` (`183ca75`): the complete `b30e728` variant on that base; the diff is the
-  variant's diff to `39aec83`, shifted by the bench change's lines.
-- `diag/fan-out-burst-counts-main` (`660f590`) and `diag/fan-out-burst-counts-inline`
-  (`8058f4e`): the receive counters of the previous section on the base and on the candidate,
-  printing a row's counts after the row.
+- `183ca75` (was on `diag/fan-out-burst`): the complete `b30e728` variant on that base; the diff
+  is the variant's diff to `39aec83`, shifted by the bench change's lines.
+- `660f590` and `8058f4e` (were on `diag/fan-out-burst-counts-main` and
+  `diag/fan-out-burst-counts-inline`): the receive counters of the previous section on the base
+  and on the candidate, printing a row's counts after the row.
 
-The workflow `diag-burst.yml` on `diag/fan-out-burst-workflow` runs one `ubuntu-24.04-arm` job
-with six binaries: `main`, the variant and a copy of `main` as A/A control, plain and counted. Its
-`sweep.py` keeps the `RECV_COUNTS` lines of each execution's stderr in that execution's result
-line, so a counted execution's time and its counts come from the same process; the earlier round
-took them from separate executions. Four rows, four stack positions, three repetitions, the
-execution order rotated per repetition as in the sweep.
+The workflow `diag-burst.yml`, which was on `diag/fan-out-burst-workflow`, runs one
+`ubuntu-24.04-arm` job with six binaries: `main`, the variant and a copy of `main` as A/A control,
+plain and counted. Its `sweep.py` keeps the `RECV_COUNTS` lines of each execution's stderr in that
+execution's result line, so a counted execution's time and its counts come from the same process;
+the earlier round took them from separate executions. Four rows, four stack positions, three
+repetitions, the execution order rotated per repetition as in the sweep.
 
 Generated code, checked on the local aarch64 build before the run: the base keeps the recv
 closure out of line for `Go` and `Tick`, the candidate inlines it and calls flume's `poll_inner`
@@ -1333,7 +1338,6 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
 - Worktrees must not share a `CARGO_TARGET_DIR`. Cargo reuses an output whose sources look older
   than it, so a second worktree's bench came out byte-identical to the first one's.
 - `39aec83` predates `.github/stack-sweep/`; take the tools from `main` for a local sweep.
-  `sweep.py summary` prints only the messaging rows.
 - rustfmt does not format inside `macro_rules!`, so check a macro's line length by hand.
 - Running the Python scripts writes `__pycache__`; it is ignored, but set
   `PYTHONDONTWRITEBYTECODE=1` anyway.

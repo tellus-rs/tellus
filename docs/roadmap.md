@@ -11,22 +11,23 @@ of them.
 ## Where tellus stands
 
 The core is complete for its purpose: actors as state machines with one Tokio task each, bounded
-mailboxes, death watch with the ordering guarantee, supervision with restart and backoff. Two
-extensions have landed behind features. `persistence` adds event-sourced actors whose replay
-equals live execution, with effects gated on durability, fencing via conditional append and
-schema evolution via manifests; [`tellus-persistence-postgres`](../tellus-persistence-postgres)
-is the first store. `cluster` makes `ActorRef` serializable, so actors on different nodes tell,
-ask and watch each other through the same API. It adds membership, gossip, failure detection,
-pluggable downing and a drained, acknowledged leave. A discovery registry with `register` names
-message types by an application-chosen `Manifest`, the receptionist replicates those
-registrations, and pub-sub sends one multicast frame per node and stream on top of it. A versioned
-cluster state reports the members, the unreachable ones, broken links and foreign clusters.
-Bootstrap goes through seed discovery with the [DNS](../tellus-bootstrap-dns) and
-[Kubernetes](../tellus-bootstrap-k8s) backends. Every cluster has an ID which every handshake
-carries, so two clusters refuse each other rather than merge. The handshake negotiates the
-protocol version, and mutual TLS binds each node to the address it advertises.
-[`tellus-cluster-demo`](../tellus-cluster-demo) holds five nodes of that to convergence and
-cross-node messaging under continuous crashes, departures and partitions.
+mailboxes, death watch with the ordering guarantee, supervision with restart and backoff. Timers are
+opt-in per actor type, and a [`Host`](../tellus/src/host.rs) spawns entities identified by a key on
+demand and can passivate them after an idle timeout. Two extensions have landed behind features.
+`persistence` adds event-sourced actors whose replay equals live execution, with effects gated on
+durability, fencing via conditional append and schema evolution via manifests;
+[`tellus-persistence-postgres`](../tellus-persistence-postgres) is the first store. `cluster` makes
+`ActorRef` serializable, so actors on different nodes tell, ask and watch each other through the
+same API. It adds membership, gossip, failure detection, pluggable downing and a drained,
+acknowledged leave. A discovery registry with `register` names message types by an
+application-chosen `Manifest`, the receptionist replicates those registrations, and pub-sub sends
+one multicast frame per node and stream on top of it. A versioned cluster state reports the members,
+the unreachable ones, broken links and foreign clusters. Bootstrap goes through seed discovery with
+the [DNS](../tellus-bootstrap-dns) and [Kubernetes](../tellus-bootstrap-k8s) backends. Every cluster
+has an ID which every handshake carries, so two clusters refuse each other rather than merge. The
+handshake negotiates the protocol version, and mutual TLS binds each node to the address it
+advertises. [`tellus-cluster-demo`](../tellus-cluster-demo) holds five nodes of that to convergence
+and cross-node messaging under continuous crashes, departures and partitions.
 
 The known gaps of the remoting layer are listed under the limitations in
 [cluster.md](cluster.md#limitations). Two building blocks were missing when this plan was written,
@@ -94,9 +95,10 @@ and hand-off are the singleton's, applied to many keys.
 Shipped; [cluster.md](cluster.md#cluster-state) is the authority
 from here on.
 
-**Mechanism.** `cluster::cluster_state()` returns a `tokio::sync::watch::Receiver<ClusterState>`. A
-`ClusterState` is a versioned snapshot holding the member list and the set of members this node
-currently derives as unreachable, next to this node's own address and incarnation. It is published
+**Mechanism.** `cluster::cluster_state()` returns a `tokio::sync::watch::Receiver<ClusterState>`
+once the endpoint is started and fails before. A `ClusterState` is a versioned snapshot holding the
+cluster ID, the member list, the members this node currently derives as unreachable, the broken
+links and the foreign clusters, next to this node's own address and incarnation. It is published
 by the mutation, not by a loop: every path which changes the
 [`Membership`](../tellus/src/cluster/membership.rs) or the [reachability
 graph](../tellus/src/cluster/reachability.rs) goes through one state-update operation which applies
@@ -140,8 +142,9 @@ rule stated there rather than a per-version reset.
 
 **Mechanism.** A cluster-wide directory keyed by the existing `Key<M>`.
 `receptionist::lookup(&key)` answers every actor registered under the key on every Up member;
-`receptionist::subscribe(&key)` returns a watch receiver of that set, updated as registrations,
-terminations and cluster state changes come in. The wire entry is the
+`receptionist::subscribe(&key)` returns a `Subscription` whose `changed` resolves when that set
+changes and whose `current` reads it; the set is updated as registrations, terminations and
+cluster state changes come in. The wire entry is the
 [`WireKey`](../tellus/src/cluster/discovery.rs) of `register`, kind, name and manifest, next to
 the actor ids, so a type mismatch is refused by name and type alike.
 
@@ -187,10 +190,10 @@ never after the origin is Down.
 Cluster-aware routers, round robin or consistent hashing over the resolved set, fall out of this
 layer without further work.
 
-**Open questions, settled.** A node holds at most 2^20 registrations and a single registration
-is bounded by the frame size, both listed under the limitations. A `lookup` does not report the
-members whose snapshot is missing: `settled` is the one predicate which tells an empty answer from
-an incomplete one.
+**Open questions, settled.** A node holds at most 2^20 registrations and 64 MiB of them, and a
+single registration is bounded by the frame size, all listed under the limitations. A `lookup` does
+not report the members whose snapshot is missing: `settled` is the one predicate which tells an
+empty answer from an incomplete one.
 
 ### 3. Pub-sub
 
@@ -280,6 +283,11 @@ that owns their shard, and passivated when idle. A message names its entity and 
 `ActorRef<Envelope<M>>` entities are messaged through, and a region resolves the region of another
 member through `receptionist::lookup_at` at that member's address.
 
+The single node half of this mechanism has shipped: a [`Host`](../tellus/src/host.rs) spawns
+entities identified by a key on the first `HostEnvelope` for that key and can passivate them after
+an idle timeout. It buffers the messages arriving while an entity stops, up to a bound. A region can
+build on a host per node and add the shard ownership and the routing between members below.
+
 Ownership is computed, not coordinated: entity id to shard by hashing modulo a fixed shard count,
 shard to owner by rendezvous hashing over the Up member set of the current cluster state, so every
 member derives the same owner from the same member list, and a membership change moves few shards: a
@@ -312,10 +320,11 @@ stabilized. That is weaker than remote FIFO "with gaps", which reorders nothing,
 version says so instead of promising otherwise.
 
 **Open questions.** Whether the shard count is per entity type or global; the passivation policy
-(idle timeout per entity type is the preference) and the bound of the per-entity buffer during
-recovery; whether an owner should hand over a moved shard's in-flight messages explicitly rather
-than dropping them into the forwarding path. Remembering entities across a move so they are
-respawned eagerly is out of the first version.
+(idle timeout per entity type is the preference); how messages are buffered during shard
+recovery or migration, which the host's buffer for a stopping entity does not decide; whether an
+owner should hand over a moved shard's in-flight messages explicitly rather than dropping them into
+the forwarding path. Remembering entities across a move so they are respawned eagerly is out of the
+first version.
 
 ## A parallel track: the persistence read side
 
@@ -332,7 +341,7 @@ projections.
 ## Not planned
 
 - **Reliable or exactly-once delivery** as a framework feature. It is possible on top of the
-  at-most-once tell contract of [cluster.md](cluster.md#guarantees), through acknowledgements,
+  at-most-once tell contract of [cluster.md](cluster.md#guarantees), through acknowledgments,
   retries and deduplication, and it is left out as a matter of scope: the framework keeps one
   delivery contract, and an application which needs more gets it from persistence, since an
   event-sourced actor which records what it sent can redeliver.

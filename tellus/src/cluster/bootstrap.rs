@@ -78,9 +78,9 @@ pub struct BootstrapConfig {
     /// The minimum size of the universe, the resolved addresses united with this node's own,
     /// before a formation decision is taken; one allows a deliberately single-node cluster.
     /// Counting the universe rather than the resolved set keeps the floor meaningful whether or
-    /// not discovery happens to resolve this node's own address. Nodes deciding on disjoint
-    /// discovery views can form separate clusters, see [bootstrap]; a higher minimum shrinks that
-    /// window.
+    /// not discovery happens to resolve this node's own address. Nodes deciding on discovery
+    /// views with different lowest addresses can form separate clusters, see [bootstrap]; a
+    /// higher minimum shrinks that window.
     ///
     /// Defaults to [BootstrapConfig::DEFAULT_MIN_PEERS].
     pub min_peers: NonZeroUsize,
@@ -224,11 +224,11 @@ pub enum BootstrapError {
 /// for [settle](BootstrapConfig::settle). When no address of a settled view is a member of a
 /// cluster, the [FormationProvider] decides whether this node forms one, by default at the lowest
 /// address of the universe once a majority of it is known to be no cluster. Requiring a majority
-/// keeps a partitioned node from coming back as a cluster of its own. A resolved set holding
-/// nothing but this node's own address forms a cluster of one. A provider's decline is logged at
-/// warn level when it differs from the previous decline, at debug level otherwise, and so is a
-/// formation the endpoint refuses since a join attempt ended ambiguously, see
-/// [FormError::JoinAmbiguous].
+/// keeps a partitioned node from coming back as a cluster of its own. With `min_peers` of one, a
+/// resolved set holding nothing but this node's own address forms a cluster of one under
+/// [Majority]. A provider's decline is logged at warn level when it differs from the previous
+/// decline, at debug level otherwise, and so is a formation the endpoint refuses since a join
+/// attempt ended ambiguously, see [FormError::JoinAmbiguous].
 ///
 /// Returns at once when this node is already a member, e.g. through [form](crate::cluster::form),
 /// and otherwise once this node is a member. Membership owns failure detection and downing from
@@ -237,12 +237,12 @@ pub enum BootstrapError {
 /// it belongs to, until this node is downed. [BootstrapError::Downed] means the caller should
 /// exit so a restart mints the fresh incarnation. A resolve failure is logged and retried, like a
 /// seed which is not a member yet, and restarts the settle window, since nothing was observed
-/// during it. A settled view holding fewer than `min_peers` addresses is logged as well, since it
-/// blocks the formation decision and would otherwise be silent. There is no internal timeout, so
-/// wrap the call in [timeout](tokio::time::timeout) to bound bootstrap. Nodes deciding on
-/// disjoint discovery views can still form separate clusters, which never merge on their own;
-/// the settle window and the `min_peers` floor are the guard, so size `min_peers` to the
-/// deployment when possible.
+/// during it. A settled view holding fewer than `min_peers` addresses is logged at warn level on
+/// every resolution, since it blocks the formation decision and would otherwise be silent. There
+/// is no internal timeout, so wrap the call in [timeout](tokio::time::timeout) to bound
+/// bootstrap. Nodes deciding on discovery views with different lowest addresses can still form
+/// separate clusters, which never merge on their own; the settle window and the `min_peers` floor
+/// are the guard, so size `min_peers` to the deployment when possible.
 ///
 /// # Errors
 /// Fails if the configuration is invalid, if the endpoint is not started, or if this node has

@@ -28,7 +28,7 @@ is tellus's fencing guarantee. An empty append inserts nothing but is still fenc
 
 ## Examples
 
-Both need the `postgres` service of the repository's
+All three need the `postgres` service of the repository's
 [docker-compose.yaml](../docker-compose.yaml); start it with `docker compose up -d --wait postgres`.
 The database is addressed via `DATABASE_URL`, defaulting to that service. `docker compose down`
 stops it, `down -v` resets the data.
@@ -38,8 +38,7 @@ stops it, `down -v` resets the data.
   so repeated runs count on:
 
   ```shell
-  RUST_LOG=tellus=debug cargo run --quiet -p tellus-persistence-postgres \
-    --example event_sourced_counter
+  cargo run --quiet -p tellus-persistence-postgres --example event_sourced_counter
   ```
 
 - [`event_sourced_supervision`](examples/event_sourced_supervision.rs): a flaky loader under the
@@ -49,6 +48,14 @@ stops it, `down -v` resets the data.
   ```shell
   RUST_LOG=tellus=debug cargo run --quiet -p tellus-persistence-postgres \
     --example event_sourced_supervision
+  ```
+
+- [`event_sourced_04_postgres`](examples/tutorials/event_sourced/04_postgres.rs): step 4 of the
+  event-sourced actors tutorial, the device of step 3 with events and snapshots in PostgreSQL;
+  every run records one reading and recovers the earlier ones:
+
+  ```shell
+  cargo run --quiet -p tellus-persistence-postgres --example event_sourced_04_postgres
   ```
 
 ## Tests

@@ -1,6 +1,7 @@
 # Measuring a performance change
 
-Three tools judge a change to code the benchmarks run. Only the stack sweep decides.
+Three tools judge a change to code the benchmarks run, and one rule says where a feature's
+benchmark lands. Only the stack sweep decides.
 
 1. **The stack sweep is the performance gate.** It runs a bench of the candidate and its parent at
    16 worker-stack positions on two runner types, and the rules below turn the figures into a
@@ -66,8 +67,9 @@ A messaging run is 1440 bench runs per job, 10 rows; a persistence run is 576, 4
 ### A borderline row
 
 The workflow runs again with the same base and candidate, and `report.py <first ID> <second ID>`
-decides the borderline rows over all 8 jobs. At least 6 must be retained, and the median decides at
-+3%. Every other row keeps its verdict from the first run.
+decides the borderline rows over all 8 jobs. At least 6 must be retained and their figures must
+spread by at most 6 points, else the row is inconclusive. Otherwise a median of at most +3% passes
+and anything above fails. Every other row keeps its verdict from the first run.
 
 ### A confirmation run
 

@@ -1,6 +1,5 @@
-//! The JSON a demo node's and the verifier's HTTP APIs answer, shared with their consumers: the
-//! verifier and the terminal observer. The cluster state itself is served by
-//! `tellus-cluster-inspect`, mounted by every node at `/inspect`.
+//! The JSON a demo node's and the verifier's HTTP APIs answer. The cluster state itself is served
+//! by `tellus-cluster-inspect`, mounted by every node at `/inspect`.
 
 #![warn(missing_docs, clippy::missing_errors_doc)]
 

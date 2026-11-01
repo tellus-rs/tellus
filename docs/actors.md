@@ -118,8 +118,8 @@ resolves once the root, and therefore the entire tree, has terminated.
 
 An unbounded mailbox never drops messages, but an actor which cannot keep up grows it without limit.
 A bounded mailbox applies no backpressure: sends to a full mailbox fail as dead letters, while
-terminated signals, the outputs of piped futures and the replies to a `reply_to` are still
-delivered.
+terminated signals, the outputs of piped futures, the replies to a `reply_to` and the messages a
+`Host` buffered for an entity are still delivered.
 
 Prefer a bounded mailbox: its capacity caps the memory taken by ordinary messages, and every dropped
 message shows up as a dead letter at warn level instead of as a growing process. Size it by the
@@ -151,9 +151,10 @@ may go unprocessed if the actor stops first: delivery is at-most-once, end to en
 
 Internally the sender is the mailbox's sending half; with the `cluster` feature it can instead be a
 remote sink forwarding to an actor on another node (see the `tellus::cluster` module docs), which
-also makes `ActorRef` serializable. The reference an actor gets for itself via
-`ActorContext::self_ref` pairs it with the mailbox's sending half (`SelfRef` in
-[`actor_ref.rs`](../tellus/src/actor_ref.rs)), which the watch mechanics below rely on.
+also makes `ActorRef` serializable. `ActorContext::self_ref` returns a plain `ActorRef`. The
+context keeps it as a `SelfRef` (in [`actor_ref.rs`](../tellus/src/actor_ref.rs)), which adds a
+type-erased handle for terminated signals to the actor's mailbox; watching hands that handle to the
+watched actor (see death watch below).
 
 ## Request-response
 
@@ -209,7 +210,7 @@ carry over the wire and where the `NoReply` detection weakens further.
 without awaiting: it spawns the given future on a new Tokio task and, once the future is ready,
 delivers its output to the actor itself, converted into its message type by the given function,
 just like `reply_to`. The actor keeps handling messages meanwhile. Blocking work fits the same
-mould: the `JoinHandle` of `tokio::task::spawn_blocking` is itself a future to pipe.
+mold: the `JoinHandle` of `tokio::task::spawn_blocking` is itself a future to pipe.
 
 The output is enqueued like a tell to this actor, except that a full bounded mailbox does not refuse
 it. Why not drop it like a tell? Because the actor waits for it. An actor which tracks the piped
@@ -290,7 +291,9 @@ panicking destructor is logged and contained.
 
 Timers need Tokio's time driver. `start_timer` creates the sleep, so on a runtime built without the
 driver it panics in the actor's own code, and the actor fails under its supervision as for any
-other panic there. An `Untimed` actor needs no time driver.
+other panic there. Timers are not the only user of the driver: a restart's backoff delay, the
+timeout of `ActorRef::ask` and a host's idle timeout need it as well, in timed and untimed actors
+alike. `#[tokio::main]` provides it; a runtime built by hand needs `enable_time` or `enable_all`.
 
 In a unit test no timer fires by itself (see testing below): `TestContext::timed` creates the
 context of a timed actor, [`TestContext::timers`](../tellus/src/testing.rs) lists the pending timers
@@ -356,9 +359,9 @@ separate field, so a wrapped cause stays queryable instead of being flattened in
 The biased select ensures a stop signal is honored before further queued messages once the parent is
 stopping, and a due timer is fired before the next item is taken; for both, one item can go first
 when the cooperative budget runs out. Before each wait, the loop consumes one unit of Tokio's
-cooperative budget (`consume_budget`). A mailbox which never runs empty would otherwise keep the
-actor's task ready forever, since flume is not part of that budget: once the budget is used up, the
-actor yields its worker, so other tasks, timers and its own stop signal get to run, also on a
+cooperative budget (`consume_budget`). Flume is not part of that budget, so without this a mailbox
+which never runs empty would keep the actor's task ready forever. Once the budget is used up, the
+actor yields its worker. Other tasks, timers and its own stop signal then get to run, also on a
 current-thread runtime.
 
 ## Stopping and termination
@@ -390,20 +393,20 @@ ends, so the channel closing proves every child has terminated. Only then does t
 own value and finally signal its watchers: a terminated signal must prove that the actor's
 destructors have run.
 
-The mailbox is drained and disconnected right at the start of the sequence: senders observe the
-termination while the children still stop, and the destructors of the drained messages run as part
-of it, so e.g. a queued request's reply channel resolves its ask as `NoReply` instead of pending
-forever. The messages of the actor's timers are dropped right after the drained ones, so a `ReplyTo`
-inside one resolves its ask as `NoReply` too. A send racing with the drain can still slip past it;
-such a message is retained until its last sender is dropped, which is why the `NoReply` detection is
-best-effort.
+The mailbox is drained and disconnected right at the start of the sequence, so senders observe the
+termination while the children still stop. The destructors of the drained messages run as part of
+the sequence. A queued request's reply channel, for example, hence resolves its ask as `NoReply`
+instead of pending forever. The messages of the actor's timers are dropped right after the drained
+ones, so a `ReplyTo` inside one resolves its ask as `NoReply` too. A send racing with the drain can
+still slip past it; such a message is retained until its last sender is dropped, which is why the
+`NoReply` detection is best-effort.
 
 The root actor has no parent, so `ActorSystem::stop` is that channel from the outside: it sends on
 the very sender which keeps the root alive, shared between the system and the root's watcher
 registry. Dropping a system therefore still stops nothing, since the registry holds the other
 reference. The root stops where it would stop for a parent, between messages and never inside
-one: the message it is handling is finished first and, for an event sourced actor, so is its
-settlement, so a shutdown can lose the acknowledgement of an event but never the event. Await
+one. The message it is handling is finished first and, for an event sourced actor, so is its
+settlement. A shutdown can hence lose the acknowledgment of an event but never the event. Await
 `ActorSystem::terminated` for the tree to be gone. Without it a root actor needs a message of its
 own for shutdown, which an actor whose message type is not its own to choose, such as a `Host`,
 cannot have.
@@ -463,11 +466,17 @@ the signal or was dropped as a dead letter.
 
 ## Hosts
 
-A `Host` hosts entities: actors identified by a key, spawned on the first message for that key
-and, if configured, passivated once nothing has messaged them for a while. Its own messages are
-`HostEnvelope { key, message }`, so a host is spawned like any other actor and its entities are
-addressed through `tell` and `ask` with an envelope. The entities are its children, hence stopping
-it stops them first.
+A [`Host`](../tellus/src/host.rs) hosts entities: actors identified by a key, spawned on the first
+message for that key and, if configured, passivated once no message has been routed to them through
+the host for a while. Messages told to an entity's reference directly, the replies and piped outputs
+it receives and its own timers do not count, so an entity busy with those alone is idle to the
+host. Its own messages are `HostEnvelope { key, message }`, so a host is spawned like any other
+actor and its entities are addressed through `tell` and `ask` with an envelope. The entities are
+its children, hence stopping it stops them first.
+
+A `HostConfig` sets the buffer described below, 64 messages per entity by default, and the idle
+timeout. Passivation is off unless `HostConfig::with_idle_timeout` sets a timeout, and that method
+refuses zero.
 
 The host is given two functions. `spawn` must spawn a fresh child through the context it is
 handed, on every call, e.g. via `ActorContext::spawn` or `ActorContext::spawn_event_sourced`; it
@@ -505,16 +514,19 @@ message.
 
 While an entity stops, messages for it are buffered rather than sent, since the stopping
 incarnation would process them only by accident. On its terminated signal the host spawns the
-replacement, delivers the buffer in order and only then takes its next message, so one sender's
-order holds across a passivation. The buffer is bounded; beyond it the newest message is refused
-and logged as a dead letter, the way a full mailbox refuses one. The delivery of the buffer forces
-a reservation past the entity's mailbox capacity rather than bypassing the quota, so a mailbox
-smaller than the buffer loses nothing the host accepted and the count stays balanced: the
-receiver releases every forced item like any other, and ordinary senders are refused until it has
-drained back under its capacity.
+replacement if it buffered any message for it, delivers the buffer in order and only then takes its
+next message, so one sender's order holds across a passivation. Otherwise the next message for the
+key spawns the replacement. The buffer is bounded; beyond it the newest message is refused and
+logged as a dead letter, the way a full mailbox refuses one. The delivery of the buffer forces a
+reservation past the entity's mailbox capacity rather than bypassing the quota. A mailbox smaller
+than the buffer hence loses nothing the host accepted. The count stays balanced: the receiver
+releases every forced item like any other, and ordinary senders are refused until it has drained
+back under its capacity.
 
 An entity which stops on its own, e.g. under `SupervisionStrategy::Stop` after a failure, is
-forgotten on its terminated signal and spawned afresh by the next message for its key.
+forgotten on its terminated signal and spawned afresh by the next message for its key. Until the
+host has received that signal, it takes the entity for live, so messages routed to it meanwhile are
+dead letters.
 
 Ownership across nodes is not part of this. A host is local: it is the single node half of the
 sharded regions the roadmap describes, where the owner of a key is computed from the member list
@@ -630,16 +642,16 @@ has to wait for the actor, since `tell` returns before the message is handled.
 
 ## Guarantees and limitations
 
-- `tell` is fire-and-forget and at-most-once: no acknowledgements, no redelivery, dead letters
+- `tell` is fire-and-forget and at-most-once: no acknowledgments, no redelivery, dead letters
   are logged, not returned.
 - Messages from one sender arrive in send order; terminated signals are ordered behind the
   watched actor's delivered messages and prove its destructors have run.
 - A message sent concurrently with the termination can slip in after the mailbox was drained.
-  It is a dead letter, but it and the resources it captures are retained while any `ActorRef` to
-  the terminated actor lives. An `ask` whose request is such a message may time out; dropping the
-  remaining references before its deadline can still resolve it as `NoReply`. The terminated
-  signal's guarantee, covering the actor's state, its actor value and its descendants, is
-  unaffected.
+  It is never received and, unlike other dead letters, not logged. It and the resources it
+  captures are retained while any `ActorRef` to the terminated actor lives. An `ask` whose request
+  is such a message may time out; dropping the remaining references before its deadline can still
+  resolve it as `NoReply`. The terminated signal's guarantee, covering the actor's state, its actor
+  value and its descendants, is unaffected.
 - `receive` is synchronous and cannot await; long running or blocking work runs in a future
   piped to the actor via `pipe_to_self`, whose output arrives as a message, at most once, and is
   not refused by a full bounded mailbox.
@@ -657,13 +669,14 @@ has to wait for the actor, since `tell` returns before the message is handled.
 - A message for an entity which is stopping is enqueued to its next incarnation, in order, up to
   the configured buffer, whatever that entity's mailbox capacity; beyond the buffer the newest is
   refused and logged as a dead letter. Enqueued is the whole promise: whether the incarnation
-  processes the message depends on it initialising, or recovering, and on it not stopping first,
-  exactly as for any `tell`.
-- An entity is asked to passivate only once it has been idle for at least the configured timeout,
-  and a host checks that about once per timeout. There is no upper bound on when the entity has
-  stopped: the host's own mailbox, scheduling, the entity finishing the command it is on and, for
-  an event sourced entity, its settlement all come first. An entity which does not stop on its
-  passivate message is never passivated, and messages for it queue in the host's buffer until it
-  does.
+  processes the message depends on it initializing, or recovering, and on it not stopping first,
+  exactly as for any `tell`. A message routed to an entity which stopped on its own is a dead
+  letter until the host has received that entity's terminated signal.
+- An entity is asked to passivate only once no message has been routed to it through the host for
+  at least the configured timeout, and a host checks that about once per timeout. There is no upper
+  bound on when the entity has stopped: the host's own mailbox, scheduling, the entity finishing
+  the command it is on and, for an event sourced entity, its settlement all come first. An entity
+  which does not stop on its passivate message is never passivated, and messages for it queue in
+  the host's buffer until it does.
 - These guarantees are stated for actors in one process; [cluster.md](cluster.md) spells out how
   they extend to actors on other nodes and where they weaken.

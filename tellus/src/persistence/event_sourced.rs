@@ -40,10 +40,10 @@ where
     /// across incarnations; unrelated to [ActorId](crate::ActorId), which is fresh per spawn.
     fn persistence_id(&self) -> PersistenceId;
 
-    /// The state before any event is applied. Re-run on every recovery without a snapshot, hence
-    /// it must produce the same seed the stored events were originally folded onto: pure, no
-    /// world-touching work, which would silently disappear the moment snapshots are enabled; that
-    /// belongs into [recovered](EventSourced::recovered).
+    /// The state before any event is applied. It is re-run on every recovery without a snapshot, so
+    /// it must produce the same seed the stored events were originally folded onto. It must hence
+    /// be pure and do no world-touching work, which would silently disappear the moment snapshots
+    /// are enabled. Such work belongs in [recovered](EventSourced::recovered).
     ///
     /// # Errors
     /// Implementations fail when they choose to, e.g. through `?` on a domain error; tellus
@@ -62,8 +62,8 @@ where
     fn init_from_snapshot(&self, snapshot: Self::Snapshot) -> Result<Self::State, Self::Error>;
 
     /// Reconcile the recovered state with the world, e.g. spawn child actors or re-arm timers.
-    /// Run exactly once per incarnation, after replay or snapshot load and before the first
-    /// command, never during replay.
+    /// Run once per successful recovery, on every spawn and every restart, after replay or
+    /// snapshot load and before the first command, never during replay.
     ///
     /// # Errors
     /// Implementations fail when they choose to, e.g. through `?` on a domain error; tellus
@@ -103,8 +103,9 @@ where
     /// randomness or on per-incarnation values.
     fn apply(&self, state: Self::State, event: Self::Event) -> Self::State;
 
-    /// Offer a snapshot of the given state, called after the events of an [Effect] have been
-    /// applied; [Some] is saved to the snapshot store, shortening future recoveries, [None] means
+    /// Offer a snapshot of the given state, called once the events of an [Effect] with at least
+    /// one event have been applied and its continuations have run, never for an effect without
+    /// events. [Some] is saved to the snapshot store, shortening future recoveries, [None] means
     /// no snapshot is due. Snapshots are a discardable derivative of the events, never a source
     /// of truth, so a failure to build or save one is logged and never fails the actor.
     ///

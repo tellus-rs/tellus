@@ -533,7 +533,7 @@ async fn a_recovered_failure_restarts_into_a_working_actor() {
 }
 
 /// An outside stop takes effect between commands, like a parent's, hence an append already under
-/// way settles before the tree terminates: a shutdown can lose the acknowledgement of an event,
+/// way settles before the tree terminates: a shutdown can lose the acknowledgment of an event,
 /// never the event.
 #[tokio::test]
 async fn stopping_a_system_lets_an_append_settle() {

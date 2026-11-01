@@ -118,7 +118,7 @@ where
 /// downed and every connection severed, and only then does any caller learn of it. Every call,
 /// concurrent or later, then fails as [Incomplete](LeaveError::Incomplete).
 ///
-/// Nothing is enqueued once the departure is announced. An acknowledgement proves that the peer
+/// Nothing is enqueued once the departure is announced. An acknowledgment proves that the peer
 /// dispatched every frame to its local mailboxes, or logged it as a dead letter there. It does not
 /// prove that any actor handled them. The whole drain is bounded by one
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout) deadline. A member which is gone

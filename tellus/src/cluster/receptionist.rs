@@ -100,9 +100,9 @@ pub fn settled(version: u64) -> Result<bool, ReceptionistError> {
 }
 
 /// The current verdict: whether the receptionist is [settled] at the current cluster state
-/// version, together with that version. The same judgement rides
+/// version, together with that version. The same judgment rides
 /// [changes](crate::cluster::changes) as [Change::Settled](crate::cluster::Change::Settled)
-/// whenever it flips.
+/// whenever the verdict or the version it judges changes.
 ///
 /// # Errors
 /// Fails if the endpoint is not started.
@@ -1081,8 +1081,9 @@ mod tests {
         assert!(!settled_at(endpoint, version + 1));
     }
 
-    /// The verdict rides the channel once per flip, in order with the states; a hidden replica
-    /// does not settle, and a snapshot of a current verdict sends nothing.
+    /// The verdict rides the channel whenever it or the version it judges changes, in order with
+    /// the states; a hidden replica does not settle, and a snapshot of a current verdict sends
+    /// nothing.
     #[test]
     fn the_verdict_follows_membership_and_visibility() {
         let endpoint = endpoint();

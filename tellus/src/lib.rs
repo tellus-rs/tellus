@@ -32,9 +32,9 @@
 //! has no timers and pays nothing for them.
 //!
 //! A [Host] hosts entities: actors identified by a key, spawned on the first [HostEnvelope] for
-//! that key and, if configured, passivated once nothing has messaged them for a while, with
-//! messages arriving meanwhile buffered for their next incarnation. See `docs/actors.md` in the
-//! repository for the guarantees.
+//! that key and, if configured, passivated once no message has been routed to them through the
+//! host for a while, with messages routed meanwhile buffered for their next incarnation. See
+//! `docs/actors.md` in the repository for the guarantees.
 //!
 //! With the `persistence` feature, actors can be event sourced by implementing [EventSourced] and
 //! spawning via [ActorContext::spawn_event_sourced] or [ActorSystem::event_sourced]: commands are
@@ -51,12 +51,20 @@
 //!
 //! The `cluster` feature adds remoting in the [cluster] module: [ActorRef] becomes serializable and
 //! actors on different nodes message and watch each other through the same API. Without that
-//! feature tellus is purely local and pulls in none of the remoting dependencies.
+//! feature tellus is purely local and pulls in none of the remoting dependencies. The
+//! `cluster-dev` feature implies `cluster` and adds helpers for development and tests, among them
+//! `QuicTransport::dev`, a transport which does not verify certificates; never enable it in
+//! production.
 //!
 //! The `serde` feature makes the configuration deserializable, [ActorConfig] as well as the
-//! cluster's [EndpointConfig](cluster::EndpointConfig) and
-//! [BootstrapConfig](cluster::BootstrapConfig), so a deployment can read it from a config file with
-//! human readable durations. tellus pulls in no parser of its own, see the README.
+//! cluster's [EndpointConfig](cluster::EndpointConfig),
+//! [BootstrapConfig](cluster::BootstrapConfig) and [QuicConfig](cluster::transport::QuicConfig), so
+//! a deployment can read it from a config file with human readable durations. tellus pulls in no
+//! parser of its own, see the README.
+//!
+//! The `hotpath` features (`hotpath`, `hotpath-alloc`, `hotpath-callgrind` and `hotpath-cloud`)
+//! instrument the hot paths of messaging and persistence for profiling with the `hotpath` crate.
+//! They are off by default.
 
 #![doc(
     html_logo_url = "https://tellus.rs/brand/logo-tile.svg",

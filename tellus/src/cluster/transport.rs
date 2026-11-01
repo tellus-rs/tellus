@@ -36,7 +36,8 @@ where
 
     /// Connect to the node listening at the given address, establishing the connection and
     /// opening its bidirectional control stream, whose halves are returned alongside. Frames
-    /// larger than `max_frame_size` bytes are refused on every stream of the connection.
+    /// larger than `max_frame_size` bytes are refused when received, on any stream of the
+    /// connection.
     ///
     /// Must bound itself: a silent address which never resolves stalls the join attempt holding
     /// it, and joins run one at a time per endpoint. [QuicTransport]
@@ -53,7 +54,7 @@ where
     ) -> Result<ConnectedControl<Self::Connection>, TransportError>;
 
     /// Wait for the next inbound connection and establish it; frames larger than
-    /// `max_frame_size` bytes are refused on every stream of the connection.
+    /// `max_frame_size` bytes are refused when received, on any stream of the connection.
     ///
     /// # Errors
     /// Implementations fail only if no further connection can be accepted at all; the failure of
@@ -146,11 +147,11 @@ where
 {
     /// Send one frame; the bytes are only read, never retained. Frames sent on one sender must be
     /// received by the peer in send order or the connection must die; a transport must never
-    /// reorder them. Frames sent on different senders are unordered against each other.
+    /// reorder them. Frames sent on different senders are unordered against each other. The
+    /// caller never passes a frame larger than the connection's maximum frame size.
     ///
     /// # Errors
-    /// Implementations fail if the frame exceeds the connection's maximum frame size, or if the
-    /// stream or the connection is gone.
+    /// Implementations fail if the stream or the connection is gone.
     async fn send(&mut self, frame: &[u8]) -> Result<(), TransportError>;
 
     /// Send several frames in order, as [FrameSender::send] would one after the other, letting
@@ -162,7 +163,7 @@ where
 
     /// Close the stream after every frame sent on it and wait until the peer has acknowledged
     /// receiving all of them, which proves receipt, not processing. A transport without
-    /// acknowledgements returns once the stream is closed.
+    /// acknowledgments returns once the stream is closed.
     ///
     /// # Errors
     /// Implementations fail if the peer stopped the stream or the connection failed before every

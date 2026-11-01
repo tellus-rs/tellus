@@ -92,9 +92,6 @@ impl<M> ActorRef<M> {
         }
     }
 
-    /// Crate-private on purpose: for a remote reference the depth would need a round trip, so
-    /// other actors ask through the actor's own protocol; only the actor's own, local reference
-    /// is asked.
     pub(crate) fn queued(&self) -> usize {
         self.local_mailbox_handle().queued()
     }

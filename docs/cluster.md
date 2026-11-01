@@ -20,15 +20,27 @@ e.g. `reply_to: ActorRef<Reply>`, and work unchanged no matter where their count
 Each process runs at most one remoting endpoint, started via `cluster::start_endpoint` with a
 `Transport` (the provided one is QUIC via quinn, TLS included) and an `EndpointConfig`. The
 separate `cluster-dev` feature adds `QuicTransport::dev`, which skips certificate verification and
-hence exists only where it is asked for. With the `serde` feature `EndpointConfig`,
-`BootstrapConfig` and `QuicConfig` are deserializable. Each pluggable family is chosen by the name
-of one of its provided implementations (`codec: postcard`, `failure_detector: { phi_accrual: {} }`,
-`downing_provider: { keep_majority: { after: 10s } }`, `formation: majority`); a custom
-implementation is still assigned in code. An invalid `EndpointConfig` or `BootstrapConfig` is
-refused by deserialization just as it is by `start_endpoint` and `cluster::bootstrap`. A
-`QuicConfig` is plain data: its server name and the PEM files its paths name are validated by
-`QuicTransport::from_config`, which reads them. Deserializing one is hence not yet a check that the
-node can present an identity.
+hence exists only where it is asked for, and the test hooks `cluster::sever_connections`,
+`cluster::gossip_bytes` and `cluster::drop_terminated_frames`. With the `serde` feature
+`EndpointConfig`, `BootstrapConfig` and `QuicConfig` are deserializable. Each pluggable family is
+chosen by the name of one of its provided implementations (`codec: postcard`,
+`failure_detector: { phi_accrual: {} }`, `downing_provider: { keep_majority: { after: 10s } }`,
+`formation: majority`); a custom implementation is still assigned in code. An invalid
+`EndpointConfig` or `BootstrapConfig` is refused by deserialization just as it is by
+`start_endpoint` and `cluster::bootstrap`. A `QuicConfig` is plain data: its server name and the
+PEM files its paths name are validated by `QuicTransport::from_config`, which reads them.
+Deserializing one is hence not yet a check that the node can present an identity.
+
+The formation provider, the failure detector and the downing provider are chosen by these names,
+with these keys and the defaults of keys left out:
+
+- `formation` (`BootstrapConfig`): `majority` (the default), `unanimous` and `explicit` take no
+  keys, and `majority_with_fallback` requires `after`.
+- `failure_detector` (`EndpointConfig`): `phi_accrual` (the default) takes `threshold` (8.0),
+  `max_sample_size` (200), `min_std_deviation` (100ms), `acceptable_pause` (3s) and
+  `warmup_deadline` (5s), and `deadline` takes the deadline itself, e.g. `deadline: 3s`.
+- `downing_provider` (`EndpointConfig`): `keep_majority` (the default) takes `after` (10s), and
+  `down_after_deadline` requires `after`.
 
 Membership is not optional. A started endpoint is *not* a cluster and admits nobody, `cluster::form`
 makes it a cluster of one, and `cluster::join` makes it a member of the cluster one of its seed
@@ -43,10 +55,11 @@ one or of many, and `Downed` once it was downed or left, which is final for the 
 Bootstrap goes through joining and discovery: `cluster::register` names a local actor and
 `receptionist::lookup_at` resolves that name at a member's address from the replicated
 registrations. The seed addresses themselves can be discovered instead of configured:
-`cluster::bootstrap` resolves them through a `SeedDiscovery` and joins once the view settles, see
-Membership. `serialize_ref` and `deserialize_ref` remain for exchanging a reference out of band,
-e.g. through configuration; the bytes carry the message type's manifest, so a wrong-typed resolution
-is refused like a mistyped lookup. Every further reference travels inside messages.
+`cluster::bootstrap` resolves them through a `SeedDiscovery`, joins through them on every
+resolution and forms a cluster only once the view settles, see Membership. `serialize_ref` and
+`deserialize_ref` remain for exchanging a reference out of band, e.g. through configuration; the
+bytes carry the message type's manifest, so a wrong-typed resolution is refused like a mistyped
+lookup. Every further reference travels inside messages.
 
 Death watch works across nodes through the ordinary `ActorContext::watch`, with the weakened
 contract below. Request-response works across nodes too: `ReplyTo` is serializable like a
@@ -160,7 +173,10 @@ ensures that only one node forms for a shared universe. The majority stops a par
 from re-forming. Both conditions are on the universe rather than on who answered, so a node which
 cannot reach the lowest address forms nothing. Formation liveness is hence a requirement on
 discovery, which must stop resolving nodes that are gone. A reduced view must still satisfy
-`min_peers` for the next-lowest address to inherit the role.
+`min_peers` for the next-lowest address to inherit the role. `Unanimous` forms only once every
+address of the universe is known to be no cluster, again at the lowest, so any one unreachable
+address blocks a cold start. `Explicit` never forms: the deployment calls `cluster::form` on one
+node, and bootstrap only ever joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
 gone (`formation: { majority_with_fallback: { after: 60s } }`). It keeps the strict majority. The
@@ -183,18 +199,18 @@ attempts to join through every resolved address but this node's own, lowest firs
 resolution, so a node finds an existing cluster at once. Only the formation decision waits for the
 view to settle: it is taken on a round over a universe which has held at least `min_peers`
 addresses unchanged for the settle window, and only when none of them admitted this node. A round
-held back by a seed (`JoinsHeld`) never reaches the provider. Bootstrap returns as soon as this
-node is a member, its own formation included, and at once when it already is. Membership owns
-failure detection and downing from then on. `min_peers` counts the universe while the formation
-provider counts what its addresses answered. That distinction keeps a restarted node from
-re-forming inside a partition: discovery is unaffected by a partition, reachability is not.
-Resolve failures are retried and restart the settle window, since nothing was observed during
-them. There is no internal timeout, so the call is bounded by the caller's timeout. `Downed` is
-fatal per process and means the caller should exit, letting the restart mint the fresh
-incarnation. What does this not prevent? Nodes deciding on views with *different lowest
-addresses* can still form separate clusters, which never merge on their own, since the formation
-rule is only as good as the universe it is taken over. The settle window and the `min_peers` floor
-shrink that window, so size `min_peers` to the deployment when possible (see Limitations).
+held back by a seed (`JoinsHeld`) is only observed and never asked to `form`. Bootstrap returns as
+soon as this node is a member, its own formation included, and at once when it already is.
+Membership owns failure detection and downing from then on. `min_peers` counts the universe while
+the formation provider counts what its addresses answered. That distinction keeps a restarted node
+from re-forming inside a partition: discovery is unaffected by a partition, reachability is not.
+Resolve failures are retried and restart the settle window, since nothing was observed during them.
+There is no internal timeout, so the call is bounded by the caller's timeout. `Downed` is fatal per
+process and means the caller should exit, letting the restart mint the fresh incarnation. What does
+this not prevent? Nodes deciding on views with *different lowest addresses* can still form separate
+clusters, which never merge on their own, since the formation rule is only as good as the universe
+it is taken over. The settle window and the `min_peers` floor shrink that window, so size
+`min_peers` to the deployment when possible (see Limitations).
 
 *Foreign cluster probe*: once bootstrap has made this node a member, it spawns a task which keeps
 the discovery and resolves it again every `probe_interval` (default 30 s, `None` turns it off). It
@@ -216,25 +232,25 @@ the version of the list it last sent in full, and only once the frames were queu
 reconnect drops that record, so the next tick sends the full list again. A node also pushes its
 full member list whenever the list changes locally, and the acceptor of every connection sends its
 snapshot as the first frame behind the handshake. Every gossip frame, empty or not, doubles as a
-heartbeat, so there is no separate ping. A member with a currently disconnected lane is skipped,
-keyed on transport connectivity, never on suspicion, so the uncounted system-frame queues stay
-bounded while a member is retried and two healthy nodes can never talk each other into mutual
-silence. The push on a local change goes only to members whose lane is connected; the periodic one
-also dials a member which has no lane yet. A state change hence reaches every member with a live
-path within one gossip round per hop of connectivity; convergence is eventual, not agreed, see
-downing below. Direct-link reachability rides the same
-tick: an edge change is versioned by its observer, and every statement a node mints, accepts from a
-peer or promotes is queued and fanned out once per tick, deduplicated by version at every hop. A
-statement is *merged* the moment it arrives, so this node's own decisions never wait, and only its
-*forwarding* costs a round. Reachability hence spreads one hop per tick exactly as membership does,
-and a burst of edge changes costs one push per member per tick rather than one fan-out per record.
-Like gossip, a push skips a disconnected lane. A statement naming a node which is not a member here
-yet cannot be merged, and its observer resends only to its own peers, so a relayed one would be lost
-for good. Such a record is therefore parked in a bounded table and admitted once membership catches
-up, which resumes the relay past this node. A parked record naming a node which is Down here, or
-parked for longer than `down_retention`, can never be admitted and is dropped. Connection setup
-sends the full observation table, and every tick re-asserts this node's own standing unreachable
-statements, which together repair a record lost with a connection rather than dropped on arrival.
+heartbeat, so there is no separate ping. A member with a currently disconnected lane is skipped.
+The skip is keyed on transport connectivity, never on suspicion. The uncounted system-frame queues
+hence stay bounded while a member is retried, and two healthy nodes can never talk each other into
+mutual silence. The push on a local change goes only to members whose lane is connected; the
+periodic one also dials a member which has no lane yet. A state change hence reaches every member
+with a live path within one gossip round per hop of connectivity; convergence is eventual, not
+agreed, see downing below. Direct-link reachability rides the same tick: an edge change is versioned
+by its observer, and every statement a node mints, accepts from a peer or promotes is queued and
+fanned out once per tick, deduplicated by version at every hop. A statement is *merged* the moment
+it arrives, so this node's own decisions never wait, and only its *forwarding* costs a round.
+Reachability hence spreads one hop per tick exactly as membership does, and a burst of edge changes
+costs one push per member per tick rather than one fan-out per record. Like gossip, a push skips a
+disconnected lane. A statement naming a node which is not a member here yet cannot be merged, and
+its observer resends only to its own peers, so a relayed one would be lost for good. Such a record
+is therefore parked in a bounded table and admitted once membership catches up, which resumes the
+relay past this node. A parked record naming a node which is Down here, or parked for longer than
+`down_retention`, can never be admitted and is dropped. Connection setup sends the full observation
+table, and every tick re-asserts this node's own standing unreachable statements, which together
+repair a record lost with a connection rather than dropped on arrival.
 
 Batching bounds the frames, not the replication. Every node forwards every statement it accepts to
 every Up peer, the one it came from included. A single edge change hence still costs O(n^2) copies
@@ -253,11 +269,12 @@ with a refusal the dialer treats as retryable, since gossip may not have carried
 join everywhere yet; the backoff retry succeeds once it has. A dead incarnation's handshake
 is refused finally. The outbound direction is optimistic: a send towards a node this endpoint does
 not know yet, e.g. a reference which arrived ahead of the gossip naming its node, dials anyway and
-lets the far side judge; only a send towards a Down incarnation is refused locally, apart from
-three cases: a send while this node is downed or leaving, a send towards an address currently
-refused (see the wire model), and a send towards a lane already bound to another incarnation at that
-address, where a send towards a successor fails until this node learns of its predecessor's death,
-one gossip hop, since a reference alone is no proof the predecessor is gone.
+lets the far side judge. Only a send towards a Down incarnation is refused locally. Three more
+sends fail locally: a send while this node is downed or leaving, a send towards an address
+currently refused (see the wire model), and a send towards a lane already bound to another
+incarnation at that address. In that last case a send towards a successor fails until this node
+learns of its predecessor's death, one gossip hop away, since a reference alone is no proof the
+predecessor is gone.
 
 *Supersession*: a join from a younger incarnation at an address an Up member already advertises
 proves the old process is gone, so the old incarnation is downed and the new one admitted. A join
@@ -275,7 +292,7 @@ frame a writer holds included, and finish every data stream. Then the control st
 `Drained` marker as its final frame, naming the number of data streams this node opened on that
 connection. The peer answers with a `DrainAck` once exactly that many data streams have ended
 cleanly and every frame they carried was dispatched. This node then counts the peer as
-acknowledged and closes the connection. An acknowledgement proves that every frame queued for the
+acknowledged and closes the connection. An acknowledgment proves that every frame queued for the
 peer reached the framework's delivery path there, a local mailbox or a logged dead letter. It does
 not prove that any actor handled them. The whole exchange is bounded by `leave_timeout`: one
 deadline for every lane, not restarted between the phases. A lane waiting out a reconnect backoff
@@ -293,7 +310,7 @@ waiting. A node downed before it began to leave fails with `LeaveError::Downed`.
 which ends without a report, e.g. since its task panicked, fails safe. A supervisor awaiting that
 task then latches this node Downed and severs every connection. Only after that does it publish
 the failure, so every caller, concurrent or later, gets `LeaveError::Incomplete` and never a
-report claiming an acknowledgement. Leaving is terminal per incarnation exactly as being downed
+report claiming an acknowledgment. Leaving is terminal per incarnation exactly as being downed
 is, so the process is expected to exit, and only a restart rejoins.
 
 The departure is part of the gossiped state, so a member recognizes it however it arrives: from
@@ -415,13 +432,13 @@ peer.
 
 A lane is not one queue but a *control* queue plus a bounded pool of *data* queues, one per stream
 of the connection, `max_streams_per_peer` of them at most. A frame delivered to an actor picks its
-stream by hashing that actor's ID; the reply and watch frames below hash another key, and every
-remaining frame rides the control stream. A `Multicast` frame, which carries one payload to
-several actors of the receiving node, names only targets hashing onto one stream and rides it,
-so each target still receives it on its own stream. FIFO holds per
-recipient rather than per node, and a large message only delays frames towards recipients hashing
-onto the same stream. The mapping never travels the wire: the receiving side dispatches by the
-target named in the frame, so only the sender has to agree with itself.
+stream by hashing that actor's ID; the terminated and reply frames below hash another key, and
+`Watch`, `Unwatch` and every remaining frame ride the control stream. A `Multicast` frame, which
+carries one payload to several actors of the receiving node, names only targets hashing onto one
+stream and rides it, so each target still receives it on its own stream. FIFO holds per recipient
+rather than per node, and a large message only delays frames towards recipients hashing onto the
+same stream. The mapping never travels the wire: the receiving side dispatches by the target named
+in the frame, so only the sender has to agree with itself.
 
 That the terminated signal names its *watcher* is what carries the ordering guarantee across this
 split. A `Terminated` frame hashes onto the watcher's stream, the same one the messages the dying
@@ -571,7 +588,8 @@ the far side as unknown targets, at-most-once either way.
   weakens to best-effort. A request which cannot be queued fails the ask as it does locally: a full
   outbound queue as `MailboxFull`, and an unreachable node as `ActorTerminated`, meaning a Down
   incarnation, a refused address, a lane bound to another incarnation or this node being downed or
-  leaving.
+  leaving. A request which encodes beyond `max_frame_size` fails as `TooLarge` and one the codec
+  cannot encode as `NotEncodable`, both at the send rather than by timeout.
 
   `ReplyDropped` is fire-and-forget: one lost with its connection resolves the ask by its timeout,
   since a reply is not idempotent and nothing reply-related is replayed on a reconnect. An ask
@@ -611,14 +629,14 @@ the far side as unknown targets, at-most-once either way.
   one. The hop in the middle holds an entry of its own, stamped with the next node and remembering
   the origin it forwards for. Downing evicts it with either: with its next node, which owes the
   reply, as for any request, and with its origin, which nothing would deliver the reply to anymore.
-  And whenever an entry which was sent is released without its reply, by an ask's timeout or drop or
-  by its recipient's termination, its node sends a `ReplyCancelled` frame to the peer it was sent
-  to, on the stream which carried the request, and never before the request is queued, so the
-  cancellation never overtakes it. That peer releases what it forwarded on behalf of that entry and
-  cancels further down the chain in turn, so no hop outlives the origin's interest. The cancellation
-  outlives the receipt: a reply destination forwarded only after it was canceled is canceled at its
-  next peer right behind the request carrying it. A cancellation is fire-and-forget like
-  `ReplyDropped`: one lost with its connection leaves the hop's entry to downing.
+  An entry which was sent can also be released without its reply, by an ask's timeout or drop or by
+  its recipient's termination. Its node then sends a `ReplyCancelled` frame to the peer it was sent
+  to, on the stream which carried the request. That frame is never sent before the request is
+  queued, so the cancellation never overtakes it. That peer releases what it forwarded on behalf of
+  that entry and cancels further down the chain in turn, so no hop outlives the origin's interest.
+  The cancellation outlives the receipt: a reply destination forwarded only after it was canceled is
+  canceled at its next peer right behind the request carrying it. A cancellation is fire-and-forget
+  like `ReplyDropped`: one lost with its connection leaves the hop's entry to downing.
 
   A `ReplyTo` serialized anywhere else, e.g. through a codec call of the application's own, is
   stamped with no peer, so neither downing nor a cancellation reaches its entry, and its bytes
@@ -803,11 +821,13 @@ Cluster state).
 Downing is a separate decision, made by the pluggable `DowningProvider`, polled every tick with
 the members outside this node's connected component, passed as `Disconnected` rather than as a
 plain unreachability mark. An edge is absent if either endpoint reports the other unreachable; an
-absent direct edge does not split a component while an alternate path exists. A member is hence
-downed no earlier than every remaining member has reported it unreachable and that statement has
-been relayed here: the time to down is the slowest detector plus one flood, not this node's own
-detector. Its verdict is either the members to down or a *self-down*, which is what lets a
-provider resolve a partition instead of only observing one.
+absent direct edge does not split a component while an alternate path exists. A member hence
+leaves the component only once every direct edge between it and the rest of the component has
+been reported broken, by either end, and those statements have been relayed here. How long
+downing takes from then on is the provider's choice: `KeepMajority` downs only once every
+disconnected member has been disconnected for its `after`. A provider's verdict is either the
+members to down or a *self-down*, which is what lets a provider resolve a partition instead of only
+observing one.
 Downing runs the node death sequence: mark Down (the tombstone), close the lane, wait out
 in-flight deliveries, fail the pending asks, flush the synthesized signals. A new incarnation
 joining at a member's address downs the old incarnation the same way, as does `cluster::down`, and
@@ -876,14 +896,15 @@ The value is published by the mutation, not by a loop. Every path which changes 
 the reachability graph runs through one update operation on the endpoint, which applies the change,
 promotes the parked reachability evidence the change made admissible, derives the unreachable set
 and the broken links from the resulting member list and publishes the value, all under one guard.
-The membership loop is one caller; the gossip merge, a `down` call, node death, a leave and the
-retention sweep are the others. A gossip merge applies every outcome, a superseded incarnation's
-Down included, inside the same update, so no value ever holds two Up incarnations at one address or
-a member Up which the merged gossip declared Down; only the consequences of a death (closing the
-lane, failing asks, flushing synthesized signals) run outside. The last value matters most: a
-self-down and a leave end the membership loop for good, and both publish this node's own entry,
-Down after a self-down and Left after a leave, before that, which a loop-driven publication could
-never show.
+The membership loop is one caller, its retention sweep and foreign cluster expiry included; the
+gossip and reachability merges, a join admission, a `down` call, node death, a self-down, a leave,
+forming a cluster and a foreign cluster sighting are the others. A gossip merge applies every
+outcome, a superseded incarnation's Down included, inside the same update, so no value ever holds
+two Up incarnations at one address or a member Up which the merged gossip declared Down; only the
+consequences of a death (closing the lane, failing asks, flushing synthesized signals) run outside.
+The last value matters most: a self-down and a leave end the membership loop for good, and both
+publish this node's own entry, Down after a self-down and Left after a leave, before that, which a
+loop-driven publication could never show.
 
 Two things follow from publishing at the mutation rather than at the tick. A reachability
 statement which arrives from a peer and cuts this node's component dates the member's
@@ -917,7 +938,9 @@ TLS is mandatory for QUIC, but server-only TLS authenticates just the dialed sid
 to reach the port can complete a handshake. Production deployments hence use mutual TLS via
 `QuicTransport::mutual_tls`. Every node presents one certificate as both its server and its client
 identity, verified against the cluster's certificate authority. A stranger hence cannot complete a
-connection and reaches neither the protocol nor the membership. Issuing and renewing the
+connection and reaches neither the protocol nor the membership. Every node's certificate must also
+be issued for the cluster's `server_name`, which every dialer verifies with TLS; the address
+binding below comes on top of that. Issuing and renewing the
 certificates is established automation, e.g. cert-manager on Kubernetes, whose `Certificate`
 requests both forms of address binding below. SPIRE cannot issue either form. The SPIFFE X.509
 SVID specification forbids a URI SAN next to the `spiffe://` ID, which excludes the `tellus://`
@@ -932,7 +955,7 @@ advertised address must equal one of these URIs exactly, and its IP address SANs
 scheme is matched case-insensitively, and an IPv6 address is written in brackets, as in
 `tellus://[fd00::7]:4000`. Without such a URI, the advertised IP must be among the certificate's
 iPAddress SANs, which covers every port of that IP. URIs of other schemes, such as SPIFFE IDs, are
-ignored. DNS names are not resolved and hence never matched.
+ignored. DNS names are not resolved and hence never matched against the advertised address.
 
 The two forms differ in what an authenticated-but-lying node can claim. With a `tellus://` URI it
 cannot claim another member's address and have the healthy node there downed. With IP SANs alone
@@ -1049,8 +1072,8 @@ swap is added.
   again. `down_watermarks` must not be larger on any node than on the nodes joining it, so in
   practice it is the same on every node.
 - **The identity binding matches `tellus://` URI SANs and IP address SANs only.** A deployment
-  whose certificates carry nothing but DNS names must issue them with the advertised addresses
-  added. SPIRE cannot issue either form, see Trust.
+  whose certificates carry nothing but DNS names, the `server_name` among them, must issue them
+  with the advertised addresses added. SPIRE cannot issue either form, see Trust.
 - **A refusal costs one attempt per backoff.** An address no Up member advertises is refused when
   it answered without speaking this protocol, shares no version with it, failed the identity or
   address check, or belongs to another cluster. A refused address is not dialed again until the

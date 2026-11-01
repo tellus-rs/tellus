@@ -13,8 +13,8 @@ pub struct Config {
 }
 
 impl Config {
-    /// The nodes' and the verifier's base URLs from `TELLUS_NODES` and `TELLUS_VERIFIER`, the
-    /// Compose stack's host ports by default.
+    /// The nodes' and the verifier's base URLs from `TELLUS_NODES` and `TELLUS_VERIFIER`, by
+    /// default the host ports both demo stacks map.
     ///
     /// # Errors
     /// Fails if either variable is set but is not valid Unicode, or if `TELLUS_NODES` names no
