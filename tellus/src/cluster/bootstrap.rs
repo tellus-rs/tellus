@@ -87,8 +87,8 @@ pub struct BootstrapConfig {
 
     /// How long the resolved address set must stay unchanged before the formation decision is
     /// taken; joins are attempted on every resolution regardless. A new set is never settled, so
-    /// zero takes the decision on the second resolution seeing the same addresses, not on the
-    /// first. Defaults to [BootstrapConfig::DEFAULT_SETTLE].
+    /// zero is meaningful: it takes the decision on the second resolution seeing the same
+    /// addresses, not on the first. Defaults to [BootstrapConfig::DEFAULT_SETTLE].
     pub settle: Duration,
 
     /// The pause between two resolutions. Must not be zero, which would resolve in a busy loop;
@@ -283,7 +283,6 @@ fn validate(config: &BootstrapConfig) -> Result<(), InvalidBootstrapConfig> {
     {
         return Err(InvalidBootstrapConfig::ZeroProbeInterval);
     }
-
     Ok(())
 }
 

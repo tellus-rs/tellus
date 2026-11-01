@@ -262,15 +262,28 @@ impl PhiAccrual {
     }
 
     /// Replace the pause added to the learned mean before any suspicion accrues.
+    ///
+    /// Zero is allowed: it adds no pause, so suspicion accrues against the learned mean alone.
     pub fn with_acceptable_pause(mut self, acceptable_pause: Duration) -> Self {
         self.acceptable_pause = acceptable_pause;
         self
     }
 
     /// Replace the deadline used while fewer than two intervals have been observed.
-    pub fn with_warmup_deadline(mut self, warmup_deadline: Duration) -> Self {
+    ///
+    /// # Errors
+    /// Fails if `warmup_deadline` is zero, which would declare a peer unavailable one tick after
+    /// its first heartbeat while the detector still has fewer than two intervals.
+    pub fn with_warmup_deadline(
+        mut self,
+        warmup_deadline: Duration,
+    ) -> Result<Self, InvalidPhiAccrual> {
+        if warmup_deadline.is_zero() {
+            return Err(InvalidPhiAccrual::ZeroWarmupDeadline);
+        }
+
         self.warmup_deadline = warmup_deadline;
-        self
+        Ok(self)
     }
 
     /// The threshold phi must stay below.
@@ -325,6 +338,10 @@ pub enum InvalidPhiAccrual {
     /// The minimum standard deviation is zero.
     #[error("min std deviation is zero")]
     MinStdDeviation,
+
+    /// The warmup deadline is zero.
+    #[error("warmup deadline is zero")]
+    ZeroWarmupDeadline,
 }
 
 #[cfg(feature = "serde")]
@@ -367,7 +384,7 @@ impl TryFrom<UncheckedPhiAccrual> for PhiAccrual {
             .with_threshold(unchecked.threshold)?
             .with_max_sample_size(unchecked.max_sample_size)?
             .with_min_std_deviation(unchecked.min_std_deviation)
-            .map(|config| {
+            .and_then(|config| {
                 config
                     .with_acceptable_pause(unchecked.acceptable_pause)
                     .with_warmup_deadline(unchecked.warmup_deadline)
@@ -777,6 +794,14 @@ mod tests {
             PhiAccrual::default().with_min_std_deviation(Duration::ZERO),
             Err(InvalidPhiAccrual::MinStdDeviation)
         ));
+
+        assert!(matches!(
+            PhiAccrual::default().with_warmup_deadline(Duration::ZERO),
+            Err(InvalidPhiAccrual::ZeroWarmupDeadline)
+        ));
+        assert!(PhiAccrual::default()
+            .with_warmup_deadline(Duration::from_secs(5))
+            .is_ok());
     }
 
     /// A zero deadline would declare a peer unavailable one tick after it was heard from, which
@@ -846,6 +871,25 @@ mod tests {
 
         let json = json.replace("\"max_sample_size\": 500", "\"max_sample_size\": 1");
         assert!(serde_json::from_str::<PhiAccrual>(&json).is_err());
+
+        let json = r#"{
+            "threshold": 12.0,
+            "max_sample_size": 500,
+            "min_std_deviation": "50ms",
+            "acceptable_pause": "1s",
+            "warmup_deadline": "0s"
+        }"#;
+        assert!(serde_json::from_str::<PhiAccrual>(json).is_err());
+
+        let json = r#"{
+            "threshold": 12.0,
+            "max_sample_size": 500,
+            "min_std_deviation": "50ms",
+            "acceptable_pause": "0s",
+            "warmup_deadline": "10s"
+        }"#;
+        let config = serde_json::from_str::<PhiAccrual>(json).expect("zero acceptable_pause is valid");
+        assert_eq!(config.acceptable_pause(), Duration::ZERO);
 
         let config = serde_json::from_str::<PhiAccrual>("{}").expect("every key defaults");
         assert_eq!(config.threshold(), PhiAccrual::DEFAULT_THRESHOLD);

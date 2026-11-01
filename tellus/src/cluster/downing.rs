@@ -89,6 +89,8 @@ impl KeepMajority {
     /// A provider deciding once every unreachable member has been unreachable for the given
     /// duration; a member falling silent or answering again postpones the decision, so a flapping
     /// link is waited out rather than resolved.
+    ///
+    /// Zero is allowed: the decision is taken as soon as any Up member is unreachable (no grace).
     pub fn new(after: Duration) -> Self {
         Self { after }
     }
@@ -154,6 +156,8 @@ pub struct DownAfterDeadline {
 
 impl DownAfterDeadline {
     /// A provider downing members unreachable for the given duration.
+    ///
+    /// Zero is allowed: a member is downed as soon as it appears in the disconnected set.
     pub fn new(after: Duration) -> Self {
         Self { after }
     }

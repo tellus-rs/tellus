@@ -242,6 +242,8 @@ pub struct MajorityWithFallback {
 impl MajorityWithFallback {
     /// A provider passing over an address once it has been continuously unavailable for the given
     /// duration.
+    ///
+    /// Zero is allowed: an address unavailable in a round is passed over immediately.
     pub fn new(after: Duration) -> Self {
         Self {
             after,
