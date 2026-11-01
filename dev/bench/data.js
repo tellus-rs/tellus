@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793535449771,
+  "lastUpdate": 1793536394901,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7499,6 +7499,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22217680,
             "range": "± 831786",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d690a0c2fbd0203dc3f27d33d2454eada7af6a63",
+          "message": "Merge pull request #229 from tellus-rs/fix/fix-221\n\nfix: pass the crypto provider explicitly in QuicTransport",
+          "timestamp": "2026-11-01T13:26:38+01:00",
+          "tree_id": "08be337c1e2708e50fd28fbeaf9e0117763bc94c",
+          "url": "https://github.com/tellus-rs/tellus/commit/d690a0c2fbd0203dc3f27d33d2454eada7af6a63"
+        },
+        "date": 1793536394145,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9772277,
+            "range": "± 493089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9504932,
+            "range": "± 307603",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 722683,
+            "range": "± 19022",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 539098,
+            "range": "± 10029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3639959,
+            "range": "± 103048",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2832906,
+            "range": "± 34161",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 13521176,
+            "range": "± 354387",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 14729860,
+            "range": "± 520960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 13709110,
+            "range": "± 382430",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 14586410,
+            "range": "± 434733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 13649781,
+            "range": "± 493601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 16045786,
+            "range": "± 602565",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 20018091,
+            "range": "± 560956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 13681962,
+            "range": "± 617315",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 16245872,
+            "range": "± 521612",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 20246674,
+            "range": "± 997243",
             "unit": "ns/iter"
           }
         ]
