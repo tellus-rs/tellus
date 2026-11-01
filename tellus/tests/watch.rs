@@ -124,7 +124,7 @@ async fn every_watcher_receives_the_terminated_signal() {
     let system = ActorSystem::new(MultiWatchRoot(outcome_tx));
 
     let outcome = recv(&mut outcome_rx, "the root reported no outcome").await;
-    assert_eq!(outcome, MultiWatchOutcome::AllSignalled);
+    assert_eq!(outcome, MultiWatchOutcome::AllSignaled);
 
     assert_terminates(system, "not every watcher received the terminated signal").await;
 }
@@ -428,10 +428,10 @@ impl Actor for MultiWatchRoot {
                 }))
             }
 
-            Incoming::Message(MultiWatchMessage::Signalled) => {
+            Incoming::Message(MultiWatchMessage::Signaled) => {
                 let signaled = state.signaled + 1;
                 if signaled == WATCHERS {
-                    let _ = self.0.try_send(MultiWatchOutcome::AllSignalled);
+                    let _ = self.0.try_send(MultiWatchOutcome::AllSignaled);
                     Ok(Control::Stop)
                 } else {
                     Ok(Control::Continue(MultiWatch { signaled, ..state }))
@@ -448,7 +448,7 @@ impl Actor for MultiWatchRoot {
 
 enum MultiWatchMessage {
     Registered,
-    Signalled,
+    Signaled,
 }
 
 struct MultiWatch {
@@ -461,7 +461,7 @@ struct MultiWatch {
 /// it never watched.
 #[derive(Debug, PartialEq, Eq)]
 enum MultiWatchOutcome {
-    AllSignalled,
+    AllSignaled,
     Spurious,
 }
 
@@ -489,7 +489,7 @@ impl Actor for ReportingWatcher {
         _: Incoming<Self::Message>,
         _: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        self.root.tell(MultiWatchMessage::Signalled);
+        self.root.tell(MultiWatchMessage::Signaled);
         Ok(Control::Stop)
     }
 }

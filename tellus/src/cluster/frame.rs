@@ -84,7 +84,7 @@ pub(crate) enum Frame<'a> {
         groups: Vec<WireGroup>,
     },
 
-    ReplyCancelled {
+    ReplyCanceled {
         nonce: Nonce,
         stream: Option<StreamKey>,
     },
@@ -185,7 +185,7 @@ impl<'a> Frame<'a> {
             | Frame::Refused { .. }
             | Frame::Reachability { .. }
             | Frame::Registrations { .. }
-            | Frame::ReplyCancelled { .. }
+            | Frame::ReplyCanceled { .. }
             | Frame::Drained { .. }
             | Frame::DrainAck => false,
         }
@@ -214,7 +214,7 @@ impl<'a> Frame<'a> {
             | Frame::Drained { .. }
             | Frame::DrainAck => None,
 
-            Frame::ReplyCancelled { stream, .. } => *stream,
+            Frame::ReplyCanceled { stream, .. } => *stream,
 
             Frame::Multicast { targets, .. } => targets.first().copied().map(StreamKey::Actor),
         }
@@ -527,7 +527,7 @@ mod tests {
             Some(StreamKey::Nonce(nonce)),
             None,
         ] {
-            assert_eq!(Frame::ReplyCancelled { nonce, stream }.stream_key(), stream);
+            assert_eq!(Frame::ReplyCanceled { nonce, stream }.stream_key(), stream);
         }
     }
 
@@ -794,7 +794,7 @@ mod tests {
                     ids: vec![target, watcher],
                 }],
             },
-            Frame::ReplyCancelled {
+            Frame::ReplyCanceled {
                 nonce: Nonce::first(),
                 stream: Some(StreamKey::Actor(watcher)),
             },
@@ -868,7 +868,7 @@ mod tests {
             .is_counted()
         );
         assert!(
-            !Frame::ReplyCancelled {
+            !Frame::ReplyCanceled {
                 nonce: Nonce::first(),
                 stream: Some(StreamKey::Actor(target)),
             }
@@ -963,11 +963,11 @@ mod tests {
             let frame = Frame::from_bytes(&bytes).expect("frame decodes");
             assert!(matches!(
                 frame,
-                Frame::ReplyCancelled { nonce, stream: decoded }
+                Frame::ReplyCanceled { nonce, stream: decoded }
                     if nonce == Nonce::first() && decoded == stream
             ));
             assert_eq!(
-                Frame::ReplyCancelled {
+                Frame::ReplyCanceled {
                     nonce: Nonce::first(),
                     stream,
                 }

@@ -137,7 +137,7 @@ const STREAMED: u32 = 50;
 const WATCHERS: usize = 2;
 const BULK_TARGETS: usize = 8;
 const BULKS: u32 = 8;
-const BULK_ACKNOWLEDGEMENTS: u32 = BULKS + BULK_TARGETS as u32 - 1;
+const BULK_ACKNOWLEDGMENTS: u32 = BULKS + BULK_TARGETS as u32 - 1;
 const BULK_PAYLOAD: usize = 512 * 1_024;
 const OVERSIZE_PAYLOAD: usize = 2 * 1_024 * 1_024;
 const SEVER_BULKS: u32 = 300;
@@ -2004,7 +2004,7 @@ fn sever_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> anyhow
     match done {
         Some(Ok(())) => {}
         Some(Err(message)) => bail!(message),
-        None => bail!("no marker acknowledgement after the sever"),
+        None => bail!("no marker acknowledgment after the sever"),
     }
 
     runtime
@@ -4242,7 +4242,7 @@ impl Actor for HeadOfLine {
                 let ahead = ahead + u32::from(!overtaken);
 
                 let acknowledged = acknowledged + 1;
-                if acknowledged < BULK_ACKNOWLEDGEMENTS {
+                if acknowledged < BULK_ACKNOWLEDGMENTS {
                     return Ok(Control::Continue(HeadOfLineState::Bulking {
                         acknowledged,
                         ahead,
@@ -4540,7 +4540,7 @@ impl Actor for SeverFifo {
             (Incoming::Message(ClientEvent::Bulked(seq)), Some(mut state)) => {
                 if state.last.is_some_and(|last| seq <= last) {
                     let _ = self.event_tx.send(TestEvent::Done(Err(format!(
-                        "acknowledgement {seq} after {:?}",
+                        "acknowledgment {seq} after {:?}",
                         state.last
                     ))));
                     return Ok(Control::Stop);

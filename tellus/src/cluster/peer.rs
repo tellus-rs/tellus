@@ -1222,8 +1222,8 @@ where
                 recipient: _,
             } => reply::on_reply_dropped(endpoint, peer, nonce),
 
-            Frame::ReplyCancelled { nonce, stream: _ } => {
-                reply::on_reply_cancelled(endpoint, peer, nonce)
+            Frame::ReplyCanceled { nonce, stream: _ } => {
+                reply::on_reply_canceled(endpoint, peer, nonce)
             }
 
             Frame::Gossip { .. } => unreachable!("gossip is handled before the gate"),
@@ -3016,7 +3016,7 @@ mod tests {
     /// The caller going away after the cluster answered cannot discard what the endpoint learned:
     /// the attempt runs on, and the pin it earned stands once it has finished.
     #[tokio::test]
-    async fn a_cancelled_caller_cannot_discard_earned_evidence() {
+    async fn a_canceled_caller_cannot_discard_earned_evidence() {
         let mut joining = joining(1);
         let endpoint = joining.endpoint;
         let seed = addr(2);

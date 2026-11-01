@@ -1,7 +1,7 @@
 # A NetworkPolicy is evaluated for new connections only: once conntrack holds a flow, kindnetd's
 # dataplane accepts it on the established fast path without consulting the policy again. The
 # cluster's QUIC connections are long lived and its heartbeats keep them fresh forever, so
-# labelling pods cuts nothing until those flows are forgotten. This helper is what forgets them.
+# labeling pods cuts nothing until those flows are forgotten. This helper is what forgets them.
 #
 # It runs the node's own conntrack through nsenter rather than shipping one, which is why it is
 # privileged and in the host's PID and network namespaces: that is where the policy hooks and the
