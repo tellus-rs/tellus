@@ -33,9 +33,11 @@ where
         events: Vec<EncodedEvent>,
     ) -> Result<(), AppendError<Self::Error>>;
 
-    /// Read up to `limit` events from the given sequence number on, inclusive, in ascending
-    /// order. The events are consecutive, the first one at `from_seq_no`. Replay pages through
-    /// this until a page is short.
+    /// Read the events from the given sequence number on, inclusive, in ascending order: exactly
+    /// `limit` of them if the stream holds that many from `from_seq_no` on, otherwise all of them.
+    /// The events are consecutive, the first one at `from_seq_no`. A page shorter than `limit`
+    /// means the stream ends there. Replay pages through this until a page is short, so a store
+    /// returning fewer events while more remain truncates recovery without any error.
     ///
     /// # Errors
     /// Implementations fail if the events cannot be read; a stream with nothing from

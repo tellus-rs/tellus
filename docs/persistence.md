@@ -66,7 +66,9 @@ On every spawn and every restart, before the first command:
 1. The latest snapshot, if any, is loaded; `init_from_snapshot` turns it into the state covering
    every event before the snapshot's sequence number. Without a snapshot, `init` produces the seed
    state.
-2. The events from that sequence number on are read in order and folded via `apply`.
+2. The events from that sequence number on are read in order, in pages, and folded via `apply`.
+   A page shorter than requested ends the replay, which is why `EventStore::read` requires a store
+   to return fewer events than its `limit` only where the stream ends.
 3. `recovered` runs exactly once on the resulting state. This is the place to touch the world:
    spawn children, re-arm timers, register with other actors.
 

@@ -40,11 +40,11 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
+pub(crate) const REPLAY_PAGE: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 const FAILED_TO_RECOVER: &str = "actor failed to recover";
 const FAILED_TO_APPEND: &str = "actor failed to append events";
 const SNAPSHOT_NOT_SAVED: &str = "snapshot not saved";
 const VALUES_FAILED_TO_DROP: &str = "actor values failed to drop";
-const REPLAY_PAGE: NonZeroUsize = NonZeroUsize::new(512).unwrap();
 
 impl<M> ActorSystem<M>
 where

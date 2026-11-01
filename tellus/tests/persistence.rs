@@ -152,6 +152,50 @@ async fn snapshots_skip_init_and_shorten_replay() {
     );
 }
 
+/// Recovery pages through the stream across the replay page of 512 events: a stream of exactly
+/// one page, of one event more and of exactly two pages each recover in full, and every full page
+/// is followed by a read of the next one.
+#[tokio::test]
+async fn recovery_reads_across_the_replay_page_boundary() {
+    for (entity_id, len, reads) in [
+        ("32", 512, vec![0, 512]),
+        ("33", 513, vec![0, 512]),
+        ("34", 1_024, vec![0, 512, 1_024]),
+    ] {
+        let store = FaultyStore::default();
+        let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+        store
+            .inner()
+            .append(
+                &persistence_id(entity_id),
+                SeqNo::ZERO,
+                vec![encoded(&Increased(1)); len],
+            )
+            .await
+            .expect("the seeded events are appended");
+
+        let system = ActorSystem::event_sourced(
+            Counter::new(entity_id, probe_tx),
+            Persistence::new(store.clone()),
+        );
+        assert_eq!(
+            ask_count(&system).await,
+            len as u64,
+            "a stream of {len} events must recover in full"
+        );
+
+        system.root().tell(Command::Stop);
+        assert_terminates(system, "system did not terminate").await;
+
+        assert_eq!(
+            store.reads(),
+            reads.into_iter().map(SeqNo::new).collect::<Vec<_>>(),
+            "replay of {len} events must read every page and stop at the first short one"
+        );
+    }
+}
+
 /// A failure to save a snapshot never fails the actor: commands keep settling, and with no
 /// snapshot stored the next recovery seeds via `init` and replays in full.
 #[tokio::test]

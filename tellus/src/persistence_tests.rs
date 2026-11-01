@@ -12,6 +12,7 @@ use crate::persistence::{
     persistence_id::PersistenceId,
     schema_version::SchemaVersion,
     seq_no::SeqNo,
+    spawn::REPLAY_PAGE,
     store::{
         AppendError, EncodedEvent, EncodedSnapshot, EventStore, SnapshotStore, StoredEvent,
         StoredSnapshot,
@@ -36,7 +37,8 @@ where
     an_empty_append_is_fenced(store.clone()).await;
     concurrent_appends_are_fenced(store.clone()).await;
     streams_are_isolated(store.clone()).await;
-    reads_are_paged_and_inclusive(store).await;
+    reads_are_paged_and_inclusive(store.clone()).await;
+    reads_return_full_pages(store).await;
 }
 
 /// Appended events read back complete, in order, gapless from sequence number 0, with manifest,
@@ -315,13 +317,6 @@ where
         .await
         .expect("the append must succeed");
 
-    let seq_nos = |stored: Vec<StoredEvent>| {
-        stored
-            .into_iter()
-            .map(|stored| stored.seq_no)
-            .collect::<Vec<_>>()
-    };
-
     let page = store
         .read(
             &id,
@@ -362,6 +357,51 @@ where
     assert!(
         unknown.is_empty(),
         "a read of an unknown ID must return nothing"
+    );
+}
+
+/// A read returns exactly `limit` events while the stream holds that many from the given sequence
+/// number on, and fewer only where the stream ends, over a stream longer than two replay pages.
+/// Replay stops at the first short page, so a store capping its pages truncates recovery.
+pub async fn reads_return_full_pages<E>(store: E)
+where
+    E: EventStore,
+{
+    let id = unique_persistence_id();
+    let len = 2 * REPLAY_PAGE.get() as u64 + 1;
+
+    store
+        .append(&id, SeqNo::ZERO, sample_events(len as usize))
+        .await
+        .expect("the append must succeed");
+
+    let page_len = REPLAY_PAGE.get() as u64;
+    for from in [0, page_len, 2 * page_len] {
+        let page = store
+            .read(&id, SeqNo::new(from), REPLAY_PAGE)
+            .await
+            .expect("the paged read must succeed");
+        assert_eq!(
+            seq_nos(page),
+            (from..len.min(from + page_len))
+                .map(SeqNo::new)
+                .collect::<Vec<_>>(),
+            "a read from sequence number {from} of a stream with {len} events must return exactly \
+             {page_len} events while the stream holds that many, and only then fewer"
+        );
+    }
+
+    let page = store
+        .read(&id, SeqNo::new(1), LIMIT)
+        .await
+        .expect("the read must succeed");
+    assert_eq!(
+        seq_nos(page),
+        (1..1 + LIMIT.get() as u64)
+            .map(SeqNo::new)
+            .collect::<Vec<_>>(),
+        "a read from sequence number 1 of a stream with {len} events must return exactly {LIMIT} \
+         events"
     );
 }
 
@@ -490,6 +530,10 @@ fn writer_events(writer: u8) -> Vec<EncodedEvent> {
             payload: vec![0xC2, writer, n],
         })
         .collect()
+}
+
+fn seq_nos(stored: Vec<StoredEvent>) -> Vec<SeqNo> {
+    stored.into_iter().map(|stored| stored.seq_no).collect()
 }
 
 fn sample_snapshot(tag: u8) -> EncodedSnapshot {
