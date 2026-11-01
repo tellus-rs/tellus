@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793539927975,
+  "lastUpdate": 1793539929368,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12805,6 +12805,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 162463,
             "range": "± 5348",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b6687795b09bbdb9a912c37872d1f4979ed24ee1",
+          "message": "Merge pull request #231 from tellus-rs/test/fix-218\n\ntest: check snapshot isolation in the store contract",
+          "timestamp": "2026-11-01T14:17:59+01:00",
+          "tree_id": "5fc60e343c50f6b83ccefe0a0a96ea73d32994ba",
+          "url": "https://github.com/tellus-rs/tellus/commit/b6687795b09bbdb9a912c37872d1f4979ed24ee1"
+        },
+        "date": 1793539929138,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3105951,
+            "range": "± 38181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3059006,
+            "range": "± 67471",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1302043,
+            "range": "± 12703",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 168754,
+            "range": "± 4484",
             "unit": "ns/iter"
           }
         ]
