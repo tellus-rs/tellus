@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793535447858,
+  "lastUpdate": 1793535449771,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12301,6 +12301,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 167303,
             "range": "± 5724",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "34beb82a4c58dcfc9fb0457781370b4ffb2e3679",
+          "message": "Merge pull request #228 from tellus-rs/fix/fix-217\n\nfix: require full pages from EventStore::read",
+          "timestamp": "2026-11-01T13:10:26+01:00",
+          "tree_id": "c98600c4b6b0d752e60a041e73821962974521e0",
+          "url": "https://github.com/tellus-rs/tellus/commit/34beb82a4c58dcfc9fb0457781370b4ffb2e3679"
+        },
+        "date": 1793535449191,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2527724,
+            "range": "± 72644",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2610575,
+            "range": "± 173402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 971777,
+            "range": "± 6803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 119186,
+            "range": "± 2012",
             "unit": "ns/iter"
           }
         ]
