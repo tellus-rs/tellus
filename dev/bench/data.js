@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793539491703,
+  "lastUpdate": 1793539927975,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -7739,6 +7739,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27357584,
             "range": "± 994946",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b6687795b09bbdb9a912c37872d1f4979ed24ee1",
+          "message": "Merge pull request #231 from tellus-rs/test/fix-218\n\ntest: check snapshot isolation in the store contract",
+          "timestamp": "2026-11-01T14:17:59+01:00",
+          "tree_id": "5fc60e343c50f6b83ccefe0a0a96ea73d32994ba",
+          "url": "https://github.com/tellus-rs/tellus/commit/b6687795b09bbdb9a912c37872d1f4979ed24ee1"
+        },
+        "date": 1793539927474,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14192653,
+            "range": "± 1080280",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15299465,
+            "range": "± 930478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1038555,
+            "range": "± 15815",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 832011,
+            "range": "± 5236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5764980,
+            "range": "± 126327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4280176,
+            "range": "± 37165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19818858,
+            "range": "± 452205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20528928,
+            "range": "± 728658",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19829856,
+            "range": "± 538485",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20383331,
+            "range": "± 550451",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20187246,
+            "range": "± 652982",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21487866,
+            "range": "± 1025711",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27101054,
+            "range": "± 1071085",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20128144,
+            "range": "± 579253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21942208,
+            "range": "± 567715",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27620279,
+            "range": "± 658587",
             "unit": "ns/iter"
           }
         ]
