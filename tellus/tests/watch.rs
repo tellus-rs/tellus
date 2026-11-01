@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     hint,
     num::NonZeroUsize,
+    thread,
     time::{Duration, Instant},
 };
 use tellus::{
@@ -43,22 +44,18 @@ async fn watch_after_terminated_still_signals() {
 /// A terminated signal is never subject to `MailboxCapacity::Bounded`, so it is delivered even when
 /// the watcher's message mailbox is full and dropping messages. The watcher is blocked in `receive`
 /// while the flood fills its single slot, so the mailbox is provably full rather than racing the
-/// drain, and the observer's signal proves the target has signaled all its watchers, the blocked
-/// root included, before it is unblocked. The count of flood messages the root did receive is what
-/// proves the mailbox was full and dropping throughout.
+/// drain. The target is told to stop only after the flood, so the watcher stays blocked until its
+/// mailbox holds the target's signal behind the one flood message. The count of flood messages the
+/// root did receive is what proves the mailbox was full and dropping throughout.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn terminated_signal_survives_a_full_mailbox() {
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
     let (target_ref_tx, mut target_ref_rx) = mpsc::channel(1);
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
-    let (target_terminated_tx, mut target_terminated_rx) = mpsc::channel(1);
     let (outcome_tx, mut outcome_rx) = mpsc::channel(1);
 
     let root = BlockedFloodWatcher {
-        unblock_rx,
         target_ref_tx,
         blocked_tx,
-        target_terminated_tx,
         outcome_tx,
     };
     let config = ActorConfig::default().with_mailbox_capacity(BOUNDED_TO_ONE);
@@ -79,9 +76,6 @@ async fn terminated_signal_survives_a_full_mailbox() {
     }
 
     target.tell(Stop);
-    recv(&mut target_terminated_rx, "target did not terminate").await;
-
-    unblock_tx.send(()).expect("unblock channel closed");
 
     let received = recv(
         &mut outcome_rx,
@@ -147,9 +141,10 @@ async fn watching_twice_signals_once() {
     assert_terminates(system, "actor system did not terminate").await;
 }
 
-/// After `unwatch` no terminated signal for the target is delivered. The relay also watches the
-/// target and stops only after receiving its signal, hence the relay's own signal arrives at the
-/// root behind any (hypothetical) signal for the target: "clean" proves there was none.
+/// After `unwatch` no terminated signal for the target is delivered. The target is a child of the
+/// guardian, which terminates only once the target's task has ended, i.e. after the target has
+/// signaled its watchers. Hence the guardian's signal arrives at the root behind any (hypothetical)
+/// signal for the target: "clean" proves there was none.
 #[tokio::test]
 async fn unwatch_prevents_the_signal() {
     let (outcome_tx, mut outcome_rx) = mpsc::channel(1);
@@ -157,7 +152,7 @@ async fn unwatch_prevents_the_signal() {
 
     let outcome = recv(
         &mut outcome_rx,
-        "root observed neither the relay nor a target signal",
+        "root observed neither the guardian nor a target signal",
     )
     .await;
     assert_eq!(outcome, UnwatchOutcome::Clean);
@@ -166,19 +161,15 @@ async fn unwatch_prevents_the_signal() {
 }
 
 /// Unwatching suppresses even a terminated signal which is already enqueued: the root, blocked in
-/// `receive`, unwatches only after the observer has confirmed that the target terminated, i.e.
-/// after the signal was enqueued; the probe sent afterwards must find the root without a signal.
+/// `receive`, unwatches only once its mailbox holds the target's signal, and then sends itself a
+/// probe, which is queued behind that signal. The probe must find the root without a signal.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn unwatch_suppresses_the_enqueued_signal() {
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
     let (target_ref_tx, mut target_ref_rx) = mpsc::channel(1);
-    let (target_terminated_tx, mut target_terminated_rx) = mpsc::channel(1);
     let (outcome_tx, mut outcome_rx) = mpsc::channel(1);
 
     let root = BlockedUnwatcher {
-        unblock_rx,
         target_ref_tx,
-        target_terminated_tx,
         outcome_tx,
     };
     let system = ActorSystem::new(root);
@@ -191,11 +182,6 @@ async fn unwatch_suppresses_the_enqueued_signal() {
 
     system.root().tell(BlockedMessage::Block);
     target.tell(Stop);
-
-    recv(&mut target_terminated_rx, "target did not terminate").await;
-    unblock_tx.send(()).expect("unblock channel closed");
-
-    system.root().tell(BlockedMessage::Probe);
 
     let outcome = recv(&mut outcome_rx, "root reported no outcome").await;
     assert_eq!(outcome, UnwatchOutcome::Clean);
@@ -558,47 +544,51 @@ enum DoubleWatch {
     AwaitingMarker,
 }
 
-/// Watch and unwatch the target, then stop it; report whether the first arriving signal names the
-/// target (a leak through the unwatch) or the relay (proving the target signaled everyone else).
+/// Spawn the guardian, which spawns the target; watch and unwatch the target, then stop the
+/// guardian. Report whether the first arriving signal names the target (a leak through the
+/// unwatch) or the guardian (proving the target has signaled all its watchers).
 struct UnwatchingRoot(mpsc::Sender<UnwatchOutcome>);
 
 impl Actor for UnwatchingRoot {
-    type Message = Nothing;
+    type Message = ActorRef<Stop>;
     type Timers = Untimed;
-    type State = ActorId;
+    type State = (ActorRef<Stop>, Option<ActorId>);
     type Error = Infallible;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        let target = context.spawn(Target);
-        let relay = context.spawn(SignalRelay(target.clone()));
-        context.watch(&relay);
-
-        context.watch(&target);
-        context.unwatch(&target);
-        target.tell(Stop);
-
-        Ok(target.actor_id())
+        let guardian = context.spawn(Guardian(context.self_ref().clone()));
+        context.watch(&guardian);
+        Ok((guardian, None))
     }
 
     fn receive(
         &self,
-        _: &ActorContext<Self::Message>,
+        context: &ActorContext<Self::Message>,
         incoming: Incoming<Self::Message>,
-        target_id: Self::State,
+        (guardian, target_id): Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        let Incoming::Terminated(actor_id) = incoming;
+        match incoming {
+            Incoming::Message(target) => {
+                context.watch(&target);
+                context.unwatch(&target);
+                guardian.tell(Stop);
+                Ok(Control::Continue((guardian, Some(target.actor_id()))))
+            }
 
-        let outcome = if actor_id == target_id {
-            UnwatchOutcome::Signal
-        } else {
-            UnwatchOutcome::Clean
-        };
-        let _ = self.0.try_send(outcome);
-        Ok(Control::Stop)
+            Incoming::Terminated(actor_id) => {
+                let outcome = if Some(actor_id) == target_id {
+                    UnwatchOutcome::Signal
+                } else {
+                    UnwatchOutcome::Clean
+                };
+                let _ = self.0.try_send(outcome);
+                Ok(Control::Stop)
+            }
+        }
     }
 }
 
-/// What a root observed after unwatching its target: only the relay's signal, or a signal for
+/// What a root observed after unwatching its target: only the guardian's signal, or a signal for
 /// the target itself, which would mean the unwatch leaked.
 #[derive(Debug, PartialEq, Eq)]
 enum UnwatchOutcome {
@@ -606,18 +596,18 @@ enum UnwatchOutcome {
     Signal,
 }
 
-/// Watch the target and stop once its terminated signal arrives, so this actor's own signal
-/// proves that the target has terminated and signaled all its watchers.
-struct SignalRelay(ActorRef<Stop>);
+/// Spawn the target as its child and hand it to the root; stop on `Stop`, which terminates the
+/// target first: this actor's terminated signal proves the target's task has ended.
+struct Guardian(ActorRef<ActorRef<Stop>>);
 
-impl Actor for SignalRelay {
-    type Message = Nothing;
+impl Actor for Guardian {
+    type Message = Stop;
     type Timers = Untimed;
     type State = ();
     type Error = Infallible;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        context.watch(&self.0);
+        self.0.tell(context.spawn(Target));
         Ok(())
     }
 
@@ -631,14 +621,11 @@ impl Actor for SignalRelay {
     }
 }
 
-/// Block in `receive` on `Block` until the test unblocks it, and only then unwatch the target:
-/// its terminated signal is enqueued by that time. Report "signal" if one is delivered
-/// nevertheless, "clean" if the probe arrives first. The blocking wait must run under
-/// `block_in_place`, else it strands whatever task sits in this worker's LIFO slot.
+/// Block in `receive` on `Block` until the target's terminated signal is enqueued, then unwatch the
+/// target and send itself a probe. Report "signal" if the terminated signal is delivered
+/// nevertheless, "clean" if the probe arrives first.
 struct BlockedUnwatcher {
-    unblock_rx: std::sync::mpsc::Receiver<()>,
     target_ref_tx: mpsc::Sender<ActorRef<Stop>>,
-    target_terminated_tx: mpsc::Sender<()>,
     outcome_tx: mpsc::Sender<UnwatchOutcome>,
 }
 
@@ -651,10 +638,6 @@ impl Actor for BlockedUnwatcher {
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
         context.watch(&target);
-        context.spawn(Observer {
-            target: target.clone(),
-            terminated_tx: self.target_terminated_tx.clone(),
-        });
         let _ = self.target_ref_tx.try_send(target.clone());
         Ok(target)
     }
@@ -667,12 +650,9 @@ impl Actor for BlockedUnwatcher {
     ) -> Result<Control<Self::State>, Self::Error> {
         match incoming {
             Incoming::Message(BlockedMessage::Block) => {
-                block_in_place(|| {
-                    self.unblock_rx
-                        .recv_timeout(TIMEOUT)
-                        .expect("unblock channel closed or timed out")
-                });
+                wait_until_queued(context, 1);
                 context.unwatch(&target);
+                context.self_ref().tell(BlockedMessage::Probe);
                 Ok(Control::Continue(target))
             }
 
@@ -694,16 +674,13 @@ enum BlockedMessage {
     Probe,
 }
 
-/// Block in `receive` on `Block` until the test unblocks it, so the flood it is sent meanwhile
-/// fills the bounded mailbox and stays there: the target's terminated signal is enqueued into a
-/// full mailbox. Count the flood messages actually received and report that count once the signal
-/// arrives, which is what proves the mailbox was full and dropping. The blocking wait must run
-/// under `block_in_place`, else it strands whatever task sits in this worker's LIFO slot.
+/// Block in `receive` on `Block` until its mailbox holds two items, so the flood it is sent
+/// meanwhile fills the bounded mailbox and stays there: the target's terminated signal, the second
+/// item, is enqueued into a full mailbox. Count the flood messages actually received and report
+/// that count once the signal arrives, which is what proves the mailbox was full and dropping.
 struct BlockedFloodWatcher {
-    unblock_rx: std::sync::mpsc::Receiver<()>,
     target_ref_tx: mpsc::Sender<ActorRef<Stop>>,
     blocked_tx: mpsc::Sender<()>,
-    target_terminated_tx: mpsc::Sender<()>,
     outcome_tx: mpsc::Sender<u32>,
 }
 
@@ -716,28 +693,20 @@ impl Actor for BlockedFloodWatcher {
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
         context.watch(&target);
-        context.spawn(Observer {
-            target: target.clone(),
-            terminated_tx: self.target_terminated_tx.clone(),
-        });
         let _ = self.target_ref_tx.try_send(target.clone());
         Ok((target, 0))
     }
 
     fn receive(
         &self,
-        _: &ActorContext<Self::Message>,
+        context: &ActorContext<Self::Message>,
         incoming: Incoming<Self::Message>,
         (target, received): Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
         match incoming {
             Incoming::Message(FloodMessage::Block) => {
                 let _ = self.blocked_tx.try_send(());
-                block_in_place(|| {
-                    self.unblock_rx
-                        .recv_timeout(TIMEOUT)
-                        .expect("unblock channel closed or timed out")
-                });
+                wait_until_queued(context, 2);
                 Ok(Control::Continue((target, received)))
             }
 
@@ -756,8 +725,8 @@ enum FloodMessage {
     Flood,
 }
 
-/// Watch the target and report its termination to the test, proving that the target's terminated
-/// signals, including the one for the blocked root, have been enqueued.
+/// Watch the target and report its terminated signal to the test, proving that the target has
+/// closed its watcher registration.
 struct Observer {
     target: ActorRef<Stop>,
     terminated_tx: mpsc::Sender<()>,
@@ -995,6 +964,20 @@ impl Actor for LateWatcher {
 }
 
 struct Go;
+
+fn wait_until_queued<M>(context: &ActorContext<M>, queued: usize) {
+    let deadline = Instant::now() + TIMEOUT;
+    // Blocking must not strand the task in this worker's LIFO slot!
+    block_in_place(|| {
+        while context.queued() < queued {
+            assert!(
+                Instant::now() < deadline,
+                "mailbox did not reach {queued} queued items"
+            );
+            thread::yield_now();
+        }
+    });
+}
 
 fn spin(delay: Duration) {
     let start = Instant::now();
