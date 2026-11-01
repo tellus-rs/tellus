@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793576648391,
+  "lastUpdate": 1793576650046,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -13645,6 +13645,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 108334,
             "range": "± 3530",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac31c053f13b6650963811c786e6c3f6ee127636",
+          "message": "Merge pull request #237 from tellus-rs/docs/review-fixes\n\ndocs: correct and complete the documentation",
+          "timestamp": "2026-11-02T00:37:23+01:00",
+          "tree_id": "0a58ac052b77fdd602675690fb340ea8a19bb13e",
+          "url": "https://github.com/tellus-rs/tellus/commit/ac31c053f13b6650963811c786e6c3f6ee127636"
+        },
+        "date": 1793576649648,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2192394,
+            "range": "± 135917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2230565,
+            "range": "± 182950",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 886971,
+            "range": "± 13990",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 104558,
+            "range": "± 6242",
             "unit": "ns/iter"
           }
         ]
