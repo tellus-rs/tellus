@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793536394901,
+  "lastUpdate": 1793536396573,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12469,6 +12469,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 119186,
             "range": "± 2012",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d690a0c2fbd0203dc3f27d33d2454eada7af6a63",
+          "message": "Merge pull request #229 from tellus-rs/fix/fix-221\n\nfix: pass the crypto provider explicitly in QuicTransport",
+          "timestamp": "2026-11-01T13:26:38+01:00",
+          "tree_id": "08be337c1e2708e50fd28fbeaf9e0117763bc94c",
+          "url": "https://github.com/tellus-rs/tellus/commit/d690a0c2fbd0203dc3f27d33d2454eada7af6a63"
+        },
+        "date": 1793536396183,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2155441,
+            "range": "± 67807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2141532,
+            "range": "± 81297",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 883964,
+            "range": "± 15067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 104628,
+            "range": "± 3426",
             "unit": "ns/iter"
           }
         ]
