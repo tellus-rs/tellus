@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793539489627,
+  "lastUpdate": 1793539491703,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12637,6 +12637,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 104628,
             "range": "± 3426",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d42e526270bd7e7b202d2c6972122d633fdf63e4",
+          "message": "Merge pull request #230 from tellus-rs/test/fix-219\n\ntest: synchronize watch tests without relying on watcher order",
+          "timestamp": "2026-11-01T14:17:27+01:00",
+          "tree_id": "8500990b5a5a1dbe2aec9374964d1c80b9d4ae76",
+          "url": "https://github.com/tellus-rs/tellus/commit/d42e526270bd7e7b202d2c6972122d633fdf63e4"
+        },
+        "date": 1793539491432,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2993819,
+            "range": "± 125058",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3096283,
+            "range": "± 116672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1373637,
+            "range": "± 8168",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 162463,
+            "range": "± 5348",
             "unit": "ns/iter"
           }
         ]
