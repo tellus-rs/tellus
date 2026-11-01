@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793532595159,
+  "lastUpdate": 1793532596880,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11965,6 +11965,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 162144,
             "range": "± 5122",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44a89993b19e41b3c967f24e54588adebbcd5632",
+          "message": "Merge pull request #225 from tellus-rs/docs/fix-223\n\ndocs: fix the findings of the documentation review",
+          "timestamp": "2026-11-01T12:22:34+01:00",
+          "tree_id": "f9db9febcba764dbcae46726da487520f62962b2",
+          "url": "https://github.com/tellus-rs/tellus/commit/44a89993b19e41b3c967f24e54588adebbcd5632"
+        },
+        "date": 1793532596526,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3161541,
+            "range": "± 107289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3035111,
+            "range": "± 132176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1392747,
+            "range": "± 12562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 160633,
+            "range": "± 4140",
             "unit": "ns/iter"
           }
         ]
