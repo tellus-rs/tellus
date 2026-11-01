@@ -26,6 +26,12 @@ BENCH_ROWS = {
         "queued/never/16",
         "queued/every/4",
         "queued/every/16",
+        "timers/none/4",
+        "timers/none/16",
+        "timers/armed_idle/4",
+        "timers/armed_idle/16",
+        "timers/restart_each/4",
+        "timers/restart_each/16",
     ],
     "persistence": [
         "persist/no_snapshots",

@@ -37,7 +37,9 @@ The rules change only in a commit of their own, never while a case is being deci
   probe with `probe.sh`, and run `sweep.py run --bench <bench>`. The binaries go before `--rows`
   and `--shifts`, since both take a variable number of values.
 
-A messaging run is 1440 bench runs per job, 10 rows; a persistence run is 576, 4 rows.
+A messaging run sweeps every row of the messaging bench, the groups `flood`, `ping_pong`, `fan_out`,
+`queued` and `timers`: 2304 bench runs per job, 16 rows. A persistence run sweeps every row of the
+persistence bench, the groups `persist` and `recover`: 576 runs, 4 rows.
 
 ### The protocol
 
