@@ -1,9 +1,10 @@
 //! Kubernetes seed discovery for tellus cluster bootstrap: [K8sSeeds] implements [SeedDiscovery],
 //! listing the pods matching a label selector through the Kubernetes API and pairing each pod's
 //! address with a port. That port is either one number for all pods or the number a named container
-//! port carries in each pod. Pass it to [bootstrap](tellus::cluster::bootstrap), which lists until
-//! the view settles and joins the cluster through it, retrying failures, e.g. pods still starting
-//! while an orchestrator rolls out the others. Unlike a headless service, which publishes ready
+//! port carries in each pod. Pass it to [bootstrap](tellus::cluster::bootstrap), which lists the
+//! pods every `resolve_interval` and joins through the listed addresses on every listing, retrying
+//! failures, e.g. pods still starting while an orchestrator rolls out the others. Only forming a
+//! new cluster waits for the view to settle. Unlike a headless service, which publishes ready
 //! pods only, this sees a pod as soon as it has an address, so a readiness probe may gate on
 //! cluster membership.
 //!
@@ -14,9 +15,9 @@
 //! primary address is the one a node advertises and is hence admitted at. Terminating and
 //! finished pods are left out, since they would inflate that count as well, while a pod which is
 //! merely still starting stays in: an unreachable seed is retried, a missing one shrinks the
-//! universe. Whatever a pod cannot answer for, a missing address, a missing or unusable named
-//! port, skips that pod and is logged. A listing yielding no address at all remains an error, so
-//! bootstrap does not settle on this node alone.
+//! universe. An unparsable address and a missing or unusable named port skip that pod and are
+//! logged; a pod without an address yet is skipped silently. A listing yielding no address at all
+//! remains an error, so bootstrap does not settle on this node alone.
 
 #![warn(missing_docs, clippy::missing_errors_doc)]
 

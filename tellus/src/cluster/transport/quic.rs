@@ -77,7 +77,8 @@ impl QuicTransport {
     /// # Errors
     /// Fails if `server_name` is neither a valid DNS name nor an IP address, so a name no
     /// certificate could be issued for is refused here rather than at the first connection
-    /// attempt, or if the UDP socket cannot be bound to `bind_addr`.
+    /// attempt. Fails as well if the UDP socket cannot be bound to `bind_addr` or no Tokio runtime
+    /// is running.
     pub fn new(
         bind_addr: SocketAddr,
         mut server_config: ServerConfig,

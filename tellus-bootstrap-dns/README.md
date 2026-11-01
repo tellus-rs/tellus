@@ -13,8 +13,8 @@ The default resolver keeps no response cache: bootstrap polls DNS to see nodes c
 cached answer would hide a node registered after it for the record's TTL, e.g. a sibling restarting
 a moment later than this one. A resolver given via `with_resolver` is used as configured.
 
-For how bootstrap decides whom to join, from the settle window to the lowest-address join rule,
-see the Bootstrap paragraph of the Membership section in
+For how bootstrap joins and when it forms a new cluster, from the settle window to the
+lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
 [docs/cluster.md](../docs/cluster.md#membership).
 
 tellus-bootstrap-dns is available on [crates.io](https://crates.io/crates/tellus-bootstrap-dns):
@@ -29,7 +29,7 @@ choosing:
 
 ```rust
 cluster::start_endpoint(EndpointConfig::new(addr), transport)?;
-let seeds = DnsSeeds::srv("_tellus._udp.tellus.svc.cluster.local")?;
+let seeds = DnsSeeds::srv("_tellus._udp.tellus.default.svc.cluster.local")?;
 timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await??;
 ```
 
@@ -38,7 +38,7 @@ from a config file next to tellus's own configuration, and `DnsSeeds::new` takes
 
 ```yaml
 seeds:
-  srv: _tellus._udp.tellus.svc.cluster.local
+  srv: _tellus._udp.tellus.default.svc.cluster.local
 ```
 
 ```yaml

@@ -8,6 +8,11 @@ let inspect = tellus_cluster_inspect::router(InspectConfig::default())?;
 let app = Router::new().nest("/inspect", inspect);
 ```
 
+Call `router` inside a Tokio runtime, since it spawns the task recording the node's changes. Call
+it after `cluster::start_endpoint`; before that it fails with `InspectError::EndpointNotStarted`.
+`cargo run -p tellus-cluster-inspect --example how_to_serve_cluster_state` serves a cluster of one
+this way.
+
 It reveals the cluster's topology, so mount it behind whatever protects the rest of your server;
 it brings no authentication of its own and binds no port.
 
@@ -35,8 +40,12 @@ cargo add tellus-cluster-inspect
   - `gap`: the node's own subscriber fell behind by `dropped` changes; the current state and
     verdict follow.
 
-  These are the items of `tellus::cluster::changes`, recorded in publication order, so a verdict
-  never precedes the state it judges and versions are consecutive except across a gap.
+  These are the items of `tellus::cluster::changes`, recorded in publication order. Within the
+  live part of a stream, a verdict never precedes the state it judges and versions are consecutive
+  except across a gap. A recovery (see below) can start its history at any retained item, and the
+  current state and verdict it ends with repeat the latest ones. A client therefore derives no
+  transitions from a state of the version it already holds, but still takes that state as its
+  baseline; only an older version is ignored.
 
 ## Resuming
 
@@ -50,7 +59,16 @@ the last carries an id. So a client that drops in the middle of the recovery hol
 recovers again, and one that got through resumes from a position at which everything newer than
 the pair follows. A changed `started_at` between two hellos means the node restarted.
 
+A client which falls more than `events_kept` messages behind has its stream closed by the server.
+Its reconnect then gets `resumed: false` and a recovery.
+
 ## Configuration
 
 `InspectConfig` has one field, `events_kept`, the size of the log. It is not part of the node's
 `EndpointConfig`, since it is a property of this router, not of the endpoint.
+
+## Events module
+
+The bounded log behind `GET /events` is public as `tellus_cluster_inspect::events` (`EventLog`,
+`Cursor`, `sse` and `last_event_id`), so an application can serve a resumable stream of its own
+events the same way.

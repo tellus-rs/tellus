@@ -16,16 +16,18 @@ use tokio::{
 use tracing::{debug, warn};
 
 /// Hosts entities: actors identified by a key, spawned on the first message for that key and, if
-/// configured, passivated once they have not been messaged for a while.
+/// configured, passivated once no message has been routed to them through the host for a while.
+/// Messages told to an entity's [ActorRef] directly, the replies and piped outputs it receives and
+/// its own timers do not count.
 ///
 /// A host is an ordinary actor whose messages are [HostEnvelope]s, so it is spawned like any other
 /// and its entities are addressed through [ActorRef::tell] and [ActorRef::ask]. Its entities are
 /// its children, hence stopping it stops them first.
 ///
 /// Passivation frees the memory of entities nobody talks to, which is only safe where their state
-/// is recoverable or disposable, e.g. for event sourced entities. A message arriving while an
-/// entity stops is buffered and delivered to its next incarnation, so a passivation is invisible
-/// to senders except in timing.
+/// is recoverable or disposable, e.g. for event sourced entities. A message routed through the
+/// host while an entity stops is buffered, up to the configured buffer, and delivered to its next
+/// incarnation.
 pub struct Host<K, M, S, P> {
     idle_timeout: Option<Duration>,
     buffer: NonZeroUsize,
@@ -231,7 +233,8 @@ pub struct HostEnvelope<K, M> {
     pub message: M,
 }
 
-/// Configuration for a [Host].
+/// Configuration for a [Host]. The default keeps every entity alive and buffers at most 64
+/// messages per entity while it stops.
 #[derive(Debug, Clone, Copy)]
 pub struct HostConfig {
     idle_timeout: Option<Duration>,
@@ -240,7 +243,7 @@ pub struct HostConfig {
 
 impl HostConfig {
     /// A configuration keeping every entity alive, buffering at most `buffer` messages per entity
-    /// while it stops. Defaults to a buffer of 64.
+    /// while it stops.
     pub fn new(buffer: NonZeroUsize) -> Self {
         Self {
             idle_timeout: None,
@@ -248,11 +251,12 @@ impl HostConfig {
         }
     }
 
-    /// This configuration, passivating an entity which has not been messaged for `idle_timeout`.
+    /// This configuration, passivating an entity to which no message has been routed through the
+    /// host for `idle_timeout`. A zero duration would have the host sweeping without pause; leave
+    /// the idle timeout unset to keep every entity alive instead.
     ///
     /// # Errors
-    /// Fails for a zero duration, which would have the host sweeping without pause; leave the
-    /// idle timeout unset to keep every entity alive instead.
+    /// Fails if `idle_timeout` is zero.
     pub fn with_idle_timeout(self, idle_timeout: Duration) -> Result<Self, InvalidHostConfig> {
         if idle_timeout.is_zero() {
             return Err(InvalidHostConfig::ZeroIdleTimeout);
@@ -318,9 +322,6 @@ impl<M> Entry<M> {
     }
 }
 
-/// Stops itself once its timeout has elapsed, so its watching host is woken by the terminated
-/// signal: the host cannot wake itself with a timer, since its own message type is reserved for its
-/// entities.
 struct Ticker {
     idle_timeout: Duration,
 }

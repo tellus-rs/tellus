@@ -102,9 +102,10 @@ pub struct EndpointConfig {
 
     /// The upper bound on the data streams opened per peer connection, which frames are spread
     /// over by the actor they are delivered to, so a large message only delays frames towards
-    /// targets hashing onto the same stream. A transport without streams lowers this to a single
-    /// lane carrying everything, and `1` does the same for one with. A transport with fewer
-    /// streams than this lowers it to what it reports, e.g.
+    /// targets hashing onto the same stream. A transport without streams lowers this to zero data
+    /// streams, so every frame rides the control stream. `1` keeps one data stream for every
+    /// frame delivered to an actor, beside the control stream. A transport with fewer streams
+    /// than this lowers it to what it reports, e.g.
     /// [QuicTransport::DATA_STREAMS](crate::cluster::transport::QuicTransport::DATA_STREAMS).
     ///
     /// All of them are opened at connection setup, so a peer admitting fewer concurrent streams
@@ -115,7 +116,8 @@ pub struct EndpointConfig {
 
     /// The maximum size of an encoded frame in bytes: an outbound frame beyond it becomes a
     /// local dead letter before reaching the transport, an inbound one is refused.
-    /// [start_endpoint] refuses a value too small to hold one member of a snapshot chunk.
+    /// [start_endpoint] refuses a value too small to hold one member or one reachability record
+    /// of a snapshot chunk.
     /// Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
     pub max_frame_size: NonZeroUsize,
 
@@ -134,7 +136,8 @@ pub struct EndpointConfig {
     /// The interval at which this node's remote watches are re-asserted with idempotent `Watch`
     /// frames, healing a `Terminated` frame lost with the watched side's connection. Must stay
     /// below the failure detection deadline, else such a loss on a pair with no other watches is
-    /// healed by a false node death instead of by the watched node's answer.
+    /// healed by a false node death instead of by the watched node's answer. The same interval
+    /// re-offers this node's registrations to every Up peer whose lane missed a change.
     ///
     /// Must not be zero; defaults to [EndpointConfig::DEFAULT_WATCH_REFRESH_INTERVAL].
     pub watch_refresh_interval: Duration,
@@ -165,19 +168,21 @@ pub struct EndpointConfig {
     #[debug(skip)]
     pub downing_provider: DowningProviderFactory,
 
-    /// How long a detailed Down member is listed after it was downed. Must comfortably exceed the
-    /// gossip convergence time so the detailed entry normally reaches every current member.
-    /// Defaults to [EndpointConfig::DEFAULT_DOWN_RETENTION].
+    /// How long a detailed Left or Down member is listed after this node learned of it. Must
+    /// comfortably exceed the gossip convergence time so the detailed entry normally reaches every
+    /// current member. It is also the age past which a watermark above `down_watermarks` may be
+    /// evicted and a parked reachability record is dropped. Defaults to
+    /// [EndpointConfig::DEFAULT_DOWN_RETENTION].
     pub down_retention: Duration,
 
-    /// The number of per-address Down watermarks, kept and sent on connection setup, above which
-    /// those learned longer than `down_retention` ago are evicted, the earliest learned first.
-    /// Watermarks learned within the retention are kept above it, up to twice this number; beyond
-    /// that the earliest learned are evicted regardless. Eviction bounds this endpoint's memory
-    /// and its setup cost. It lets a zombie at an evicted address be admitted again once its
-    /// detailed Down entry has been swept too. A joining node accepts at most twice its own number
-    /// of watermarks from its seed, so no node may have a larger value than the nodes joining it;
-    /// in practice the value is the same on every node. See docs/cluster.md.
+    /// The number of per-address Left or Down watermarks, kept and sent on connection setup, above
+    /// which those learned longer than `down_retention` ago are evicted, the earliest learned
+    /// first. Watermarks learned within the retention are kept above it, up to twice this number;
+    /// beyond that the earliest learned are evicted regardless. Eviction bounds this endpoint's
+    /// memory and its setup cost. It lets a zombie at an evicted address be admitted again once
+    /// its detailed Down entry has been swept too. A joining node accepts at most twice its own
+    /// number of watermarks from its seed, so no node may have a larger value than the nodes
+    /// joining it; in practice the value is the same on every node. See docs/cluster.md.
     ///
     /// Defaults to [EndpointConfig::DEFAULT_DOWN_WATERMARKS].
     pub down_watermarks: NonZeroUsize,
@@ -185,7 +190,7 @@ pub struct EndpointConfig {
     /// How long [leave](fn@crate::cluster::leave) waits for every peer to acknowledge the drain
     /// of the announced departure before severing anyway, one deadline for the whole exchange.
     /// Bounds a shutting down process, so it is sized by the deployment's termination grace
-    /// period rather than by the gossip cadence; an acknowledgement costs a round trip. It also
+    /// period rather than by the gossip cadence; an acknowledgment costs a round trip. It also
     /// bounds how long this node keeps delivering from the connection of a departed node, and
     /// may acknowledge its drain, before running its node death sequence. Defaults to
     /// [EndpointConfig::DEFAULT_LEAVE_TIMEOUT].
@@ -200,10 +205,13 @@ pub struct EndpointConfig {
     /// After this many failed connection attempts an address no Up member advertises is given up
     /// and its queued messages become dead letters; a member's address is retried until the
     /// downing provider settles its fate. Giving up is not final: a later message dials again.
-    /// An address which answered without speaking this protocol is refused instead: sends towards
-    /// it fail without dialing for 10 s, doubling with every further refusal up to 10 min. An
-    /// inbound handshake from it, an admitted join from it or a gossiped Up member at it lifts the
-    /// refusal at once.
+    /// An address no Up member advertises whose answer retrying cannot change is refused instead:
+    /// it does not speak this protocol or shares no version with it, fails the identity or
+    /// address check, belongs to another cluster or sends a frame beyond `max_frame_size`. Sends
+    /// towards a refused address fail without dialing for 10 s, doubling with every further
+    /// refusal up to 10 min. A refusal expired for 10 min is forgotten. An inbound handshake from
+    /// the address, an admitted join from it or a gossiped Up member at it lifts the refusal at
+    /// once.
     ///
     /// Defaults to [EndpointConfig::DEFAULT_MAX_CONNECT_ATTEMPTS].
     pub max_connect_attempts: NonZeroU32,
@@ -1499,7 +1507,7 @@ impl EndpointInner {
         }
     }
 
-    /// A task of its own, since a cancelled caller must not cancel the departure.
+    /// A task of its own, since a canceled caller must not cancel the departure.
     fn spawn_departure(&'static self) -> watch::Receiver<Option<Departed>> {
         let (departed_tx, departed_rx) = watch::channel(None);
         let departure = task::spawn(self.depart());

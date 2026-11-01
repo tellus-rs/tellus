@@ -31,6 +31,10 @@ where
     M: Manifest + 'static,
 {
     /// A key under the given name.
+    ///
+    /// # Panics
+    /// Panics in debug builds if another type of this process has claimed the same
+    /// [Manifest::MANIFEST] as `M`.
     pub fn new(name: impl Into<String>) -> Self {
         Self::of_kind(KeyKind::Discovery, name)
     }
@@ -122,7 +126,8 @@ pub enum RegisterError {
 /// More than one actor may be registered under one key; a lookup then answers with all of them.
 /// The registration is dropped once the actor terminates, along with the reference binding it
 /// shares with reference serialization. Registering the same actor again under the same key
-/// changes nothing.
+/// changes nothing. Registering an actor which has terminated already registers nothing and
+/// returns `Ok`.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if the reference names an actor on another node, if the

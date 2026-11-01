@@ -3,7 +3,7 @@ use derive_more::Display;
 /// The schema version of a stored payload, written alongside it and checked on read: a payload
 /// whose version the current code neither knows nor upcasts is rejected rather than decoded with
 /// the current shape. It is a number of its own, never interchangeable with a
-/// [SeqNo](crate::SeqNo) or any other value travelling with the same record.
+/// [SeqNo](crate::SeqNo) or any other value traveling with the same record.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
 pub struct SchemaVersion(u16);
 

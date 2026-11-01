@@ -13,8 +13,8 @@ only the primary address is the one a node advertises and is hence admitted at. 
 finished pods are left out, since they would inflate that count as well, while a pod which is
 merely still starting stays in: an unreachable seed is retried, a missing one shrinks the universe.
 
-For how bootstrap decides whom to join, from the settle window to the lowest-address join rule,
-see the Bootstrap paragraph of the Membership section in
+For how bootstrap joins and when it forms a new cluster, from the settle window to the
+lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
 [docs/cluster.md](../docs/cluster.md#membership).
 
 tellus-bootstrap-k8s is available on [crates.io](https://crates.io/crates/tellus-bootstrap-k8s):
@@ -152,6 +152,11 @@ one. Whether the pods come from a StatefulSet or a Deployment makes no differenc
 chaos, and `just start-cluster-demo-k8s k8s` starts them with this crate's discovery. Its
 [manifests](../tellus-cluster-demo/k8s) are the excerpts above as a deployable set, in the
 `default` namespace instead of `tellus`.
+
+[`examples/how_to_run_on_kubernetes.rs`](examples/how_to_run_on_kubernetes.rs) with
+[its manifests](examples/how_to_run_on_kubernetes.yaml) is a minimal deployment: each node reports
+itself ready once it is a member and leaves the cluster on SIGTERM. Build it with
+`cargo build -p tellus-bootstrap-k8s --example how_to_run_on_kubernetes`.
 
 ## Tests
 

@@ -481,7 +481,7 @@ tellus has no equivalent of. This biases the setup in the competitors' favor.</l
 <li><strong>Messaging microbenchmarks only.</strong> Nothing here speaks to supervision, distribution,
 ergonomics, memory use or production readiness. kameo and ractor are mature, feature-rich frameworks; tellus is
 under active development and does far less.</li>
-<li><strong>On CI these run on a shared 2-core runner</strong>, so absolute figures are not representative of real
+<li><strong>On CI these run on a shared runner</strong>, so absolute figures are not representative of real
 deployments. Only the relative comparison within a single run is meaningful.</li>
 <li><strong>Written and run by tellus's maintainer.</strong> The full methodology and benchmark source are in the
 repository; corrections are welcome.</li>

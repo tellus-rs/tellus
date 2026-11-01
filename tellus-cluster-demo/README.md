@@ -27,19 +27,20 @@ just logs-cluster-demo-k8s       # follow all logs, or `just logs-cluster-demo-k
 just stop-cluster-demo-k8s       # delete the cluster
 ```
 
+It needs `kind` v0.33 or later and `kubectl`.
+
 Whichever stack runs, the same recipes look at it, since both serve the same ports:
 
 ```sh
-just status-cluster-demo         # a node's view through the balancer, its /inspect/cluster and the verifier's counters
+just status-cluster-demo         # /cluster and /inspect/cluster, each from whichever node the balancer picks, and the verifier's counters
 just violations-cluster-demo     # what the verifier found wanting, empty on a healthy run
 just run-cluster-demo-tui        # watch it all from a terminal, see tellus-cluster-demo-tui
 ```
 
-It needs `kind` v0.33 or later and `kubectl`, and it serves the same URLs on the same ports, so
-everything below applies to both stacks. Only one of them can run at a time, since they share
-those ports. `just run-cluster-demo-tui` is the same against either: it builds and runs the
-[terminal observer](../tellus-cluster-demo-tui) from source on the host, not in a container, and
-connects to those ports.
+Both stacks serve the same URLs on the same ports, so everything below applies to both. Only one
+of them can run at a time, since they share those ports. `just run-cluster-demo-tui` is the same
+against either: it builds and runs the [terminal observer](../tellus-cluster-demo-tui) from source
+on the host, not in a container, and connects to those ports.
 
 - `http://localhost:8080/cluster`: what one node, whichever the load balancer picks, sees of the
   cluster. Repeated calls during a partition show the two sides disagreeing, and then agreeing
@@ -60,7 +61,8 @@ connects to those ports.
   beside it: the node's phase and the receptionist's counts for the demo's keys.
 - `http://localhost:8081/status`: the verifier's counters, including the load balancer's
   availability and the current chaos action.
-- `http://localhost:8081/violations`: what the cluster failed to deliver, empty on a healthy run.
+- `http://localhost:8081/violations`: the latest 200 of what the cluster failed to deliver, empty
+  on a healthy run; `/status` counts all of them.
 - `http://localhost:8081/events`: the verifier's stream: chaos transitions as it observes them,
   verdicts, violations and load balancer availability changes.
 
@@ -83,7 +85,7 @@ Under Docker Compose:
 - **The chaos agent** (`chaos.sh`), rotating through three faults: `pumba kill` for a crash,
   `pumba netem loss --percent 100` in both directions between the two sides for a partition, and
   a SIGTERM for a clean departure, which the cluster handles through `leave` rather than through
-  failure detection. A container signalled through the Docker API counts as manually stopped, so
+  failure detection. A container signaled through the Docker API counts as manually stopped, so
   no restart policy brings it back and the agent starts it again itself. It names the fault it is
   running in a state file, which lets the verifier tell a legitimate disagreement from a
   violation.
@@ -92,13 +94,15 @@ Under Docker Compose:
   none of them as unreachable and no broken link between them, that every node's receptionist
   resolves all five workers and is settled at the version it shows, that every node resolves all
   five subscribers of the event topic and has received an event from every node within the last
-  seconds, and that every node can message every other one. It serves its own
-  `/events` stream as well: the chaos transitions it reads from the state file, each verdict,
-  each violation and each change of the load balancer's availability.
+  seconds, and that every node can message every other one. Before those it checks for a split
+  brain, two members whose Up sets do not overlap, and checks nothing further if it finds one. A
+  load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. It
+  serves its own `/events` stream as well: the chaos transitions it reads from the state file,
+  each verdict, each violation and each change of the load balancer's availability.
 
 On Kubernetes the nodes are a StatefulSet of five behind a headless service, the load balancer is
 a service rather than Caddy, a partition is a pair of NetworkPolicies the agent switches on by
-labelling pods, and the agent shares a pod with the verifier so the two still meet over a file.
+labeling pods, and the agent shares a pod with the verifier so the two still meet over a file.
 [`k8s/README.md`](k8s/README.md) explains each of those, including why the nodes are a
 StatefulSet when a Deployment is the natural default. The verifier is the same binary with the
 same configuration, and is unaware of which stack it runs on.
@@ -160,10 +164,12 @@ The relevant settings are:
   simultaneously starting nodes from forming two clusters which never merge. In exchange, a cold
   start forms no cluster before all five containers are running. That suits a fixed size cluster
   and not an elastic one.
-- `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS`, `RECOVERY_SECS` and, under Compose only,
-  `DEAD_SECS` (chaos) and `TELLUS_SETTLE_SECS` (verifier): the verifier only checks after the chaos agent has been quiet
-  for the settle window, so the settle window must stay below the quiet window, and the quiet
-  window must be long enough for a restarted node to have rejoined.
+- `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS` and `RECOVERY_SECS` (chaos), `DEAD_SECS` (chaos,
+  Compose only), `FLUSH_SETTLE_SECS` (chaos, Kubernetes only), and `TELLUS_SETTLE_SECS` and
+  `TELLUS_LB_OUTAGE_SECS` (verifier): the verifier only checks after the chaos agent has been
+  quiet for the settle window, so the settle window must stay below the quiet window, and the
+  quiet window must be long enough for a restarted node to have rejoined. A load balancer outage
+  longer than `TELLUS_LB_OUTAGE_SECS` is a violation.
 - The `endpoint` section spells out the pluggable provider defaults, the adaptive phi accrual
   detector and `KeepMajority` after ten seconds of unreachability, so what the demo shows is what
   a deployment gets, visibly rather than implied. Every other `EndpointConfig` field keeps its
@@ -175,8 +181,10 @@ The relevant settings are:
   only after its own handshake timeout, tens of seconds, and a partition leaves three of the four
   seeds silent, so an unbounded bootstrap round would outlast the fault it is meant to survive.
 - The nodes use `QuicTransport::dev`, which does not verify certificates. That lets the demo run
-  without a certificate authority; a deployment uses `QuicTransport::mutual_tls`, which
-  additionally binds each peer's advertised address to its certificate's IP SANs.
+  without a certificate authority. A deployment uses `QuicTransport::mutual_tls`, which accepts
+  only peers whose certificates verify against the cluster's certificate authority. A peer's
+  advertised address is then bound to its certificate's `tellus://<ip:port>` URI SAN, or without
+  one to its IP SANs.
 - Both the nodes and the containers pumba touches need `NET_ADMIN` and `iproute2`, since pumba
   installs its tc rules inside the target container. Compose only.
 - A node self-downing mid-partition exits, so its container restarts without pumba's rules, which

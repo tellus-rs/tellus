@@ -18,16 +18,16 @@ just run-cluster-demo-tui     # watch the running demo
 The observer is built from source and runs on the host, not in a container; both stacks map the
 same host ports, so it works against either unchanged.
 
-Keys: `q`, `Esc` or `Ctrl-C` quit, `↑`/`↓`, `j`/`k`, `Tab` or `Shift-Tab` select a node, `p` pauses the timeline, `c` clears it.
-Pausing freezes the visible timeline window only; everything else keeps updating and entries keep
-arriving behind the window.
+Keys: `q`, `Esc` or `Ctrl-C` quit, `↑`/`↓`, `j`/`k`, `Tab` or `Shift-Tab` select a node, `p`
+pauses the timeline, `c` clears it. Pausing freezes the visible timeline window only; everything
+else keeps updating and entries keep arriving behind the window.
 
 ## Configuration
 
 Two environment variables, both optional:
 
 - `TELLUS_NODES`: comma separated base URLs of the nodes' HTTP APIs, by default
-  `http://localhost:8091` to `http://localhost:8095`, the Compose stack's host ports.
+  `http://localhost:8091` to `http://localhost:8095`, the host ports both stacks map.
 - `TELLUS_VERIFIER`: the verifier's base URL, by default `http://localhost:8081`.
 
 ## What it shows and where it comes from
@@ -48,19 +48,23 @@ Two environment variables, both optional:
   none, and any entry is highlighted. A broken link lasts until it heals or `cluster::down`
   removes one of its ends; a foreign cluster never merges.
 - **The verifier strip**: the chaos agent's current action, how long it has been quiet,
-  verifications, violations and the load balancer's availability.
+  verifications, violations, the load balancer's availability and its longest outage.
 - **The timeline**: membership transitions per node, verdict flips, phase changes, chaos
   transitions, verdicts, violations and load balancer changes, merged across sources and ordered
-  by the servers' own timestamps.
+  by the servers' own timestamps. Times are UTC, and the timeline keeps the latest 1000 entries.
+
+The detail needs a terminal at least 100 columns wide or 30 rows tall; a smaller one shows the
+matrix and the timeline only. Below 60x15 the observer shows nothing but a note that the terminal
+is too small.
 
 Every node is followed through two streams. `/inspect/events` is
-[`tellus-cluster-inspect`](../tellus-cluster-inspect): one whole `ClusterState` per version and
-the receptionist's verdict whenever it flips, in the order tellus published them. `/events` is
-the demo's own: the phase and the receptionist's counts for the demo's keys. The matrix, the
-detail and the strip are rendered from the latest snapshot each source delivered; the timeline is
-the one history, built only from the streams, which replay their retained history on connect and
-continue after `Last-Event-ID` on a reconnect. The polled `/cluster`, `/probe` and `/status` fill
-in only what no stream has said yet.
+[`tellus-cluster-inspect`](../tellus-cluster-inspect): one whole `ClusterState` per version and the
+receptionist's verdict whenever it or the version it judges changes, in the order tellus published
+them. `/events` is the demo's own: the phase and the receptionist's counts for the demo's keys. The
+matrix, the detail and the strip are rendered from the latest snapshot each source delivered; the
+timeline is the one history, built only from the streams, which replay their retained history on
+connect and continue after `Last-Event-ID` on a reconnect. The polled `/cluster`, `/probe` and
+`/status` fill in only what no stream has said yet.
 
 Some consequences worth knowing:
 
@@ -78,4 +82,5 @@ Some consequences worth knowing:
 - A verdict streams the moment it flips and is shown with the version it judged, never as if it
   judged another state.
 - Each stream's glyph turns red when it is lost, and a loss is one timeline entry, not one per
-  reconnect attempt.
+  reconnect attempt. Such connection entries carry the observer's own clock, since no server
+  stamped them.

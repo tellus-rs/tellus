@@ -5,7 +5,8 @@
 //! stores are implemented. Every check uses fresh persistence IDs, so all checks can share one
 //! long-lived store and server.
 //!
-//! A check panics with a description of the violated property, like an assertion in a test.
+//! A check panics with a description of the violated property, like an assertion in a test. The
+//! checks need a Tokio runtime, e.g. under `#[tokio::test]`.
 
 use crate::persistence::{
     persistence_id::PersistenceId,

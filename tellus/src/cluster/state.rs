@@ -269,7 +269,8 @@ pub enum Change {
     /// The cluster state at a new version.
     State(ClusterState),
 
-    /// The receptionist's verdict flipped, or is repeated after a gap.
+    /// The receptionist's verdict, sent whenever the verdict or the version it judges changes, or
+    /// repeated after a gap.
     Settled(Settlement),
 
     /// The subscriber fell behind: this many changes were overwritten before it read them. The
@@ -281,8 +282,8 @@ pub enum Change {
 }
 
 /// The subscription [changes] returns: every version of this node's cluster state and every
-/// flip of the receptionist's verdict, in publication order, from a bounded channel of
-/// [change_capacity](crate::cluster::EndpointConfig::change_capacity) entries.
+/// change of the receptionist's verdict or of the version it judges, in publication order, from a
+/// bounded channel of [change_capacity](crate::cluster::EndpointConfig::change_capacity) entries.
 ///
 /// The first two items are the current state and its verdict. A verdict never precedes the state
 /// of its version, and during uninterrupted delivery each published verdict arrives once. State
@@ -385,8 +386,9 @@ pub fn lifecycle() -> Result<Lifecycle, ClusterStateError> {
 }
 
 /// Subscribe to every change of this node's view: each cluster state version as a whole value
-/// and each flip of the receptionist's verdict, see [Changes]. Unlike [cluster_state], which a
-/// slow reader may find skipped ahead, nothing here is skipped silently.
+/// and each change of the receptionist's verdict or of the version it judges, see [Changes].
+/// Unlike [cluster_state], which a slow reader may find skipped ahead, nothing here is skipped
+/// silently.
 ///
 /// # Errors
 /// Fails if the endpoint is not started.

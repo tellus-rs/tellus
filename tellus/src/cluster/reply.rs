@@ -1288,7 +1288,7 @@ mod tests {
         assert!(pending.take(kept).is_some());
     }
 
-    /// Dropping the guard is what releases an ask's own destination, so a cancelled ask costs
+    /// Dropping the guard is what releases an ask's own destination, so a canceled ask costs
     /// its entry no longer than a timed out one.
     #[test]
     fn dropping_the_guard_releases_the_asks_own_destinations() {

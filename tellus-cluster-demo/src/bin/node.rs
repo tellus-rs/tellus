@@ -366,8 +366,8 @@ fn init_tracing() {
         .init();
 }
 
-/// The dev transport, which does not verify certificates: this cluster runs on a private Docker
-/// network, a production one would use [QuicTransport::mutual_tls].
+/// The dev transport, which does not verify certificates: this cluster runs on a private network,
+/// a production one would use [QuicTransport::mutual_tls].
 ///
 /// Binding the advertised address rather than the unspecified one is what makes the dev
 /// certificate cover it, since it carries the bind address's IP and peers bind an advertised

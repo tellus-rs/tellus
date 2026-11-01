@@ -27,7 +27,8 @@ const NODE_B_PORT: u16 = 4_002;
 const STALE_PORT: u16 = 4_003;
 const SHARED_PORT: NonZeroU16 = NonZeroU16::new(4_242).expect("4242 is not zero");
 
-/// Each SRV record contributes its own port, paired with the addresses its target resolves to.
+/// Each SRV record contributes its own port, paired with the addresses its target resolves to; a
+/// target which does not resolve is skipped while the others resolve.
 #[tokio::test]
 async fn test_srv() -> anyhow::Result<()> {
     let dns_addr = spawn_dns().await?;
@@ -85,9 +86,10 @@ async fn test_missing_name() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// An in-process DNS server on an ephemeral UDP port, authoritative for `tellus.test.`: two SRV
-/// records with per-node ports and targets, A records for the targets, and a two address A
-/// record set for the fixed port mode.
+/// An in-process DNS server on an ephemeral UDP port, authoritative for `tellus.test.`: three SRV
+/// records under `_tellus._udp`, two with per-node ports and resolvable targets and one with a
+/// target without records, one SRV record under `_stale._udp` with only that target, A records
+/// for the resolvable targets, and a two address A record set for the fixed port mode.
 async fn spawn_dns() -> anyhow::Result<SocketAddr> {
     let origin = Name::from_str("tellus.test.")?;
     let authority = InMemoryZoneHandler::<TokioRuntimeProvider>::empty(

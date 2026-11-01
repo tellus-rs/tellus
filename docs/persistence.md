@@ -2,10 +2,10 @@
 
 This document defines the guarantees of tellus persistence: event sourcing with optional
 snapshots, behind the `persistence` feature. The implementation lives in
-[`tellus/src/persistence`](../tellus/src/persistence) and the integration tests in
-[`persistence.rs`](../tellus/tests/persistence.rs), which runs them over the in-memory store of
-the `persistence-in-memory` feature, encode these guarantees; everything builds on
-the mechanics and guarantees of [actors.md](actors.md).
+[`tellus/src/persistence`](../tellus/src/persistence). The integration tests in
+[`persistence.rs`](../tellus/tests/persistence.rs) encode these guarantees; they run over the
+in-memory store of the `persistence-in-memory` feature. Everything builds on the mechanics and
+guarantees of [actors.md](actors.md).
 
 ## Overview
 
@@ -40,8 +40,8 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
   [`Effect`](../tellus/src/persistence/effect.rs): `persist`/`persist_all` name the caused events,
   `stop`/`and_stop` stop the actor, and `then` attaches a continuation running once the events are
   durable and applied, the only safe place for outward-facing actions.
-- `apply` folds one event into the state and `snapshot` optionally offers a snapshot after an
-  effect's events have been applied.
+- `apply` folds one event into the state. `snapshot` optionally offers a snapshot after an
+  effect with events, once its events have been applied and its continuations have run.
 
 Spawning uses dedicated entry points carrying the [`Persistence`](../tellus/src/persistence.rs)
 wiring, an event store plus optional snapshot store and codec: `ActorSystem::event_sourced` for
@@ -100,7 +100,8 @@ or none, never a prefix.
 
 Durability of events is guaranteed; delivery of effects is not. A crash between the append and
 `then` loses the continuation, and it is not re-run on recovery, so outward-facing actions are
-at-most-once, exactly like `tell`.
+at-most-once, exactly like `tell`. A panicking continuation fails the actor. Its events stay
+durable, and the continuations after it are lost like those of a crash.
 
 ## Ordering
 
@@ -113,20 +114,22 @@ settling, and the termination sequence is the same as for any actor.
 
 ## Failure and supervision
 
-A failure of `handle`, a panic, or a failed append is an actor failure and consults the
-`SupervisionStrategy`, exactly like a failure of `receive` in a plain actor. `Restart` recovers by
-replaying from the store, which also reconciles an ambiguous append. If the append reached the
-store before the failure, replay picks its events up. If not, they were never applied either,
-since `apply` runs only after the append. There is no retry logic besides supervision.
+A failure of `handle`, a failure to encode an event, a failed append, or a panic in `handle`,
+`apply` or a continuation is an actor failure and consults the `SupervisionStrategy`, exactly like a
+failure of `receive` in a plain actor. `Restart` recovers by replaying from the store, which also
+reconciles an ambiguous append. If the append reached the store before the failure, replay picks its
+events up. If not, they were never applied either, since `apply` runs only after the append. There
+is no retry logic besides supervision.
 
-Failures during recovery divide in two. A failure of `init`, `init_from_snapshot`, event decoding
-or `apply` is deterministic: a restart fails identically, and so it escalates through the restart
-limit to a stop. An undecodable snapshot is the one exception, discarded in favor of full replay
-(see schema evolution below). A failure of `recovered`, or a failure or panic of a store itself
-while loading the snapshot or reading events, is an ordinary startup failure, e.g. a struggling
-dependency, which a restart with backoff may well fix. A failed snapshot load is deliberately not
-traded for full replay: only an undecodable snapshot is discarded; a snapshot store failure
-surfaces through supervision instead of silently turning every recovery into a full replay.
+Failures during recovery divide in two. A failure of `init`, `init_from_snapshot`, event decoding or
+`apply`, or a stored event whose sequence number is not the next one expected, is deterministic: a
+restart fails identically, and so it escalates through the restart limit to a stop. An undecodable
+snapshot is the one exception, discarded in favor of full replay (see schema evolution below). A
+failure of `recovered`, or a failure or panic of a store itself while loading the snapshot or
+reading events, is an ordinary startup failure, e.g. a struggling dependency, which a restart with
+backoff may well fix. A failed snapshot load is deliberately not traded for full replay: only an
+undecodable snapshot is discarded; a snapshot store failure surfaces through supervision instead of
+silently turning every recovery into a full replay.
 
 A failure to save a snapshot is logged and never fails the actor: losing a snapshot only makes the
 next recovery replay more events.
@@ -135,11 +138,12 @@ next recovery replay more events.
 
 Every append is conditional on the expected next sequence number, and the store rejects an
 append whose expectation does not match the stream head, below or above. Hence no two appends
-extend a stream from the same head, and each append batch is atomic. Two incarnations of one
-`PersistenceId` can be alive at once, through a network partition under remoting or through plain
-misconfiguration. Then one of them loses each append race: its failure goes through supervision,
-and a restarted loser replays the winner's events instead of overwriting them. The stream never
-loses events, and the store is the arbiter, not the nodes.
+extend a stream from the same head. Atomicity of each append batch is a separate requirement on
+the store. Two incarnations of one `PersistenceId` can be alive at once, through a network
+partition under remoting or through plain misconfiguration. Then one of them loses each append
+race: its failure goes through supervision, and a restarted loser replays the winner's events
+instead of overwriting them. The stream never loses events, and the store is the arbiter, not the
+nodes.
 
 This is optimistic concurrency, not exclusive ownership. A restarted loser may win the next
 append race, so two live incarnations can alternate as writers of one stream, each append
@@ -153,7 +157,8 @@ Sequence numbers are per `PersistenceId`, gapless, and start at 0, carried by th
 appended, which is `SeqNo::ZERO` for an empty stream. One type covers both because every use is a
 position replay resumes at, never one it resumes after: a snapshot records the sequence number at
 which replay resumes, the fencing expectation is the position the next append claims, and a read
-starts at the given position inclusively. Nothing in the persistence path adds or subtracts one.
+starts at the given position inclusively. No position is ever converted between a position
+replay resumes at and one it resumes after.
 
 ## Schema evolution
 
@@ -161,13 +166,17 @@ Events outlive the code that wrote them, so the stored representation carries wh
 needs. Every stored event and snapshot carries a manifest, a stable name independent of the Rust
 type path, and a schema version, both outside the payload
 ([`Versioned`](../tellus/src/persistence/versioned.rs)); the payload itself is encoded
-self-describingly by a [`Codec`](../tellus/src/persistence/codec.rs), CBOR by default. A custom
-codec wraps its serializer's errors via `EncodeError::new` and `PayloadError::new`. Old versions
-can be upcast on read by overriding `Versioned::decode`: the current code declares which versions
-it still decodes and converts them while replaying; a version which is neither current nor upcast
-is rejected on read, and the store is never rewritten. A rejected event fails recovery; a snapshot
-that can no longer be decoded is discarded and recovery falls back to full replay, so snapshots
-never need migration code.
+self-describingly by a [`Codec`](../tellus/src/persistence/codec.rs), CBOR by default.
+`Persistence::with_codec` selects another codec, such as the provided `Json`, whose payloads are
+readable in the store. Stored records do not name their codec, so it must not change once events
+are written. A custom codec wraps its serializer's errors via `EncodeError::new` and
+`PayloadError::new`. Old versions can be upcast on read by overriding `Versioned::decode`: the
+current code declares which versions it still decodes and converts them while replaying; a version
+which is neither current nor upcast is rejected on read, and the store is never rewritten. A stored
+manifest other than the type's `Versioned::MANIFEST` is rejected as well, before
+`Versioned::decode` is called. A rejected event fails recovery; a snapshot that can no longer be
+decoded is discarded and recovery falls back to full replay, so snapshots never need migration
+code.
 
 `EncodedEvent::manifest` and `EncodedSnapshot::manifest` are `Cow<'static, str>`: framework-created
 values borrow `Versioned::MANIFEST` without allocating per event, while stores use the owned form

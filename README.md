@@ -83,10 +83,10 @@ different nodes message and watch each other through the same API. Both are feat
 `persistence` and `cluster`, so tellus stays purely local and free of their dependencies by
 default. Remoting is clustered: nodes join through seed addresses, the member list is gossiped, and
 a pluggable failure detector plus downing provider replace vanished members with synthesized
-terminated signals, while a node shutting down cleanly announces its own departure, every node
-publishes its view of the cluster as a versioned value, a receptionist answers every actor
-registered under a name across the cluster, and pub-sub tells every subscriber of a topic the
-publisher's receptionist currently resolves.
+terminated signals. A node shutting down cleanly announces its own departure. Every node publishes
+its view of the cluster as a versioned value. A receptionist answers every actor registered under a
+name across the cluster, and pub-sub tells every subscriber of a topic the publisher's receptionist
+currently resolves.
 
 The open items on the remoting side are listed under the limitations in
 [docs/cluster.md](docs/cluster.md). What comes next, the cluster singleton and then sharding, is
@@ -107,15 +107,23 @@ How tellus works internally, top-down with links into the implementation:
 
 ## Development
 
-The [justfile](justfile) defines the usual tasks; `just all` runs check, fmt, lint, test and doc,
-each across the feature combinations. Formatting uses nightly rustfmt options, which `just fmt`
-takes care of. The `tellus-persistence-postgres` tests run against a container, so `just all`
-needs Docker.
+The [justfile](justfile) defines the usual tasks; `just all` runs check, fmt, lint, test and doc.
+Check and lint run across the feature combinations, test across the ones which run tests
+differently. Formatting uses nightly rustfmt options, which `just fmt` takes care of. The
+`tellus-persistence-postgres` tests run against a container, so `just all` needs Docker.
 
 Regression benchmarks (criterion) run with `just bench`: messaging, and persistence against an
 in-memory store. On CI every pull request is benchmarked against its merge base and the comparison
 posted as a comment, and every commit on `main` is tracked over time on the [benchmark
 dashboard][benchmarks-url].
+
+For a local before and after, `just bench-save <baseline>` and `just bench-compare <baseline>` (and
+the `bench-persistence-` pair) compare against a saved baseline. `just profile` and `just
+profile-persistence` attribute the time of the hot paths per function with
+[hotpath](https://crates.io/crates/hotpath), and their `-alloc` variants the allocations. The
+`-alloc-gate` recipes fail if a function which must not allocate does. `just criterion-profile`
+runs one criterion benchmark as a hotpath report. `just bench-cluster`, `bench-gossip` and
+`bench-streams` measure remoting across spawned processes and do not run on CI.
 
 The benchmarks against kameo and ractor run with `just bench-comparison`; they are excluded from
 per-pull-request CI and published to the [comparison dashboard][comparison-url] on version tags

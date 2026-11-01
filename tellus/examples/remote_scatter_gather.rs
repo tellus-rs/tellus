@@ -7,17 +7,16 @@
 //!
 //! The worker node joins the gatherer's cluster through the gatherer's address as its seed; only
 //! members can message each other. The reference to the worker pool is then the only one not
-//! travelling inside a message: the worker node registers its pool under a key and the gatherer
+//! traveling inside a message: the worker node registers its pool under a key and the gatherer
 //! node looks that key up at the address it started the worker node on, so nothing but a name and
 //! two addresses is exchanged. The lookup is answered from the registrations the worker node
 //! replicated here, so it answers empty until the worker node has joined and its pool has been
 //! replicated; that is the ordinary bootstrap answer, which is why the gatherer retries it. Every
-//! further reference travels
-//! inside messages: `Work::Scatter` carries `reply_to: ActorRef<Partial>` for the gatherer, which
-//! the worker pool hands to the workers it spawns locally. Those workers tell their partial results
-//! to an actor on another node through the same `ActorRef` and `tell` they would use locally. Note
-//! also that `Compute` needs no serde derives at all: it never crosses the wire, yet it carries a
-//! reference to a remote actor.
+//! further reference travels inside messages: `Work::Scatter` carries
+//! `reply_to: ActorRef<Partial>` for the gatherer, which the worker pool hands to the workers it
+//! spawns locally. Those workers tell their partial results to an actor on another node through
+//! the same `ActorRef` and `tell` they would use locally. Note also that `Compute` needs no serde
+//! derives at all: it never crosses the wire, yet it carries a reference to a remote actor.
 //!
 //! Unlike the local scatter-gather example the gatherer counts the partial results instead of
 //! watching its workers: their references never travel to the gatherer. Remote death watch exists

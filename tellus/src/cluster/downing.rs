@@ -50,7 +50,8 @@ impl Deref for Disconnected<'_> {
 /// A [DowningProvider]'s verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Downing {
-    /// Down these members; empty means nothing is downed now.
+    /// Down these members; empty means nothing is downed now. Naming this node is a
+    /// [SelfDown](Downing::SelfDown).
     Members(Vec<Member>),
 
     /// Down this node: it severs every connection and only a restarted process, with a fresh

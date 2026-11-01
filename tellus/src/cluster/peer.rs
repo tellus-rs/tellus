@@ -1490,7 +1490,7 @@ async fn run_join<T>(
     let _ = result_tx.send(result);
 }
 
-/// Cancellable until the Join handshake is sent; afterward the peer may already count this node,
+/// Cancelable until the Join handshake is sent; afterward the peer may already count this node,
 /// so the attempt must finish.
 async fn try_join<T>(
     transport: &T,
@@ -4869,7 +4869,7 @@ mod tests {
 
     /// The drain marker is acknowledged once exactly as many data streams as it announces have
     /// ended cleanly: one which ended before the marker counts, one still open holds the answer
-    /// back, and so does one accepted only after the marker. The acknowledgement keeps the
+    /// back, and so does one accepted only after the marker. The acknowledgment keeps the
     /// connection open, and the death follows its close.
     #[tokio::test]
     async fn a_drain_is_acknowledged_once_every_announced_stream_has_ended() {
@@ -4948,7 +4948,7 @@ mod tests {
     }
 
     /// A drain frame outside a deferred departure breaks the protocol: a marker from a member
-    /// which has not departed, or an acknowledgement on an accepted connection, closes the
+    /// which has not departed, or an acknowledgment on an accepted connection, closes the
     /// connection unanswered and leaves the member Up.
     #[tokio::test]
     async fn a_drain_frame_outside_a_departure_closes_the_connection() {

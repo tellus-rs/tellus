@@ -239,9 +239,9 @@ impl<M> ActorContext<M, Timed> {
     /// deadline which passes during a long [Actor::receive] places the timer behind the items
     /// queued once `receive` has returned.
     ///
-    /// Timers need Tokio's time driver. On a runtime built without it, this panics, so the actor
-    /// fails under its supervision as for any other panic in its own code. An [Untimed] actor has
-    /// no such requirement.
+    /// # Panics
+    /// Panics if the Tokio runtime has no time driver; the actor then fails under its supervision
+    /// as for any other panic in its own code. `#[tokio::main]` enables the driver.
     pub fn start_timer(&self, key: &'static str, message: M, delay: Duration) {
         let replaced = self
             .timers
@@ -325,9 +325,6 @@ impl Display for PanicPayload<'_> {
     }
 }
 
-/// A macro, not an async fn: the run loops' message hot path must not pay for a nested state
-/// machine. Expanded, the awaits below are states of the run loop itself, not of a future it has
-/// to poll into once per message.
 macro_rules! next_incoming {
     ($actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {

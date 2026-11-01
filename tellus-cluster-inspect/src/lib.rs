@@ -9,10 +9,13 @@
 //! ```
 //!
 //! The stream is fed by [tellus::cluster::changes]: one whole [ClusterState] per version and the
-//! receptionist's [Settlement] whenever it flips, in publication order, with an explicit gap
-//! where the node's own subscriber fell behind. Every message is a [Stamped](events::Stamped)
-//! event, and a client that cannot resume gets the retained history and then the current state
-//! and verdict, so it is never left without a state.
+//! receptionist's [Settlement] whenever it or the version it judges changes, with an explicit gap
+//! where the node's own subscriber fell behind. Within the live part of a stream they keep their
+//! publication order. Every message is a [Stamped](events::Stamped) event, and a client that cannot
+//! resume gets the retained history and then the current state and verdict, so it is never left
+//! without a state. That history can start at any retained item, and the pair after it repeats the
+//! latest state and verdict. A client therefore derives no transitions from a state of the version
+//! it already holds, but still takes that state as its baseline.
 
 #![doc(
     html_logo_url = "https://tellus.rs/brand/logo-tile.svg",

@@ -60,7 +60,7 @@
 //! Remote [ActorRef::tell] keeps the local contract: fire-and-forget, at-most-once, undeliverable
 //! messages are dropped and logged as dead letters. This covers an unreachable or crashed node, a
 //! full outbound queue and a payload which cannot be decoded on the receiving node. Messages from
-//! one sender to one target arrive in send order. All frames towards one actor ride one ordered
+//! one sender to one target arrive in send order. All messages towards one actor ride one ordered
 //! stream of the lane towards its node, enqueued at tell time and delivered to mailboxes in arrival
 //! order, so a large message only delays frames towards actors sharing its stream. A lost
 //! connection is reconnected with backoff; frames queued while the link is down flush in order,

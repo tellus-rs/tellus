@@ -47,8 +47,9 @@ where
     }
 }
 
-/// Errors possibly returned by [Versioned::decode]: the payload failed to decode, or the
-/// manifest and schema version stored alongside it do not match the type being decoded.
+/// Errors of decoding a stored event or snapshot: the stored manifest names another type, or the
+/// schema version or the payload is not decodable. The manifest is checked before
+/// [Versioned::decode] is called.
 #[derive(Debug, Error)]
 pub enum DecodeError {
     /// The payload itself is undecodable; wraps the codec's failure.
@@ -69,7 +70,7 @@ pub enum DecodeError {
     /// for upcasting.
     #[error("unsupported schema version {schema_version} for manifest {manifest}")]
     UnsupportedSchemaVersion {
-        /// The manifest read from the store.
+        /// The manifest of the type being decoded.
         manifest: &'static str,
 
         /// The schema version read from the store.

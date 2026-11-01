@@ -56,6 +56,10 @@ impl From<LocalRefError> for RefError {
 ///
 /// # Errors
 /// Fails if the endpoint is not started, or if the reference cannot be encoded.
+///
+/// # Panics
+/// Panics in debug builds if another type of this process has claimed the same
+/// [Manifest::MANIFEST] as `M`.
 pub fn serialize_ref<M>(actor_ref: &ActorRef<M>) -> Result<Vec<u8>, RefError>
 where
     M: Manifest + DeserializeOwned + Send + 'static,
@@ -73,6 +77,10 @@ where
 /// # Errors
 /// Fails if the endpoint is not started, if the bytes cannot be decoded, if they name an actor of
 /// this node which has terminated, or if they were serialized for another message type.
+///
+/// # Panics
+/// Panics in debug builds if another type of this process has claimed the same
+/// [Manifest::MANIFEST] as `M`.
 pub fn deserialize_ref<M>(bytes: &[u8]) -> Result<ActorRef<M>, RefError>
 where
     M: Manifest + Serialize + Send + 'static,

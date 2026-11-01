@@ -1009,7 +1009,7 @@ mod tests {
     }
 
     /// The drain marker was appended at discriminant 13 with the number of data streams it
-    /// covers, its acknowledgement at 14 without a field.
+    /// covers, its acknowledgment at 14 without a field.
     #[test]
     fn the_drain_frames_match_their_pinned_wire_bytes() {
         let drained = [13, 3];

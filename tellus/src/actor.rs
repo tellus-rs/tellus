@@ -36,8 +36,7 @@ pub trait Actor {
     /// retried with backoff.
     ///
     /// # Errors
-    /// Implementations fail when they choose to, e.g. through `?` on a domain error; tellus
-    /// handles a failure exactly like a panic, through the configured [SupervisionStrategy].
+    /// Implementations fail if they choose to, e.g. through `?` on a domain error.
     ///
     /// [SupervisionStrategy]: crate::SupervisionStrategy
     /// [SupervisionStrategy::Stop]: crate::SupervisionStrategy::Stop
@@ -55,8 +54,7 @@ pub trait Actor {
     /// handle it as part of the domain.
     ///
     /// # Errors
-    /// Implementations fail when they choose to, e.g. through `?` on a domain error; tellus
-    /// handles a failure exactly like a panic, through the configured [SupervisionStrategy].
+    /// Implementations fail if they choose to, e.g. through `?` on a domain error.
     ///
     /// # Deadlock
     /// An actor cannot be stopped while `receive` is running, which also blocks a Tokio worker. A
@@ -73,6 +71,9 @@ pub trait Actor {
 }
 
 /// An uninhabited type for actors which don't react to messages.
+///
+/// With the `persistence` feature it is also the snapshot type of event-sourced actors without
+/// snapshots; it never decodes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Nothing {}
 

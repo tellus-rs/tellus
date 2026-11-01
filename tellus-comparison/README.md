@@ -4,7 +4,8 @@ Messaging benchmarks comparing [tellus](../tellus) against two actively maintain
 frameworks, [kameo](https://crates.io/crates/kameo) and [ractor](https://crates.io/crates/ractor).
 
 This package is never published and is not part of `just all`, so its dependencies stay out of
-tellus's own build and out of the per-pull-request CI.
+tellus's own build and out of the CI of pull requests which do not touch it. A pull request which
+does touch it is checked and linted.
 
 ## Running
 
@@ -16,7 +17,9 @@ just lint-comparison      # clippy
 ```
 
 Results are written to `target/criterion-comparison`, deliberately separate from the
-`target/criterion` tree used by tellus's own regression benchmarks, so the two never mix.
+`target/criterion` tree used by tellus's own regression benchmarks, so the two never mix. The
+report goes to `target/comparison-report` as `index.html` and `results.json`, tagged `local`
+unless `just bench-comparison-report <tag>` names another tag.
 
 Runs published by CI are collected on the
 [comparison dashboard](https://tellus.rs/tellus/comparison/), one directory per version
@@ -38,9 +41,9 @@ Three workloads, modeled on [`tellus/benches/messaging.rs`](../tellus/benches/me
 - `ping_pong`: pairs of actors play ping-pong for 1,000 rounds, with one pair and eight pairs.
 - `fan_out`: the bench thread sends 100,000 messages round-robin to eight and to 32 workers.
 
-Actor counts are fixed rather than derived from `available_parallelism`, so benchmark ids stay
-stable across machines and published results remain comparable. Also unlike the tellus bench,
-`fan_out` has the bench thread rather than a root actor distribute the messages.
+Actor counts are fixed, so benchmark ids stay stable across machines and published results remain
+comparable. Unlike the tellus bench, `fan_out` has the bench thread rather than a root actor
+distribute the messages.
 
 ## Why these two competitors
 
@@ -106,8 +109,7 @@ folding the speed configuration above into it; keep both in sync with
 3. **These are messaging microbenchmarks only.** They say nothing about supervision, distribution,
    ergonomics, memory use or production readiness. kameo and ractor are mature, feature-rich
    frameworks; tellus is under active development and does far less.
-4. **CI numbers come from a shared 2-core GitHub hosted runner**, so absolute figures there are
-   not representative of real deployments; only the relative comparison within a run is
-   meaningful.
+4. **CI numbers come from a shared GitHub hosted runner**, so absolute figures there are not
+   representative of real deployments; only the relative comparison within a run is meaningful.
 5. **Written and run by tellus's maintainer.** The methodology and every line of the benchmark are
    in this package; corrections and pull requests are welcome.

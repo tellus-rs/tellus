@@ -1,10 +1,13 @@
 //! The verifier of the cluster demo: it polls every node and the load balancer. Once the chaos
 //! agent has been quiet long enough for the cluster to have recovered, it asserts what the cluster
-//! promises: every node is a member, every node sees every other as Up, and every node can still
-//! message every other.
+//! promises: no two members have disjoint Up sets (a split brain), every node is a member, every
+//! node sees every other as Up with none unreachable and no broken link, every node's receptionist
+//! resolves every worker and is settled, every node resolves every subscriber of the event topic
+//! and has heard from every node lately, and every node can still message every other. A load
+//! balancer outage longer than the configured one is a violation at any time.
 //!
-//! Violations are logged, counted and served at `/violations`; the process keeps running, since
-//! this is a forever test rather than a run to completion.
+//! Violations are logged, counted and served at `/violations`, which keeps the latest 200; the
+//! process keeps running, since this is a forever test rather than a run to completion.
 
 use anyhow::Context;
 use axum::{Json, Router, extract::State, http::HeaderMap, response::IntoResponse, routing::get};

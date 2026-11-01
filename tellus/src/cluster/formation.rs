@@ -1,8 +1,8 @@
 //! Deciding whether this node forms a new cluster when a [bootstrap](fn@crate::cluster::bootstrap)
 //! round found none: [FormationProvider] is what
 //! [BootstrapConfig::formation](crate::cluster::BootstrapConfig::formation) takes, the default is
-//! [Majority], whose lowest-address rule stops a downed minority from re-forming inside a
-//! partition.
+//! [Majority], whose majority rule stops a downed minority from re-forming inside a partition and
+//! whose lowest-address rule makes the former unique.
 
 use std::{
     borrow::Cow,
@@ -18,7 +18,8 @@ pub type FormationProviderFactory = Arc<dyn Fn() -> Box<dyn FormationProvider> +
 
 /// Decides whether this node forms a new cluster, asked by
 /// [bootstrap](fn@crate::cluster::bootstrap) once a round of join attempts over a settled universe
-/// has been admitted nowhere; the default is [Majority].
+/// of at least [min_peers](crate::cluster::BootstrapConfig::min_peers) addresses has been admitted
+/// nowhere; the default is [Majority].
 ///
 /// A started endpoint is not a cluster, so forming one is a decision, and the wrong one splits
 /// the cluster in two. A node forming while it is merely partitioned from the others comes back
@@ -36,9 +37,10 @@ where
     fn observe(&mut self, _: &Formation) {}
 
     /// Whether this node forms a cluster now, and if not, why not. Bootstrap calls this only on a
-    /// round over a settled universe which no seed admitted, after
-    /// [observe](FormationProvider::observe) for the same round. Bootstrap logs a decline at warn
-    /// level when it differs from the previous one, at debug level otherwise.
+    /// round over a settled universe of at least
+    /// [min_peers](crate::cluster::BootstrapConfig::min_peers) addresses which no seed admitted,
+    /// after [observe](FormationProvider::observe) for the same round. Bootstrap logs a decline
+    /// at warn level when it differs from the previous one, at debug level otherwise.
     fn form(&mut self, formation: &Formation) -> Decision;
 }
 

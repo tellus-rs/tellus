@@ -35,6 +35,10 @@ where
     M: Manifest + 'static,
 {
     /// A topic under the given name.
+    ///
+    /// # Panics
+    /// Panics in debug builds if another type of this process has claimed the same
+    /// [Manifest::MANIFEST] as `M`.
     pub fn new(name: impl Into<String>) -> Self {
         Self {
             key: Key::topic(name),
