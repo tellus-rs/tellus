@@ -13,16 +13,17 @@ use quinn::{
 use rustls::{
     DigitallySignedStruct, SignatureScheme,
     client::danger::{HandshakeSignatureValid, ServerCertVerified, ServerCertVerifier},
-    crypto::CryptoProvider,
     pki_types::UnixTime,
 };
 use rustls::{
     RootCertStore,
+    crypto::{CryptoProvider, ring},
     pki_types::{
         CertificateDer, InvalidDnsNameError, PrivateKeyDer, ServerName,
         pem::{self, PemObject},
     },
     server::WebPkiClientVerifier,
+    version::TLS13,
 };
 use std::{
     io,
@@ -120,8 +121,8 @@ impl QuicTransport {
 
     /// A transport for mutual TLS from a [QuicConfig], the production configuration read from a
     /// config file: the certificate chain, the private key and the roots are read as PEM from the
-    /// paths it names, then given to [QuicTransport::mutual_tls]. A relative path resolves against
-    /// the process working directory.
+    /// paths it names, then given to [QuicTransport::mutual_tls], which also chooses the crypto
+    /// provider. A relative path resolves against the process working directory.
     ///
     /// This is where a [QuicConfig] is validated, its server name included: the config itself is
     /// plain data, since a path can only be checked by reading it.
@@ -163,10 +164,15 @@ impl QuicTransport {
     ///
     /// The certificates are read once: renewing them takes a restart.
     ///
+    /// The TLS configuration uses rustls's process default [CryptoProvider] if the application has
+    /// installed one, otherwise ring's default provider; it never installs a process default
+    /// itself. QUIC needs TLS 1.3 with the `TLS13_AES_128_GCM_SHA256` cipher suite. An installed
+    /// provider lacking either makes this fail; it does not fall back to ring.
+    ///
     /// # Errors
-    /// Fails if the client certificate verifier cannot be built from `roots`, if `cert_chain` and
-    /// `key` do not make a valid TLS configuration, if that configuration cannot back QUIC, or if
-    /// [QuicTransport::new] fails.
+    /// Fails if the client certificate verifier cannot be built from `roots`, if the crypto
+    /// provider offers no TLS 1.3 cipher suite, if `cert_chain` and `key` do not make a valid TLS
+    /// configuration, if that configuration cannot back QUIC, or if [QuicTransport::new] fails.
     pub fn mutual_tls(
         bind_addr: SocketAddr,
         cert_chain: Vec<CertificateDer<'static>>,
@@ -174,15 +180,19 @@ impl QuicTransport {
         roots: RootCertStore,
         server_name: impl Into<String>,
     ) -> Result<Self, QuicTransportError> {
+        let provider = crypto_provider();
         let roots = Arc::new(roots);
-        let verifier = WebPkiClientVerifier::builder(roots.clone()).build()?;
-        let tls_config = rustls::ServerConfig::builder()
+        let verifier =
+            WebPkiClientVerifier::builder_with_provider(roots.clone(), provider.clone()).build()?;
+        let tls_config = rustls::ServerConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&TLS13])?
             .with_client_cert_verifier(verifier)
             .with_single_cert(cert_chain.clone(), key.clone_key())?;
         let tls_config = QuicServerConfig::try_from(tls_config)?;
         let server_config = ServerConfig::with_crypto(Arc::new(tls_config));
 
-        let tls_config = rustls::ClientConfig::builder()
+        let tls_config = rustls::ClientConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&TLS13])?
             .with_root_certificates(roots)
             .with_client_auth_cert(cert_chain, key)?;
         let tls_config = QuicClientConfig::try_from(tls_config)?;
@@ -206,6 +216,9 @@ impl QuicTransport {
     /// Only available with the `cluster-dev` feature, so it cannot reach a production build
     /// which does not ask for it.
     ///
+    /// The client side chooses its crypto provider like [QuicTransport::mutual_tls], while the
+    /// server side always uses ring's default provider.
+    ///
     /// # Errors
     /// Fails if the self signed certificate cannot be generated, if it does not make a valid TLS
     /// configuration, if that configuration cannot back QUIC, or if [QuicTransport::new] fails.
@@ -220,11 +233,11 @@ impl QuicTransport {
         let key = PrivateKeyDer::Pkcs8(certified_key.signing_key.serialize_der().into());
         let server_config = ServerConfig::with_single_cert(vec![cert], key)?;
 
-        let tls_config = rustls::ClientConfig::builder()
+        let provider = crypto_provider();
+        let tls_config = rustls::ClientConfig::builder_with_provider(provider.clone())
+            .with_protocol_versions(&[&TLS13])?
             .dangerous()
-            .with_custom_certificate_verifier(Arc::new(AcceptAnyServerCert(
-                rustls::crypto::ring::default_provider(),
-            )))
+            .with_custom_certificate_verifier(Arc::new(AcceptAnyServerCert(provider)))
             .with_no_client_auth();
         let tls_config = QuicClientConfig::try_from(tls_config)?;
         let client_config = ClientConfig::new(Arc::new(tls_config));
@@ -575,7 +588,7 @@ impl FrameReceiver for QuicFrameReceiver {
 
 #[cfg(feature = "cluster-dev")]
 #[derive(Debug)]
-struct AcceptAnyServerCert(CryptoProvider);
+struct AcceptAnyServerCert(Arc<CryptoProvider>);
 
 #[cfg(feature = "cluster-dev")]
 impl ServerCertVerifier for AcceptAnyServerCert {
@@ -631,6 +644,12 @@ fn certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, QuicTransportError
     Ok(certs)
 }
 
+fn crypto_provider() -> Arc<CryptoProvider> {
+    CryptoProvider::get_default()
+        .cloned()
+        .unwrap_or_else(|| Arc::new(ring::default_provider()))
+}
+
 /// An unparsable certificate yields an empty identity, never a missing one, so it is refused.
 fn parse_identity(certificates: &[CertificateDer<'_>]) -> PeerIdentity {
     let mut identity = PeerIdentity {
@@ -682,6 +701,7 @@ mod tests {
     };
     use rustls::{
         RootCertStore,
+        crypto::CryptoProvider,
         pki_types::{PrivateKeyDer, pem::PemObject},
     };
     use std::{
@@ -1119,6 +1139,26 @@ mod tests {
             .expect("in time")
             .expect("accept task");
         assert_eq!(received, Some(b"hello".to_vec()));
+    }
+
+    /// Without a process default crypto provider, mutual TLS and dev transports build and leave
+    /// the process default unset, which is the application's to choose.
+    #[tokio::test]
+    async fn transports_build_without_installing_a_crypto_provider() {
+        assert!(
+            CryptoProvider::get_default().is_none(),
+            "a process default crypto provider is installed"
+        );
+
+        let dir = tempfile::tempdir().expect("temp dir");
+        let config = mtls_configs(dir.path(), 1).remove(0);
+        QuicTransport::from_config(&config).expect("mutual TLS transport");
+        QuicTransport::dev(config.bind_addr).expect("dev transport");
+
+        assert!(
+            CryptoProvider::get_default().is_none(),
+            "building a transport installed a process default crypto provider"
+        );
     }
 
     /// An unreadable PEM file names the file which failed, and a server name no certificate could
