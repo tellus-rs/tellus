@@ -6,8 +6,9 @@ use thiserror::Error;
 use tracing::warn;
 
 /// A store of event streams, one per [PersistenceId], operating on encoded payloads: the durable
-/// source of truth. Sequence numbers are per stream, gapless and start at 0. Implementations must
-/// be cheap to clone, e.g. by wrapping a connection pool.
+/// source of truth. Sequence numbers are per stream, gapless and start at 0. Every event reads back
+/// with manifest, schema version and payload exactly as written. Implementations must be cheap to
+/// clone, e.g. by wrapping a connection pool.
 #[trait_variant::make(Send)]
 pub trait EventStore
 where
@@ -51,8 +52,9 @@ where
 }
 
 /// A store of snapshots, at most the latest one per [PersistenceId]: a discardable derivative of
-/// the events, never a source of truth. Implementations must be cheap to clone, e.g. by wrapping
-/// a connection pool.
+/// the events, never a source of truth. A snapshot loads back with manifest, schema version and
+/// payload exactly as written. Implementations must be cheap to clone, e.g. by wrapping a
+/// connection pool.
 #[trait_variant::make(Send)]
 pub trait SnapshotStore
 where

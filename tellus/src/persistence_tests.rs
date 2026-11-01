@@ -410,7 +410,8 @@ pub async fn snapshot_store_contract<S>(store: S)
 where
     S: SnapshotStore,
 {
-    snapshots_round_trip_and_the_latest_wins(store).await;
+    snapshots_round_trip_and_the_latest_wins(store.clone()).await;
+    snapshots_are_isolated(store).await;
 }
 
 /// An unknown ID loads no snapshot; a saved snapshot loads back untouched together with the
@@ -456,6 +457,53 @@ where
             snapshot: second,
         }),
         "saving again must replace the earlier snapshot"
+    );
+}
+
+/// Snapshots are isolated per persistence ID: snapshots saved under two IDs of the same entity
+/// type each load back as their own, with their own sequence number.
+pub async fn snapshots_are_isolated<S>(store: S)
+where
+    S: SnapshotStore,
+{
+    let id_a = unique_persistence_id();
+    let id_b = unique_persistence_id();
+    let snapshot_a = sample_snapshot(1);
+    let snapshot_b = sample_snapshot(2);
+
+    store
+        .save(&id_a, SeqNo::new(3), snapshot_a.clone())
+        .await
+        .expect("the save under the first ID must succeed");
+    store
+        .save(&id_b, SeqNo::new(5), snapshot_b.clone())
+        .await
+        .expect("the save under the second ID must succeed");
+
+    let loaded_a = store
+        .load(&id_a)
+        .await
+        .expect("loading the first ID must succeed");
+    let loaded_b = store
+        .load(&id_b)
+        .await
+        .expect("loading the second ID must succeed");
+
+    assert_eq!(
+        loaded_a,
+        Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(3),
+            snapshot: snapshot_a,
+        }),
+        "the first ID must load exactly its own snapshot"
+    );
+    assert_eq!(
+        loaded_b,
+        Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(5),
+            snapshot: snapshot_b,
+        }),
+        "the second ID must load exactly its own snapshot"
     );
 }
 
