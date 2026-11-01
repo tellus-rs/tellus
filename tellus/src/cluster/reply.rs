@@ -211,7 +211,7 @@ impl PendingReplies {
                         occupied.get_mut().dispatch = Dispatch::Sent(destination)
                     }
 
-                    Dispatch::CancelledInFlight(_) => {
+                    Dispatch::CanceledInFlight(_) => {
                         let entry = occupied.remove();
                         cancellations.extend(entry.cancellation(tag.nonce));
                         released.push(entry);
@@ -371,7 +371,7 @@ impl PendingReplies {
         let nonces = pending
             .iter()
             .filter(|(_, entry)| {
-                !matches!(entry.dispatch, Dispatch::CancelledInFlight(_)) && matches(entry)
+                !matches!(entry.dispatch, Dispatch::CanceledInFlight(_)) && matches(entry)
             })
             .map(|(nonce, _)| *nonce)
             .collect::<Vec<_>>();
@@ -536,7 +536,7 @@ pub(crate) fn on_reply_dropped(endpoint: &EndpointInner, peer: NodeId, nonce: No
     endpoint.pending_replies().take_from(nonce, peer);
 }
 
-pub(crate) fn on_reply_cancelled(endpoint: &EndpointInner, origin: NodeId, nonce: Nonce) {
+pub(crate) fn on_reply_canceled(endpoint: &EndpointInner, origin: NodeId, nonce: Nonce) {
     send_cancellations(
         endpoint,
         endpoint.pending_replies().cancel_proxy(ProxyOrigin {
@@ -553,7 +553,7 @@ pub(crate) fn send_cancellations(endpoint: &EndpointInner, cancellations: Vec<Ca
         stream,
     } in cancellations
     {
-        if let Err(error) = endpoint.send(peer, Frame::ReplyCancelled { nonce, stream }) {
+        if let Err(error) = endpoint.send(peer, Frame::ReplyCanceled { nonce, stream }) {
             debug!(%peer, %nonce, %error, "cannot send reply cancellation");
         }
     }
@@ -616,7 +616,7 @@ impl PendingReply {
 enum Dispatch {
     Unsent,
     InFlight(Destination),
-    CancelledInFlight(Destination),
+    CanceledInFlight(Destination),
     Sent(Destination),
 }
 
@@ -626,7 +626,7 @@ impl Dispatch {
             Dispatch::Unsent => None,
 
             Dispatch::InFlight(destination)
-            | Dispatch::CancelledInFlight(destination)
+            | Dispatch::CanceledInFlight(destination)
             | Dispatch::Sent(destination) => Some(destination),
         }
     }
@@ -730,10 +730,10 @@ where
         };
         match occupied.get().dispatch {
             Dispatch::InFlight(destination) => {
-                occupied.get_mut().dispatch = Dispatch::CancelledInFlight(destination)
+                occupied.get_mut().dispatch = Dispatch::CanceledInFlight(destination)
             }
 
-            Dispatch::CancelledInFlight(_) => {}
+            Dispatch::CanceledInFlight(_) => {}
 
             Dispatch::Unsent | Dispatch::Sent(_) => {
                 let entry = occupied.remove();
@@ -833,7 +833,7 @@ mod tests {
             node::NodeId,
             reply::{
                 AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, note_minted,
-                on_reply_cancelled, record_minted,
+                on_reply_canceled, record_minted,
             },
         },
         mailbox::make_mailbox,
@@ -1104,17 +1104,17 @@ mod tests {
         let stream = Some(StreamKey::Actor(ActorId::new()));
         send_stamped(endpoint.pending_replies(), &[tag(forwarded)], next, stream);
 
-        on_reply_cancelled(endpoint, next, origin_nonce);
+        on_reply_canceled(endpoint, next, origin_nonce);
         assert!(dial_requests.is_empty(), "only the origin may cancel");
 
-        on_reply_cancelled(endpoint, origin, origin_nonce);
+        on_reply_canceled(endpoint, origin, origin_nonce);
 
         assert!(endpoint.pending_replies().take(forwarded).is_none());
         let lane = dial_requests.try_recv().expect("the next node is dialed");
         assert_eq!(lane.addr, next.addr());
         assert!(matches!(
             lane.control_rx.try_recv(),
-            Ok(frame @ Frame::ReplyCancelled { nonce, .. })
+            Ok(frame @ Frame::ReplyCanceled { nonce, .. })
                 if nonce == forwarded && frame.stream_key() == stream
         ));
     }

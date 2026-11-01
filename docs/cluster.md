@@ -630,7 +630,7 @@ the far side as unknown targets, at-most-once either way.
   the origin it forwards for. Downing evicts it with either: with its next node, which owes the
   reply, as for any request, and with its origin, which nothing would deliver the reply to anymore.
   An entry which was sent can also be released without its reply, by an ask's timeout or drop or by
-  its recipient's termination. Its node then sends a `ReplyCancelled` frame to the peer it was sent
+  its recipient's termination. Its node then sends a `ReplyCanceled` frame to the peer it was sent
   to, on the stream which carried the request. That frame is never sent before the request is
   queued, so the cancellation never overtakes it. That peer releases what it forwarded on behalf of
   that entry and cancels further down the chain in turn, so no hop outlives the origin's interest.

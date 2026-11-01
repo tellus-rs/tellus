@@ -48,7 +48,7 @@ leave_node() {
     sleep "$RECOVERY_SECS"
 }
 
-# Labelling is the whole fault: partition.yaml denies each side ingress from the other, and a
+# Labeling is the whole fault: partition.yaml denies each side ingress from the other, and a
 # recreated pod comes back without a label, so nothing has to be undone by hand after a crash.
 partition() {
     minority="$*"

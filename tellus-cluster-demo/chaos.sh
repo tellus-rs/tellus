@@ -52,7 +52,7 @@ leave_node() {
     revive "$1"
 }
 
-# A container signalled through the API counts as manually stopped, which no restart policy
+# A container signaled through the API counts as manually stopped, which no restart policy
 # undoes; only a node exiting on its own, e.g. once the cluster has downed it, is restarted.
 revive() {
     docker start "$(container "$1")" || echo "docker start failed"
