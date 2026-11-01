@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.3](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.2...tellus-bootstrap-dns-v0.1.3) - 2026-11-01
+
+### Other
+
+- fix the findings of the documentation review
+- correct stale statements on inspect, min_peers, caching and lb
+
 ## [0.1.2](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.1...tellus-bootstrap-dns-v0.1.2) - 2026-10-29
 
 ### Other
