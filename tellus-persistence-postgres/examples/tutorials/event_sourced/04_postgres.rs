@@ -8,13 +8,12 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
 use std::{convert::Infallible, env, time::Duration};
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, Incoming, Persistence, PersistenceId, ReplyTo,
     SchemaVersion, Untimed, Versioned,
 };
-use tellus_persistence_postgres::PostgresStore;
+use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
 
 const DATABASE_URL: &str = "postgres://tellus:tellus@localhost:5432/tellus";
 const SNAPSHOT_EVERY: u64 = 3;

@@ -8,12 +8,33 @@
 //! conditional statement: an expected next sequence number not matching the actual one, below or
 //! above, fails with [AppendError::Conflict] and leaves the stream untouched, which is tellus's
 //! fencing guarantee. An empty append inserts nothing but is still fenced.
+//!
+//! [PostgresStore::new] takes a [PgPool] of the [sqlx] version this crate depends on. The crate
+//! re-exports sqlx, so an application builds the pool through it and needs no sqlx dependency of
+//! its own:
+//!
+//! ```rust,no_run
+//! use tellus::Persistence;
+//! use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
+//!
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! let pool = PgPool::connect("postgres://tellus:tellus@localhost:5432/tellus").await?;
+//! let store = PostgresStore::new(pool);
+//! store.migrate().await?;
+//!
+//! let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
+//! # Ok(())
+//! # }
+//! ```
 
 #![doc(
     html_logo_url = "https://tellus.rs/brand/logo-tile.svg",
     html_favicon_url = "https://tellus.rs/favicon.svg"
 )]
 #![warn(missing_docs, clippy::missing_errors_doc)]
+
+pub use sqlx;
 
 use sqlx::{PgPool, Row, migrate::Migrator, postgres::PgRow};
 use std::num::NonZeroUsize;
