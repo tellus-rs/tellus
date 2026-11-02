@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793619296241,
+  "lastUpdate": 1793619297674,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -13981,6 +13981,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 114910,
             "range": "± 4058",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3ac5e8697aa922cfddb58bcf87d16051cd684c8",
+          "message": "Merge pull request #241 from tellus-rs/chore/compose-yaml\n\nchore: rename docker-compose.yaml to compose.yaml",
+          "timestamp": "2026-11-02T12:27:25+01:00",
+          "tree_id": "84f08f380a309b55de97d82d8a890d1c37de6b95",
+          "url": "https://github.com/tellus-rs/tellus/commit/b3ac5e8697aa922cfddb58bcf87d16051cd684c8"
+        },
+        "date": 1793619297429,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3017208,
+            "range": "± 84092",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3023328,
+            "range": "± 79065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1398736,
+            "range": "± 7104",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 160814,
+            "range": "± 2896",
             "unit": "ns/iter"
           }
         ]
