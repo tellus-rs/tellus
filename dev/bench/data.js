@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793577780533,
+  "lastUpdate": 1793619296241,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -8579,6 +8579,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22404262,
             "range": "± 759590",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b3ac5e8697aa922cfddb58bcf87d16051cd684c8",
+          "message": "Merge pull request #241 from tellus-rs/chore/compose-yaml\n\nchore: rename docker-compose.yaml to compose.yaml",
+          "timestamp": "2026-11-02T12:27:25+01:00",
+          "tree_id": "84f08f380a309b55de97d82d8a890d1c37de6b95",
+          "url": "https://github.com/tellus-rs/tellus/commit/b3ac5e8697aa922cfddb58bcf87d16051cd684c8"
+        },
+        "date": 1793619295793,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13293453,
+            "range": "± 703005",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14500299,
+            "range": "± 641288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 942087,
+            "range": "± 36333",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 818523,
+            "range": "± 6735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5834645,
+            "range": "± 125188",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4256421,
+            "range": "± 27574",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19289416,
+            "range": "± 792724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20064720,
+            "range": "± 979386",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19338723,
+            "range": "± 899380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19904363,
+            "range": "± 696461",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19519903,
+            "range": "± 666097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 20969036,
+            "range": "± 604512",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 26539806,
+            "range": "± 866546",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19753759,
+            "range": "± 742728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21602019,
+            "range": "± 659960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 26906520,
+            "range": "± 1154991",
             "unit": "ns/iter"
           }
         ]
