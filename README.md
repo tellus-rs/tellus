@@ -19,7 +19,7 @@
 [crates-url]: https://crates.io/crates/tellus
 [license-badge]: https://img.shields.io/github/license/tellus-rs/tellus
 [license-url]: https://github.com/tellus-rs/tellus/blob/main/LICENSE
-[build-badge]: https://img.shields.io/github/actions/workflow/status/tellus-rs/tellus/ci.yml
+[build-badge]: https://img.shields.io/github/actions/workflow/status/tellus-rs/tellus/ci.yml?branch=main
 [build-url]: https://github.com/tellus-rs/tellus/actions/workflows/ci.yml
 [docs-badge]: https://img.shields.io/docsrs/tellus/latest
 [docs-url]: https://docs.rs/tellus/latest/tellus/
