@@ -2,7 +2,7 @@
 //! this program records one reading and recovers all earlier ones, so the count of readings grows
 //! from run to run.
 //!
-//! It needs the `postgres` service of the repository's docker-compose.yaml, started via
+//! It needs the `postgres` service of the repository's compose.yaml, started via
 //! `docker compose up -d --wait postgres`. The database is addressed via `DATABASE_URL`, defaulting
 //! to that service; `docker compose down -v postgres` resets the readings.
 

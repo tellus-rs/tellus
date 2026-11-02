@@ -50,7 +50,7 @@ is tellus's fencing guarantee. An empty append inserts nothing but is still fenc
 ## Examples
 
 All three need the `postgres` service of the repository's
-[docker-compose.yaml](../docker-compose.yaml); start it with `docker compose up -d --wait postgres`.
+[compose.yaml](../compose.yaml); start it with `docker compose up -d --wait postgres`.
 The database is addressed via `DATABASE_URL`, defaulting to that service. `docker compose down`
 stops it, `down -v` resets the data.
 
@@ -84,7 +84,7 @@ stops it, `down -v` resets the data.
 [`tests/store.rs`](tests/store.rs) runs the contract test suite which ships with `tellus` behind
 its `persistence-tests` feature against a real server, started via testcontainers, hence Docker is
 required. Image tag and credentials are read out of the repository's
-[docker-compose.yaml](../docker-compose.yaml) at compile time via
+[compose.yaml](../compose.yaml) at compile time via
 [`composed`](https://crates.io/crates/composed), so there is one place to change either.
 
 ## License
