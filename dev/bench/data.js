@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793644958346,
+  "lastUpdate": 1793644961630,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14317,6 +14317,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 113278,
             "range": "± 5023",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "be20e901f433066bc2bffeafc96988351333a943",
+          "message": "Merge pull request #244 from tellus-rs/docs/build-badge-branch\n\ndocs: show the build badge for main only",
+          "timestamp": "2026-11-02T19:35:05+01:00",
+          "tree_id": "942e4bb4f133a4659868c91775e9d0a4b3ff2e2f",
+          "url": "https://github.com/tellus-rs/tellus/commit/be20e901f433066bc2bffeafc96988351333a943"
+        },
+        "date": 1793644961049,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3005323,
+            "range": "± 97268",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3014028,
+            "range": "± 35402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1395427,
+            "range": "± 12980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 160101,
+            "range": "± 4226",
             "unit": "ns/iter"
           }
         ]
