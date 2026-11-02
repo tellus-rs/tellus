@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>tellus comparison benchmarks (tellus-v0.5.3)</title>
+<meta name="description" content="Messaging throughput of tellus against kameo and ractor for tellus-v0.5.3, with the methodology and its caveats.">
+<link rel="canonical" href="https://tellus.rs/tellus/comparison/latest/">
+<link rel="icon" href="https://tellus.rs/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="https://tellus.rs/dashboards.css">
+</head>
+<body>
+<header class="top"><div class="wrap">
+<a class="brand" href="https://tellus.rs/" aria-label="tellus home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2.33 13h27.35" stroke="currentColor" stroke-width="2.5"/><path d="M2.44 19.5h27.11M5.45 25.2h21.11" stroke="var(--accent)" stroke-width="2.5"/><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>tellus</a>
+<nav class="nav" aria-label="Main"><a href="https://tellus.rs/docs/">Docs</a><a href="https://tellus.rs/tellus/comparison/" aria-current="page">Comparison</a><a href="https://tellus.rs/tellus/dev/bench/">Regression benchmarks</a><a href="https://github.com/tellus-rs/tellus">GitHub</a></nav>
+</div></header>
+<main class="wrap">
+<p class="eyebrow">Comparison benchmarks, tellus-v0.5.3</p>
+<h1>tellus against kameo and ractor</h1>
+<p class="lede">Messaging throughput, higher is better.</p>
+
+<dl class="meta">
+<dt>Tag</dt><dd>tellus-v0.5.3</dd>
+<dt>Commit</dt><dd>819cdbbd1a822b5b01db17328d3cf429b7df76ec</dd>
+<dt>Date</dt><dd>2026-11-02T00:08:48Z</dd>
+<dt>Versions</dt><dd>kameo 0.22.2, ractor 0.16.5, tellus 0.5.3</dd>
+<dt>CPU</dt><dd>Intel(R) Xeon(R) 6975P-C (4 cores)</dd>
+<dt>OS</dt><dd>Linux 7.0.0-1014-aws</dd>
+<dt>Toolchain</dt><dd>rustc 1.99.0 (b940084d7 2026-09-28)</dd>
+</dl>
+
+<div class="caveats">
+<h2>Read this before drawing conclusions</h2>
+<ol>
+<li><strong>tellus's <code>receive</code> is synchronous; kameo's and ractor's handlers are <code>async fn</code>.</strong>
+tellus therefore avoids allocating and polling a future per message, but cannot await inside <code>receive</code>.
+This is a capability difference, not only a speed difference, and it favors tellus on exactly these microbenchmarks.</li>
+<li><strong>tellus's mailbox is statically typed; the others erase message types</strong>, costing an allocation
+and a dynamic dispatch per message that tellus does not pay.</li>
+<li><strong>Competitors are configured for speed, not defaults.</strong> kameo runs without <code>tracing</code>
+and ractor without <code>message_span_propogation</code>, both of which add per-message instrumentation that
+tellus has no equivalent of. This biases the setup in the competitors' favor.</li>
+<li><strong>Messaging microbenchmarks only.</strong> Nothing here speaks to supervision, distribution,
+ergonomics, memory use or production readiness. kameo and ractor are mature, feature-rich frameworks; tellus is
+under active development and does far less.</li>
+<li><strong>On CI these run on a shared runner</strong>, so absolute figures are not representative of real
+deployments. Only the relative comparison within a single run is meaningful.</li>
+<li><strong>Written and run by tellus's maintainer.</strong> The full methodology and benchmark source are in the
+repository; corrections are welcome.</li>
+</ol>
+</div>
+<h2>fan_out (8)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">13.458 ms</td><td class="num">7.43 M/s</td><td class="num">0.45x</td><td class="barcell"><span class="bar" style="width:45.0%"></span></td></tr><tr><td>ractor</td><td class="num">8.777 ms</td><td class="num">11.39 M/s</td><td class="num">0.69x</td><td class="barcell"><span class="bar" style="width:69.0%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">6.054 ms</td><td class="num">16.52 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>fan_out (32)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">10.861 ms</td><td class="num">9.21 M/s</td><td class="num">0.38x</td><td class="barcell"><span class="bar" style="width:38.3%"></span></td></tr><tr><td>ractor</td><td class="num">7.675 ms</td><td class="num">13.03 M/s</td><td class="num">0.54x</td><td class="barcell"><span class="bar" style="width:54.2%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">4.159 ms</td><td class="num">24.04 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>flood</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">27.323 ms</td><td class="num">3.66 M/s</td><td class="num">0.58x</td><td class="barcell"><span class="bar" style="width:57.5%"></span></td></tr><tr><td>ractor</td><td class="num">18.307 ms</td><td class="num">5.46 M/s</td><td class="num">0.86x</td><td class="barcell"><span class="bar" style="width:85.8%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">15.712 ms</td><td class="num">6.36 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>ping_pong (1)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">1.053 ms</td><td class="num">1.90 M/s</td><td class="num">0.69x</td><td class="barcell"><span class="bar" style="width:68.9%"></span></td></tr><tr><td>ractor</td><td class="num">0.844 ms</td><td class="num">2.37 M/s</td><td class="num">0.86x</td><td class="barcell"><span class="bar" style="width:85.9%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">0.725 ms</td><td class="num">2.76 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+<h2>ping_pong (8)</h2>
+<div class="scroll"><table>
+<thead><tr><th>Framework</th><th class="num">Time</th><th class="num">Throughput</th><th class="num">vs fastest</th><th></th></tr></thead>
+<tbody><tr><td>kameo</td><td class="num">2.118 ms</td><td class="num">7.55 M/s</td><td class="num">0.67x</td><td class="barcell"><span class="bar" style="width:67.2%"></span></td></tr><tr><td>ractor</td><td class="num">1.783 ms</td><td class="num">8.97 M/s</td><td class="num">0.80x</td><td class="barcell"><span class="bar" style="width:79.8%"></span></td></tr><tr class="own"><td>tellus</td><td class="num">1.423 ms</td><td class="num">11.24 M/s</td><td class="num">1.00x</td><td class="barcell"><span class="bar" style="width:100.0%"></span></td></tr></tbody>
+</table></div>
+
+<div class="foot"><span>Generated from criterion results.</span><span><a href="../">All runs</a> &middot; <a href="../../dev/bench/">Regression benchmarks</a></span></div>
+</main>
+</body>
+</html>
