@@ -23,10 +23,10 @@ use tokio::time::timeout;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Image tag and credentials come from the repository's docker-compose.yaml, so the tests always
+/// Image tag and credentials come from the repository's compose.yaml, so the tests always
 /// run against the version and settings developers run locally, never against the testcontainers
 /// defaults.
-static COMPOSE: LazyLock<Compose> = LazyLock::new(|| compose!("../docker-compose.yaml"));
+static COMPOSE: LazyLock<Compose> = LazyLock::new(|| compose!("../compose.yaml"));
 
 #[tokio::test]
 async fn event_store_contract() {

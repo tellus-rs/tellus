@@ -7,7 +7,7 @@
 //! The output is printed to stdout and tellus logs the failures and restarts to stderr; the log
 //! level is configured via `RUST_LOG`.
 //!
-//! It needs the `postgres` service of the repository's docker-compose.yaml, started via
+//! It needs the `postgres` service of the repository's compose.yaml, started via
 //! `docker compose up -d --wait postgres`. The database is addressed via `DATABASE_URL`, defaulting
 //! to that service; `docker compose down -v postgres` resets the count.
 

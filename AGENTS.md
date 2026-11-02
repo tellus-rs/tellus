@@ -292,9 +292,9 @@ Item order within a file:
   client dropping mid-recovery recovers again. Part of `just all` like the bootstrap crates.
 - `tellus-persistence-postgres/`: the PostgreSQL stores (`PostgresStore` implements `EventStore`
   and `SnapshotStore`). Tests need Docker (testcontainers) and run as part of `just all`; their
-  image tag and credentials come from the root `docker-compose.yaml` via `composed`, so there is
+  image tag and credentials come from the root `compose.yaml` via `composed`, so there is
   one place to change either. Its examples need the `postgres` service from the root
-  `docker-compose.yaml`: start it with `docker compose up -d --wait postgres`, then `cargo run
+  `compose.yaml`: start it with `docker compose up -d --wait postgres`, then `cargo run
   --quiet -p tellus-persistence-postgres --example event_sourced_counter` (or
   `event_sourced_supervision`); `docker compose down` stops it, `down -v` resets the data.
 - `tellus/src/persistence_tests.rs` (feature `persistence-tests`, implies `persistence`): the
@@ -307,7 +307,7 @@ Item order within a file:
   `tellus/tests/host_persistence.rs` uses it directly, and the persistence bench and the profiling
   example run on it too.
 - `composed`: a crates.io dependency which reads image name, tag and environment variables out of
-  a `docker-compose.yaml` at compile time, so testcontainers-based tests use the same image
+  a `compose.yaml` at compile time, so testcontainers-based tests use the same image
   version and credentials as the local stack instead of hardcoding them.
   `tellus-persistence-postgres/tests/store.rs` holds it in a `static COMPOSE: LazyLock<Compose>`
   built by the `compose!` macro, whose path argument is relative to the *calling* crate's

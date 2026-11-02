@@ -207,13 +207,13 @@ lint-comparison:
     cargo clippy -p tellus-comparison --all-targets --no-deps -- -D warnings
 
 start-cluster-demo-compose:
-    docker compose -f tellus-cluster-demo/docker-compose.yaml up -d --build
+    docker compose -f tellus-cluster-demo/compose.yaml up -d --build
 
 stop-cluster-demo-compose:
-    docker compose -f tellus-cluster-demo/docker-compose.yaml down -v
+    docker compose -f tellus-cluster-demo/compose.yaml down -v
 
 logs-cluster-demo-compose *args:
-    docker compose -f tellus-cluster-demo/docker-compose.yaml logs -f {{ args }}
+    docker compose -f tellus-cluster-demo/compose.yaml logs -f {{ args }}
 
 start-cluster-demo-k8s discovery="dns":
     #!/usr/bin/env bash

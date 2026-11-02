@@ -429,7 +429,7 @@ Beyond the tutorials:
 
 Further event-sourced examples, against PostgreSQL, live with the stores in
 [`tellus-persistence-postgres`](../tellus-persistence-postgres); all three of them need the
-`postgres` service from the root `docker-compose.yaml`:
+`postgres` service from the root `compose.yaml`:
 
 ```shell
 docker compose up -d --wait postgres
