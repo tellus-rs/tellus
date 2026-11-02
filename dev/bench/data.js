@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793630852422,
+  "lastUpdate": 1793630854308,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14149,6 +14149,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160814,
             "range": "± 2896",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "27415fb1755b6b9f3291c263f5ac4e17ea5a2c8d",
+          "message": "Merge pull request #236 from tellus-rs/perf/encode-events-plain-loop\n\nperf: encode events in a plain loop",
+          "timestamp": "2026-11-02T14:40:35Z",
+          "tree_id": "1b9561019a20a5cc8d4a5a7e0912d22e7ca410a6",
+          "url": "https://github.com/tellus-rs/tellus/commit/27415fb1755b6b9f3291c263f5ac4e17ea5a2c8d"
+        },
+        "date": 1793630853814,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2181099,
+            "range": "± 89076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2206689,
+            "range": "± 92627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 967212,
+            "range": "± 18569",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 113278,
+            "range": "± 5023",
             "unit": "ns/iter"
           }
         ]
