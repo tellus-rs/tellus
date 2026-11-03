@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793718010086,
+  "lastUpdate": 1793726991236,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9179,6 +9179,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27518567,
             "range": "± 1001016",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abf898cc49c4c6ef2b85460a8cf3c22c1b81351c",
+          "message": "Merge pull request #247 from tellus-rs/ci/codegen-stale-patterns\n\nci: fix the stale patterns of codegen.sh",
+          "timestamp": "2026-11-03T17:22:07Z",
+          "tree_id": "f8daa2f63eaf26eebb846ac2444c75850a7c1888",
+          "url": "https://github.com/tellus-rs/tellus/commit/abf898cc49c4c6ef2b85460a8cf3c22c1b81351c"
+        },
+        "date": 1793726986107,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14624275,
+            "range": "± 876807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14045271,
+            "range": "± 865636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 834046,
+            "range": "± 36600",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 822318,
+            "range": "± 5537",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5901382,
+            "range": "± 129702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4276255,
+            "range": "± 27741",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19808700,
+            "range": "± 484050",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20261888,
+            "range": "± 634117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19752816,
+            "range": "± 429146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20446996,
+            "range": "± 570589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19997621,
+            "range": "± 554176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21578793,
+            "range": "± 463796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27574678,
+            "range": "± 782675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20041454,
+            "range": "± 422597",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21904216,
+            "range": "± 745659",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27662182,
+            "range": "± 608989",
             "unit": "ns/iter"
           }
         ]
