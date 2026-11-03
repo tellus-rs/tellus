@@ -1,6 +1,6 @@
 [package]
 name          = "tellus"
-description   = "An actor framework for Rust: typed messages, supervision trees, death watch, event sourcing."
+description   = "An actor framework for Rust: supervision, ordered death watch, event sourcing and clustering."
 version       = "0.5.3"
 edition       = { workspace = true }
 license       = { workspace = true }
