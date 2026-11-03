@@ -51,6 +51,6 @@ jobs:
           toolchain: ${{ needs.toolchain.outputs.toolchain }}
 
       - name: Run release-plz
-        uses: MarcoIeni/release-plz-action@7ef5e4d4b0420630cfcaeb182c01e13651d4c577 # v0.5.145
+        uses: MarcoIeni/release-plz-action@f67a7e724bdad4a0f6875f186060a0ca2770d76c # v0.5.147
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
