@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793666063849,
+  "lastUpdate": 1793666066578,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14485,6 +14485,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 160101,
             "range": "± 4226",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7634bc67e81aafc63cd30c4d82c536189b03a9fa",
+          "message": "Merge pull request #245 from tellus-rs/docs/crate-description\n\ndocs: mention clustering in the crate description",
+          "timestamp": "2026-11-03T01:27:10+01:00",
+          "tree_id": "af5fe899ef656bd952aa83ce9fc2345dfab8e392",
+          "url": "https://github.com/tellus-rs/tellus/commit/7634bc67e81aafc63cd30c4d82c536189b03a9fa"
+        },
+        "date": 1793666066127,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2482491,
+            "range": "± 199119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2549380,
+            "range": "± 208868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 683407,
+            "range": "± 7792",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 100643,
+            "range": "± 5791",
             "unit": "ns/iter"
           }
         ]
