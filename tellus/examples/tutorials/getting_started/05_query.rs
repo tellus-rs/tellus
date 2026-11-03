@@ -5,7 +5,8 @@
 use anyhow::Context;
 use std::{collections::HashMap, convert::Infallible, time::Duration};
 use tellus::{
-    Actor, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Untimed,
+    Actor, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed,
+    Untimed,
 };
 
 // ANCHOR: main
@@ -46,6 +47,7 @@ struct Group;
 impl Actor for Group {
     type Message = GroupMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
     type Error = Infallible;
 
@@ -117,6 +119,7 @@ struct Query;
 impl Actor for Query {
     type Message = QueryMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = QueryState;
     type Error = Infallible;
 
@@ -232,6 +235,7 @@ struct Device;
 impl Actor for Device {
     type Message = DeviceMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<f64>;
     type Error = Infallible;
 

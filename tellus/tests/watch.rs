@@ -7,7 +7,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming,
-    MailboxCapacity, Nothing, Untimed,
+    MailboxCapacity, Nothing, Unstashed, Untimed,
 };
 use tokio::{sync::mpsc, task::block_in_place, time::timeout};
 
@@ -262,6 +262,7 @@ struct Root(mpsc::Sender<()>);
 impl Actor for Root {
     type Message = RootMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ActorRef<Stop>;
     type Error = Infallible;
 
@@ -308,6 +309,7 @@ struct Counter(mpsc::Sender<u32>);
 impl Actor for Counter {
     type Message = Report;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -343,6 +345,7 @@ struct Reporter(ActorRef<Report>);
 impl Actor for Reporter {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -375,6 +378,7 @@ struct MultiWatchRoot(mpsc::Sender<MultiWatchOutcome>);
 impl Actor for MultiWatchRoot {
     type Message = MultiWatchMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = MultiWatch;
     type Error = Infallible;
 
@@ -460,6 +464,7 @@ struct ReportingWatcher {
 impl Actor for ReportingWatcher {
     type Message = Nothing;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -487,6 +492,7 @@ struct DoubleWatcher(mpsc::Sender<DoubleWatchOutcome>);
 impl Actor for DoubleWatcher {
     type Message = Marker;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = DoubleWatch;
     type Error = Infallible;
 
@@ -552,6 +558,7 @@ struct UnwatchingRoot(mpsc::Sender<UnwatchOutcome>);
 impl Actor for UnwatchingRoot {
     type Message = ActorRef<Stop>;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = (ActorRef<Stop>, Option<ActorId>);
     type Error = Infallible;
 
@@ -603,6 +610,7 @@ struct Guardian(ActorRef<ActorRef<Stop>>);
 impl Actor for Guardian {
     type Message = Stop;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -632,6 +640,7 @@ struct BlockedUnwatcher {
 impl Actor for BlockedUnwatcher {
     type Message = BlockedMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ActorRef<Stop>;
     type Error = Infallible;
 
@@ -687,6 +696,7 @@ struct BlockedFloodWatcher {
 impl Actor for BlockedFloodWatcher {
     type Message = FloodMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = (ActorRef<Stop>, u32);
     type Error = Infallible;
 
@@ -735,6 +745,7 @@ struct Observer {
 impl Actor for Observer {
     type Message = Nothing;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -760,6 +771,7 @@ struct RewatchingRoot;
 impl Actor for RewatchingRoot {
     type Message = Nothing;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -793,6 +805,7 @@ struct Coordinator {
 impl Actor for Coordinator {
     type Message = CoordinatorMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Round;
     type Error = Infallible;
 
@@ -877,6 +890,7 @@ struct Target;
 impl Actor for Target {
     type Message = Stop;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -906,6 +920,7 @@ struct PreWatcher {
 impl Actor for PreWatcher {
     type Message = Nothing;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -935,6 +950,7 @@ struct LateWatcher {
 impl Actor for LateWatcher {
     type Message = Go;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

@@ -3,7 +3,9 @@
 
 use anyhow::Context;
 use std::{collections::HashMap, convert::Infallible, time::Duration};
-use tellus::{Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Untimed};
+use tellus::{
+    Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
+};
 
 // ANCHOR: main
 #[tokio::main]
@@ -52,6 +54,7 @@ struct Group;
 impl Actor for Group {
     type Message = GroupMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
     type Error = Infallible;
 
@@ -115,6 +118,7 @@ struct Device;
 impl Actor for Device {
     type Message = DeviceMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<f64>;
     type Error = Infallible;
 

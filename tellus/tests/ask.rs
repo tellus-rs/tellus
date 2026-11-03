@@ -8,7 +8,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, AskError, Backoff, Control, Incoming,
-    MailboxCapacity, ReplyTo, RestartPolicy, SupervisionStrategy, Untimed,
+    MailboxCapacity, ReplyTo, RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
 };
 use tokio::{
     sync::mpsc,
@@ -348,6 +348,7 @@ struct Responder;
 impl Actor for Responder {
     type Message = Request;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -402,6 +403,7 @@ struct BlockedResponder {
 impl Actor for BlockedResponder {
     type Message = BlockedRequest;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -451,6 +453,7 @@ struct Asker(mpsc::Sender<u64>);
 impl Actor for Asker {
     type Message = AskerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -492,6 +495,7 @@ struct Coordinator(mpsc::Sender<u64>);
 impl Actor for Coordinator {
     type Message = CoordinatorMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ActorRef<KeeperMessage>;
     type Error = Infallible;
 
@@ -537,6 +541,7 @@ struct ShortAsker(ActorRef<KeeperMessage>);
 impl Actor for ShortAsker {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -561,6 +566,7 @@ struct Keeper;
 impl Actor for Keeper {
     type Message = KeeperMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<ReplyTo<u64>>;
     type Error = Infallible;
 
@@ -612,6 +618,7 @@ struct FragileResponder;
 impl Actor for FragileResponder {
     type Message = FragileRequest;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -664,6 +671,7 @@ struct BlockedAsker {
 impl Actor for BlockedAsker {
     type Message = BlockedAskerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

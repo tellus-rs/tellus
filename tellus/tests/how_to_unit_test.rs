@@ -2,7 +2,8 @@
 
 use std::{assert_matches, collections::HashMap, convert::Infallible};
 use tellus::{
-    Actor, ActorContext, ActorRef, Control, Incoming, ReplyTo, Untimed, testing::TestContext,
+    Actor, ActorContext, ActorRef, Control, Incoming, ReplyTo, Unstashed, Untimed,
+    testing::TestContext,
 };
 
 // ANCHOR: record
@@ -82,6 +83,7 @@ struct Group;
 impl Actor for Group {
     type Message = GroupMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
     type Error = Infallible;
 
@@ -129,6 +131,7 @@ struct Device;
 impl Actor for Device {
     type Message = DeviceMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<f64>;
     type Error = Infallible;
 

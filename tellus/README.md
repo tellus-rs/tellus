@@ -50,6 +50,8 @@ as open source by [Apache Pekko](https://pekko.apache.org).
 - **Bounded or unbounded mailboxes**: bounded ones drop messages beyond capacity as dead letters but
   never drop terminated signals, the outputs of piped futures, `reply_to` replies or the messages a
   `Host` buffered for an entity.
+- **Stashing**: `ActorContext::stash` defers a message, or a terminated signal, until `unstash_all`,
+  which hands the stashed items back ahead of the mailbox, in order.
 - **Event-sourced persistence** (feature `persistence`): events are appended to a pluggable store
   and only then applied, the state is recovered by replay, and conditional appends fence
   concurrent incarnations.
@@ -76,7 +78,7 @@ A minimal actor system with a single actor which handles one message and stops:
 ```rust
 use anyhow::Context;
 use std::convert::Infallible;
-use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Untimed};
+use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -95,6 +97,7 @@ struct Greeter;
 impl Actor for Greeter {
     type Message = Greet;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

@@ -17,7 +17,7 @@ use std::{
 };
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, InMemoryStore, Incoming, Persistence,
-    PersistenceId, SchemaVersion, Untimed, Versioned,
+    PersistenceId, SchemaVersion, Unstashed, Untimed, Versioned,
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -154,6 +154,7 @@ struct Counter {
 impl EventSourced for Counter {
     type Command = Increase;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Increased;
     type State = u64;
     type Snapshot = Count;

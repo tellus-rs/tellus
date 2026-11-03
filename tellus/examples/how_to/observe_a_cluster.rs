@@ -13,7 +13,7 @@ use std::{
     time::Duration,
 };
 use tellus::{
-    Actor, ActorContext, ActorSystem, Control, Incoming, Untimed,
+    Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed,
     cluster::{self, Change, EndpointConfig, Transition, transport::QuicTransport},
 };
 use tokio::{
@@ -139,6 +139,7 @@ struct Idle;
 impl Actor for Idle {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

@@ -1,6 +1,6 @@
 #[cfg(feature = "persistence")]
 use crate::persistence::{schema_version::SchemaVersion, versioned::Versioned};
-use crate::{ActorContext, ActorId, TimerMode};
+use crate::{ActorContext, ActorId, StashMode, TimerMode};
 #[cfg(feature = "persistence")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::error::Error;
@@ -19,6 +19,10 @@ pub trait Actor {
     /// Whether this actor uses timers: [Untimed](crate::Untimed), for an actor without timers, or
     /// [Timed](crate::Timed), which provides `start_timer` and `cancel_timer` on the context.
     type Timers: TimerMode;
+
+    /// Whether this actor stashes: [Unstashed](crate::Unstashed), for an actor without a stash, or
+    /// [Stashed](crate::Stashed), which provides `stash` and `unstash_all` on the context.
+    type Stash: StashMode;
 
     /// The type of the state. For stateless actors use `()`.
     type State;
@@ -43,7 +47,7 @@ pub trait Actor {
     /// [SupervisionStrategy::Restart]: crate::SupervisionStrategy::Restart
     fn init(
         &self,
-        context: &ActorContext<Self::Message, Self::Timers>,
+        context: &ActorContext<Self::Message, Self::Timers, Self::Stash>,
     ) -> Result<Self::State, Self::Error>;
 
     /// Receive an incoming message or signal, apply it to the given state and designate the state
@@ -64,7 +68,7 @@ pub trait Actor {
     /// [SupervisionStrategy]: crate::SupervisionStrategy
     fn receive(
         &self,
-        context: &ActorContext<Self::Message, Self::Timers>,
+        context: &ActorContext<Self::Message, Self::Timers, Self::Stash>,
         incoming: Incoming<Self::Message>,
         state: Self::State,
     ) -> Result<Control<Self::State>, Self::Error>;

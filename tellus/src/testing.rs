@@ -8,8 +8,8 @@
 //! [Actor::receive]: crate::Actor::receive
 
 use crate::{
-    ActorContext, ActorId, Incoming, MailboxCapacity, Timed, TimerMode, Untimed, actor_context,
-    actor_ref::SelfRef, mailbox::Mailbox,
+    ActorContext, ActorId, Incoming, MailboxCapacity, StashMode, Stashed, Timed, TimerMode,
+    Unstashed, Untimed, actor_context, actor_ref::SelfRef, mailbox::Mailbox,
 };
 #[cfg(feature = "persistence")]
 use crate::{
@@ -29,26 +29,30 @@ use tokio::time::Instant;
 ///
 /// Calling an actor directly bypasses the run loop. Notably, a terminated signal passed to
 /// [Actor::receive] is not dropped when its sender is no longer watched, and nothing restarts the
-/// actor on failure. [ActorContext::spawn] still spawns a real child actor, hence needs a Tokio
-/// runtime; the child is asked to stop when the [TestContext] is dropped, and
-/// [TestContext::terminate] waits for it.
+/// actor on failure. [TestContext::take_stashed] and [TestContext::take_unstashed] apply the stash
+/// requests made so far even after a failed call, whose requests the run loop discards. They never
+/// hold an [ActorContext::unstash_all] either, since a [TestContext] has no drains.
+/// [ActorContext::spawn] still spawns a real child actor, hence needs a Tokio runtime; the child is
+/// asked to stop when the [TestContext] is dropped, and [TestContext::terminate] waits for it.
 ///
-/// `T` is the actor's [TimerMode]; [TestContext::new] creates an [Untimed] context and
-/// [TestContext::timed] a [Timed] one. No timer fires when its delay elapses; see
-/// [TestContext::fire_timer]. [TestContext::take_incoming] drops canceled or replaced timers for
-/// its whole batch at once, not item by item between calls to [Actor::receive].
+/// `T` is the actor's [TimerMode] and `S` its [StashMode]: [TestContext::new] creates an
+/// [Untimed], [Unstashed] context, [TestContext::timed] a [Timed] one, [TestContext::stashed] a
+/// [Stashed] one and [TestContext::timed_stashed] one with both. No timer fires when its delay
+/// elapses; see [TestContext::fire_timer]. [TestContext::take_incoming] drops canceled or replaced
+/// timers for its whole batch at once, not item by item between calls to [Actor::receive].
 ///
 /// # Testing
 ///
 /// ```
 /// use std::convert::Infallible;
-/// use tellus::{Actor, ActorContext, Control, Incoming, Untimed, testing::TestContext};
+/// use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed, testing::TestContext};
 ///
 /// struct Countdown;
 ///
 /// impl Actor for Countdown {
 ///     type Message = u32;
 ///     type Timers = Untimed;
+///     type Stash = Unstashed;
 ///     type State = u32;
 ///     type Error = Infallible;
 ///
@@ -86,20 +90,22 @@ use tokio::time::Instant;
 /// [Actor::receive]: crate::Actor::receive
 /// [ActorRef::tell]: crate::ActorRef::tell
 /// [ReplyTo]: crate::ReplyTo
-pub struct TestContext<M, T = Untimed>
+pub struct TestContext<M, T = Untimed, S = Unstashed>
 where
     T: TimerMode,
+    S: StashMode,
 {
-    context: ActorContext<M, T>,
+    context: ActorContext<M, T, S>,
     mailbox: Mailbox<M>,
 }
 
-impl<M, T> TestContext<M, T>
+impl<M, T, S> TestContext<M, T, S>
 where
     T: TimerMode,
+    S: StashMode,
 {
     /// The context to pass to the actor's methods.
-    pub fn context(&self) -> &ActorContext<M, T> {
+    pub fn context(&self) -> &ActorContext<M, T, S> {
         &self.context
     }
 
@@ -112,27 +118,45 @@ where
         actor_context::terminate((), self.context, self.mailbox).await;
     }
 
-    fn with_fresh_id() -> Self
+    fn with_mailbox_capacity(mailbox_capacity: MailboxCapacity) -> Self
     where
         M: Send + 'static,
     {
-        let (self_ref, mailbox) = SelfRef::new(ActorId::new(), MailboxCapacity::Unbounded);
+        let (self_ref, mailbox) = SelfRef::new(ActorId::new(), mailbox_capacity);
 
         Self {
-            context: ActorContext::new(self_ref),
+            context: ActorContext::with_mailbox_capacity(self_ref, mailbox_capacity),
             mailbox,
         }
     }
 }
 
-impl<M> TestContext<M, Untimed> {
-    /// Create an [Untimed] context with a fresh [ActorId] and an unbounded mailbox. Needs no Tokio
-    /// runtime.
+impl<M, T> TestContext<M, T, Stashed>
+where
+    T: TimerMode,
+{
+    /// Everything the actor has stashed and not unstashed yet, in the order it was stashed. The
+    /// stash requests made so far take effect first, as once an item is settled.
+    pub fn take_stashed(&mut self) -> Vec<Incoming<M>> {
+        self.context.take_stashed()
+    }
+
+    /// Everything the actor has unstashed, in the order the run loop would receive it, ahead of
+    /// the mailbox. The stash requests made so far take effect first, as once an item is settled.
+    pub fn take_unstashed(&mut self) -> Vec<Incoming<M>> {
+        self.context.settle_stash_at_start();
+        iter::from_fn(|| self.context.take_unstashed()).collect()
+    }
+}
+
+impl<M> TestContext<M, Untimed, Unstashed> {
+    /// Create an [Untimed], [Unstashed] context with a fresh [ActorId] and an unbounded mailbox.
+    /// Needs no Tokio runtime.
     pub fn new() -> Self
     where
         M: Send + 'static,
     {
-        Self::with_fresh_id()
+        Self::with_mailbox_capacity(MailboxCapacity::Unbounded)
     }
 
     /// Create a [Timed] context with a fresh [ActorId] and an unbounded mailbox. Needs no Tokio
@@ -141,9 +165,55 @@ impl<M> TestContext<M, Untimed> {
     where
         M: Send + 'static,
     {
-        TestContext::with_fresh_id()
+        TestContext::with_mailbox_capacity(MailboxCapacity::Unbounded)
     }
 
+    /// Create a [Stashed] context with a fresh [ActorId] and an unbounded mailbox, which the stash
+    /// shares as in the run loop. Needs no Tokio runtime.
+    pub fn stashed() -> TestContext<M, Untimed, Stashed>
+    where
+        M: Send + 'static,
+    {
+        TestContext::with_mailbox_capacity(MailboxCapacity::Unbounded)
+    }
+
+    /// Create a [Stashed] context like [TestContext::stashed], with a mailbox of the given
+    /// capacity, which the stash shares as in the run loop.
+    pub fn stashed_with_mailbox_capacity(
+        mailbox_capacity: MailboxCapacity,
+    ) -> TestContext<M, Untimed, Stashed>
+    where
+        M: Send + 'static,
+    {
+        TestContext::with_mailbox_capacity(mailbox_capacity)
+    }
+
+    /// Create a [Timed], [Stashed] context with a fresh [ActorId] and an unbounded mailbox, which
+    /// the stash shares as in the run loop. Needs no Tokio runtime; without one, no timer is armed,
+    /// and [TestContext::fire_timer] still fires it.
+    pub fn timed_stashed() -> TestContext<M, Timed, Stashed>
+    where
+        M: Send + 'static,
+    {
+        TestContext::with_mailbox_capacity(MailboxCapacity::Unbounded)
+    }
+
+    /// Create a [Timed], [Stashed] context like [TestContext::timed_stashed], with a mailbox of the
+    /// given capacity, which the stash shares as in the run loop.
+    pub fn timed_stashed_with_mailbox_capacity(
+        mailbox_capacity: MailboxCapacity,
+    ) -> TestContext<M, Timed, Stashed>
+    where
+        M: Send + 'static,
+    {
+        TestContext::with_mailbox_capacity(mailbox_capacity)
+    }
+}
+
+impl<M, S> TestContext<M, Untimed, S>
+where
+    S: StashMode,
+{
     /// Everything enqueued in the mailbox since the last call, in the order it arrived. Does not
     /// wait for more.
     pub fn take_incoming(&mut self) -> Vec<Incoming<M>> {
@@ -151,7 +221,10 @@ impl<M> TestContext<M, Untimed> {
     }
 }
 
-impl<M> TestContext<M, Timed> {
+impl<M, S> TestContext<M, Timed, S>
+where
+    S: StashMode,
+{
     /// Everything enqueued in the mailbox since the last call, in the order it arrived. Does not
     /// wait for more. Like the run loop, it drops a fired timer which the actor has canceled or
     /// replaced since. Unlike the run loop, it does so for the whole batch at once rather than item
@@ -206,7 +279,7 @@ impl<M> TestContext<M, Timed> {
     }
 }
 
-impl<M> Default for TestContext<M, Untimed>
+impl<M> Default for TestContext<M, Untimed, Unstashed>
 where
     M: Send + 'static,
 {
@@ -252,7 +325,7 @@ pub struct Settlement<S> {
 /// use std::convert::Infallible;
 /// use tellus::{
 ///     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo,
-///     SchemaVersion, Untimed, Versioned,
+///     SchemaVersion, Unstashed, Untimed, Versioned,
 ///     testing::{TestContext, settle},
 /// };
 ///
@@ -274,6 +347,7 @@ pub struct Settlement<S> {
 /// impl EventSourced for Counter {
 ///     type Command = Command;
 ///     type Timers = Untimed;
+///     type Stash = Unstashed;
 ///     type Event = Increased;
 ///     type State = u64;
 ///     type Snapshot = Nothing;

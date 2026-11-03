@@ -3,8 +3,8 @@
 use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tellus::{
-    ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, SchemaVersion, Untimed,
-    Versioned,
+    ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, SchemaVersion, Unstashed,
+    Untimed, Versioned,
     testing::{TestContext, settle},
 };
 
@@ -125,6 +125,7 @@ impl Versioned for Deposited {
 impl EventSourced for Ledger {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Deposited;
     type State = Vec<u64>;
     type Snapshot = Nothing;

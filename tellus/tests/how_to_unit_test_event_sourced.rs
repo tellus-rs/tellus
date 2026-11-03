@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use std::assert_matches;
 use tellus::{
     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo, SchemaVersion,
-    Untimed, Versioned,
+    Unstashed, Untimed, Versioned,
     testing::{TestContext, settle},
 };
 use thiserror::Error;
@@ -87,6 +87,7 @@ struct Device;
 impl EventSourced for Device {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Recorded;
     type State = Option<f64>;
     type Snapshot = Nothing;

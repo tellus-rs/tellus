@@ -3,7 +3,7 @@
 
 use anyhow::Context;
 use std::{convert::Infallible, time::Duration};
-use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Untimed};
+use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed};
 
 // ANCHOR: main
 #[tokio::main]
@@ -37,6 +37,7 @@ struct Device;
 impl Actor for Device {
     type Message = DeviceMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<f64>;
     type Error = Infallible;
 

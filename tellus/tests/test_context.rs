@@ -2,11 +2,12 @@
 
 use std::{
     convert::Infallible,
+    num::NonZeroUsize,
     sync::{Mutex, mpsc as std_mpsc},
     time::Duration,
 };
 use tellus::{
-    Actor, ActorContext, Control, Incoming, Untimed,
+    Actor, ActorContext, Control, Incoming, MailboxCapacity, Unstashed, Untimed,
     testing::{PendingTimer, TestContext},
 };
 use tokio::{sync::mpsc, task::block_in_place, time::timeout};
@@ -328,6 +329,7 @@ struct Summer;
 impl Actor for Summer {
     type Message = u32;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -359,6 +361,7 @@ enum Chat {
 impl Actor for Chatter {
     type Message = Chat;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -387,6 +390,7 @@ struct BlockingChild {
 impl Actor for BlockingChild {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Barrier;
     type Error = Infallible;
 
@@ -432,6 +436,7 @@ struct Reporter {
 impl Actor for Reporter {
     type Message = u32;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -476,6 +481,7 @@ impl Drop for NotifyOnDrop {
 impl Actor for Notifier {
     type Message = ();
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = NotifyOnDrop;
     type Error = Infallible;
 
@@ -492,4 +498,73 @@ impl Actor for Notifier {
     ) -> Result<Control<Self::State>, Self::Error> {
         Ok(Control::Continue(state))
     }
+}
+
+/// What the actor stashes is taken from the stash, and what it unstashes from the run loop's side,
+/// in the order it was stashed, ahead of the mailbox.
+#[test]
+fn stashed_and_unstashed_items_are_taken_separately() {
+    let mut test_context = TestContext::<u32>::stashed();
+    let context = test_context.context();
+    context
+        .stash(Incoming::Message(1))
+        .expect("the stash is unbounded");
+    assert!(test_context.take_unstashed().is_empty());
+
+    let context = test_context.context();
+    context
+        .stash(Incoming::Message(2))
+        .expect("the stash is unbounded");
+    context.unstash_all();
+    context
+        .stash(Incoming::Message(3))
+        .expect("the stash is unbounded");
+
+    assert_eq!(
+        test_context.take_unstashed(),
+        [Incoming::Message(1), Incoming::Message(2)]
+    );
+    assert_eq!(test_context.take_stashed(), [Incoming::Message(3)]);
+    assert!(test_context.take_incoming().is_empty());
+}
+
+/// A context with a bounded mailbox bounds the stash too: the second message is handed back, while
+/// a terminated signal skips the capacity.
+#[test]
+fn a_bounded_context_bounds_the_stash() {
+    let test_context = TestContext::<u32>::stashed_with_mailbox_capacity(MailboxCapacity::Bounded(
+        NonZeroUsize::MIN,
+    ));
+    let stopped = TestContext::<()>::new();
+    let context = test_context.context();
+
+    assert!(context.stash(Incoming::Message(1)).is_ok());
+    assert_eq!(
+        context.stash(Incoming::Message(2)),
+        Err(Incoming::Message(2))
+    );
+    assert!(
+        context
+            .stash(Incoming::Terminated(
+                stopped.context().self_ref().actor_id()
+            ))
+            .is_ok()
+    );
+}
+
+/// A timed context with a bounded mailbox bounds the stash the same way, and its timers are still
+/// there.
+#[test]
+fn a_bounded_timed_context_bounds_the_stash() {
+    let test_context = TestContext::<u32>::timed_stashed_with_mailbox_capacity(
+        MailboxCapacity::Bounded(NonZeroUsize::MIN),
+    );
+    let context = test_context.context();
+
+    assert!(context.stash(Incoming::Message(1)).is_ok());
+    assert_eq!(
+        context.stash(Incoming::Message(2)),
+        Err(Incoming::Message(2))
+    );
+    assert!(test_context.timers().is_empty());
 }

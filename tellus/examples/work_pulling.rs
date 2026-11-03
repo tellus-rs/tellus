@@ -16,7 +16,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Incoming, MailboxCapacity,
-    ReplyTo, Untimed,
+    ReplyTo, Unstashed, Untimed,
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -64,6 +64,7 @@ struct Manager;
 impl Actor for Manager {
     type Message = RequestJob;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Managing;
     type Error = Infallible;
 
@@ -135,6 +136,7 @@ struct Worker {
 impl Actor for Worker {
     type Message = Next;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

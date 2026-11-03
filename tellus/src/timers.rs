@@ -77,13 +77,14 @@ pub(crate) const TIMER_FAILED_TO_DROP: &str = "timer message failed to drop";
 ///
 /// ```compile_fail,E0599
 /// use std::{convert::Infallible, time::Duration};
-/// use tellus::{Actor, ActorContext, Control, Incoming, Untimed};
+/// use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed};
 ///
 /// struct Quiet;
 ///
 /// impl Actor for Quiet {
 ///     type Message = ();
 ///     type Timers = Untimed;
+///     type Stash = Unstashed;
 ///     type State = ();
 ///     type Error = Infallible;
 ///

@@ -9,7 +9,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Host, HostConfig,
-    HostEnvelope, Incoming, InvalidHostConfig, MailboxCapacity, ReplyTo, Untimed,
+    HostEnvelope, Incoming, InvalidHostConfig, MailboxCapacity, ReplyTo, Unstashed, Untimed,
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
@@ -388,6 +388,7 @@ struct Root {
 impl Actor for Root {
     type Message = RootMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ActorRef<HostEnvelope<u8, Message>>;
     type Error = Infallible;
 
@@ -441,6 +442,7 @@ struct Entity {
 impl Actor for Entity {
     type Message = Message;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

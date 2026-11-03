@@ -83,7 +83,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, AskError, Control, Incoming, ReplyTo,
-    Untimed,
+    Unstashed, Untimed,
     cluster::{
         self, BootstrapConfig, Change, Changes, ClusterState, DownError, EndpointConfig,
         FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Transition,
@@ -715,6 +715,7 @@ struct EchoServer;
 impl Actor for EchoServer {
     type Message = Request;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = EchoState;
     type Error = Infallible;
 
@@ -881,6 +882,7 @@ struct Recorder {
 impl Actor for Recorder {
     type Message = Note;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -1060,6 +1062,7 @@ struct Keeper;
 impl Actor for Keeper {
     type Message = KeeperMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -1122,6 +1125,7 @@ struct Streamer;
 impl Actor for Streamer {
     type Message = StreamerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -3652,6 +3656,7 @@ struct EchoClient {
 impl Actor for EchoClient {
     type Message = Reply;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -3702,6 +3707,7 @@ struct AskThenTellClient {
 impl Actor for AskThenTellClient {
     type Message = AskerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = bool;
     type Error = Infallible;
 
@@ -3752,6 +3758,7 @@ struct Responder;
 impl Actor for Responder {
     type Message = ForwardedRequest;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -3785,6 +3792,7 @@ struct SerdeRoundTrip {
 impl Actor for SerdeRoundTrip {
     type Message = AskerMessage;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -3850,6 +3858,7 @@ struct OrderedWatch {
 impl Actor for OrderedWatch {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = OrderedWatchState;
     type Error = Infallible;
 
@@ -3927,6 +3936,7 @@ struct TerminateChild {
 impl Actor for TerminateChild {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<ActorRef<StreamerMessage>>;
     type Error = Infallible;
 
@@ -3984,6 +3994,7 @@ struct WatchTerminated {
 impl Actor for WatchTerminated {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -4020,6 +4031,7 @@ struct UnwatchClient {
 impl Actor for UnwatchClient {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -4084,6 +4096,7 @@ struct TwoWatchers {
 impl Actor for TwoWatchers {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = usize;
     type Error = Infallible;
 
@@ -4139,6 +4152,7 @@ struct ChildWatcher {
 impl Actor for ChildWatcher {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -4177,6 +4191,7 @@ struct HeadOfLine {
 impl Actor for HeadOfLine {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = HeadOfLineState;
     type Error = Infallible;
 
@@ -4287,6 +4302,7 @@ struct Oversize {
 impl Actor for Oversize {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -4362,6 +4378,7 @@ impl BenchEcho {
 impl Actor for BenchEcho {
     type Message = Reply;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = BenchState;
     type Error = Infallible;
 
@@ -4421,6 +4438,7 @@ struct BenchBulk {
 impl Actor for BenchBulk {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<BenchBulkState>;
     type Error = Infallible;
 
@@ -4492,6 +4510,7 @@ struct SeverFifo {
 impl Actor for SeverFifo {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<SeverFifoState>;
     type Error = Infallible;
 
@@ -4574,6 +4593,7 @@ struct SeverTerminated {
 impl Actor for SeverTerminated {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<SeverTerminatedState>;
     type Error = Infallible;
 
@@ -4654,6 +4674,7 @@ struct LostTerminated {
 impl Actor for LostTerminated {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = Option<ActorRef<StreamerMessage>>;
     type Error = Infallible;
 
@@ -4717,6 +4738,7 @@ where
 {
     type Message = ClientEvent;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 
@@ -4756,6 +4778,7 @@ struct DepartureWatch {
 impl Actor for DepartureWatch {
     type Message = Reply;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Infallible;
 
@@ -4811,6 +4834,7 @@ struct PingOnce {
 impl Actor for PingOnce {
     type Message = Reply;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = ();
     type Error = Infallible;
 

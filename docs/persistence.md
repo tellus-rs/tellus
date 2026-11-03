@@ -40,6 +40,8 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
   snapshots use the uninhabited `Nothing`.
 - `Timers` is the timer mode, `Untimed` or `Timed`, as for `Actor` (see
   [actors.md](actors.md#timers)).
+- `Stash` is the stash mode, `Unstashed` or `Stashed`, as for `Actor` (see
+  [actors.md](actors.md#stashing)).
 - `persistence_id` names the actor's event stream.
 - `init` is the pure seed of the fold and `init_from_snapshot` its snapshot-based alternative;
   `recovered` runs once after recovery and is the place to touch the world.
@@ -85,6 +87,14 @@ On every spawn and every restart, before the first command:
 `init` is skipped entirely when a snapshot exists, so it must be nothing but the pure seed of the
 fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
 `recovered` always runs, and never during replay.
+
+With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as a plain actor does
+through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,
+e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are requests, gated on
+durability like the other effects. They take effect once the command's events are durable, or once
+`recovered` has returned, and a failed append discards them with the events. The stash is runtime
+state like a timer, neither persisted nor recreated by replay, but unlike a timer it survives a
+restart: the recovered state receives the stashed commands first, after `recovered`.
 
 A `Timed` event-sourced actor starts its timers (see [actors.md](actors.md#timers)) in `recovered`
 and `handle`; `init` has no context. A timer is runtime state, neither persisted nor recreated by
@@ -214,7 +224,7 @@ use serde::{Deserialize, Serialize};
 use std::convert::Infallible;
 use tellus::{
     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo,
-    SchemaVersion, Untimed, Versioned,
+    SchemaVersion, Unstashed, Untimed, Versioned,
     testing::{TestContext, settle},
 };
 
@@ -236,6 +246,7 @@ impl Versioned for Increased {
 impl EventSourced for Counter {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Increased;
     type State = u64;
     type Snapshot = Nothing;

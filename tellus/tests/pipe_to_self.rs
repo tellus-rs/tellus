@@ -10,7 +10,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Backoff, Control, Incoming, MailboxCapacity,
-    RestartPolicy, SupervisionStrategy, Untimed,
+    RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
 };
 use thiserror::Error;
 use tokio::{
@@ -168,6 +168,7 @@ struct Probe {
 impl Actor for Probe {
     type Message = Message;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type State = u32;
     type Error = Failed;
 

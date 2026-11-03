@@ -8,7 +8,7 @@ use std::{num::NonZeroU32, time::Duration};
 use tellus::{
     ActorConfig, ActorContext, ActorSystem, Effect, EventSourced, InMemoryStore, Incoming, Nothing,
     Persistence, PersistenceId, ReplyTo, RestartPolicy, SchemaVersion, SupervisionStrategy,
-    Untimed, Versioned,
+    Unstashed, Untimed, Versioned,
 };
 use thiserror::Error;
 
@@ -52,6 +52,7 @@ struct Device;
 impl EventSourced for Device {
     type Command = Command;
     type Timers = Untimed;
+    type Stash = Unstashed;
     type Event = Recorded;
     type State = Option<f64>;
     type Snapshot = Nothing;
