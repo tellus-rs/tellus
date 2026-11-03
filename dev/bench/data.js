@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793666066578,
+  "lastUpdate": 1793718008112,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9059,6 +9059,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 25074457,
             "range": "± 1216498",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d39d2250de6eaf26de77f43e9b0114806df3b39",
+          "message": "Merge pull request #201 from tellus-rs/feat/stash\n\nfeat: add stashing, opt-in per actor via Actor::Stash",
+          "timestamp": "2026-11-03T14:52:44Z",
+          "tree_id": "2316d85631b54e3e40f3c1247422509e7e7b6b1f",
+          "url": "https://github.com/tellus-rs/tellus/commit/4d39d2250de6eaf26de77f43e9b0114806df3b39"
+        },
+        "date": 1793718007254,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 15591576,
+            "range": "± 1411719",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15352178,
+            "range": "± 718028",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 916412,
+            "range": "± 19804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 816494,
+            "range": "± 4602",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5911992,
+            "range": "± 168839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4311862,
+            "range": "± 38508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19863670,
+            "range": "± 536782",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20531259,
+            "range": "± 712623",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 20067148,
+            "range": "± 456117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20460843,
+            "range": "± 524478",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20086283,
+            "range": "± 573750",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21990876,
+            "range": "± 500867",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27502570,
+            "range": "± 1107968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20136073,
+            "range": "± 824902",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21814578,
+            "range": "± 600212",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27518567,
+            "range": "± 1001016",
             "unit": "ns/iter"
           }
         ]
