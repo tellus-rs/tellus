@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793726991236,
+  "lastUpdate": 1793726996637,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14821,6 +14821,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 162155,
             "range": "± 4182",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abf898cc49c4c6ef2b85460a8cf3c22c1b81351c",
+          "message": "Merge pull request #247 from tellus-rs/ci/codegen-stale-patterns\n\nci: fix the stale patterns of codegen.sh",
+          "timestamp": "2026-11-03T17:22:07Z",
+          "tree_id": "f8daa2f63eaf26eebb846ac2444c75850a7c1888",
+          "url": "https://github.com/tellus-rs/tellus/commit/abf898cc49c4c6ef2b85460a8cf3c22c1b81351c"
+        },
+        "date": 1793726993512,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3107062,
+            "range": "± 179707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2911945,
+            "range": "± 134993",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1380840,
+            "range": "± 10872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 165184,
+            "range": "± 2667",
             "unit": "ns/iter"
           }
         ]
