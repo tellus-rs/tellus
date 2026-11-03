@@ -54,15 +54,15 @@ lint-fix:
     cargo clippy --all-targets --no-deps --allow-dirty --allow-staged --fix
 
 test:
-    cargo test      -p tellus
-    cargo test      -p tellus                      --features persistence-tests,persistence-in-memory,cluster-dev,serde,test-util
-    cargo hack test -p tellus                      --doc {{ powerset }}
-    cargo test      -p tellus-bootstrap-dns        --all-features
-    cargo test      -p tellus-bootstrap-k8s        --all-features
-    cargo test      -p tellus-persistence-postgres
-    cargo test      -p tellus-cluster-inspect
-    cargo test      -p tellus-cluster-demo
-    cargo test      -p tellus-cluster-demo-tui
+    cargo test                     -p tellus
+    cargo test                     -p tellus                      --features persistence-tests,persistence-in-memory,cluster-dev,serde,test-util
+    cargo +{{ nightly }} hack test -p tellus                      --doc {{ powerset }}
+    cargo test                     -p tellus-bootstrap-dns        --all-features
+    cargo test                     -p tellus-bootstrap-k8s        --all-features
+    cargo test                     -p tellus-persistence-postgres
+    cargo test                     -p tellus-cluster-inspect
+    cargo test                     -p tellus-cluster-demo
+    cargo test                     -p tellus-cluster-demo-tui
 
 doc:
     RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +{{ nightly }} doc --no-deps --all-features
