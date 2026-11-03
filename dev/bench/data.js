@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793718008112,
+  "lastUpdate": 1793718010086,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14653,6 +14653,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 100643,
             "range": "± 5791",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4d39d2250de6eaf26de77f43e9b0114806df3b39",
+          "message": "Merge pull request #201 from tellus-rs/feat/stash\n\nfeat: add stashing, opt-in per actor via Actor::Stash",
+          "timestamp": "2026-11-03T14:52:44Z",
+          "tree_id": "2316d85631b54e3e40f3c1247422509e7e7b6b1f",
+          "url": "https://github.com/tellus-rs/tellus/commit/4d39d2250de6eaf26de77f43e9b0114806df3b39"
+        },
+        "date": 1793718009584,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3035347,
+            "range": "± 101108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2912206,
+            "range": "± 109609",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1382445,
+            "range": "± 12160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 162155,
+            "range": "± 4182",
             "unit": "ns/iter"
           }
         ]
