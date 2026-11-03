@@ -83,7 +83,7 @@ jobs:
         run: |
           just criterion-profile ${{ matrix.bench }} "${{ matrix.id }}" ${{ matrix.iterations }} hotpath-callgrind hotpath-cloud
           jq -e --arg id "${{ matrix.id }}" \
-            '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0) and .user_metadata.criterion_benchmark == $id' \
+            '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0) and .meta.criterion.benchmark == $id' \
             "$HOTPATH_OUTPUT_PATH" > /dev/null
 
   report:
@@ -154,7 +154,7 @@ jobs:
           just criterion-profile ${{ matrix.bench }} "${{ matrix.id }}" ${{ matrix.iterations }} hotpath-callgrind hotpath-cloud
           test -s "$HOTPATH_OUTPUT_PATH"
           jq -e --arg id "${{ matrix.id }}" \
-            '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0) and .user_metadata.criterion_benchmark == $id' \
+            '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0) and .meta.criterion.benchmark == $id' \
             "$HOTPATH_OUTPUT_PATH" > /dev/null
 
       - name: Store report for the relay
