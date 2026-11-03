@@ -1,8 +1,8 @@
 """Run a bench across worker-stack shifts, or summarize one job's results.
 
-run:     sweep.py run [--bench messaging|persistence] --preload SO --workdir DIR --out FILE B=BIN C=BIN A=BIN
+run:     sweep.py run [--bench messaging|persistence|stash] --preload SO --workdir DIR --out FILE B=BIN C=BIN A=BIN
 summary: sweep.py summary FILE
-lines:   sweep.py lines [--bench messaging|persistence], the number of result lines of a full run
+lines:   sweep.py lines [--bench messaging|persistence|stash], the number of result lines of a full run
 """
 
 import argparse
@@ -38,6 +38,11 @@ BENCH_ROWS = {
         "persist/snapshots",
         "recover/replay",
         "recover/snapshot",
+    ],
+    "stash": [
+        "actor/batch_8/4",
+        "actor/batch_8/16",
+        "event_sourced/batch_8",
     ],
 }
 SHIFTS = list(range(0, 4096, 256))

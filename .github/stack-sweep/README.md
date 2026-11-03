@@ -24,11 +24,12 @@ The rules change only in a commit of their own, never while a case is being deci
 
 ### Running it
 
-- **On a pull request:** add the label `sweep` for the messaging bench or `sweep-persistence` for
-  the persistence bench. The candidate is the pull request's head and the base its parent; CI
-  already makes a pull request one commit. To run it again, remove the label and add it again.
+- **On a pull request:** add the label `sweep` for the messaging bench, `sweep-persistence` for
+  the persistence bench or `sweep-stash` for the stash bench. The candidate is the pull request's
+  head and the base its parent; CI already makes a pull request one commit. To run it again, remove
+  the label and add it again.
 - **By hand:** `gh workflow run stack-sweep.yml -f base=<full parent ID> -f candidate=<full commit
-  ID> [-f bench=persistence]`. The candidate must be exactly one commit on top of the base and
+  ID> [-f bench=persistence|stash]`. The candidate must be exactly one commit on top of the base and
   pushed, as a branch or a pull request head. `--ref <branch>` takes the workflow and these scripts
   from that branch, the code from the two commits.
 - **The report:** the `Report` job runs `report.py` once every sweep job has succeeded and writes it
@@ -39,7 +40,8 @@ The rules change only in a commit of their own, never while a case is being deci
 
 A messaging run sweeps every row of the messaging bench, the groups `flood`, `ping_pong`, `fan_out`,
 `queued` and `timers`: 2304 bench runs per job, 16 rows. A persistence run sweeps every row of the
-persistence bench, the groups `persist` and `recover`: 576 runs, 4 rows.
+persistence bench, the groups `persist` and `recover`: 576 runs, 4 rows. A stash run sweeps every
+row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows.
 
 ### The protocol
 
@@ -96,7 +98,7 @@ one independent repeat of the whole sweep is run with the same base and candidat
 
 ## The null mode
 
-`gh workflow run stack-sweep.yml -f base=<full commit ID> -f null_run=true [-f bench=persistence]`
+`gh workflow run stack-sweep.yml -f base=<full commit ID> -f null_run=true [-f bench=persistence|stash]`
 builds only the base and copies its executable into all three slots. The build step checks that
 B, C and A have one hash. The report names the run `<base>-null`. A null run measures the protocol's
 own noise: a verdict other than pass is a false alarm by construction.
@@ -106,7 +108,7 @@ runs of #188 did, but only the null mode asserts it.
 
 ## The codegen comparison
 
-`codegen.sh [--bench messaging|persistence] <base> <candidate> [--rename REGEX=REPLACEMENT]...`
+`codegen.sh [--bench messaging|persistence|stash] <base> <candidate> [--rename REGEX=REPLACEMENT]...`
 builds the bench of both commits with v0 symbol mangling, each in its own worktree and target
 directory under `target/`. It then runs:
 
@@ -147,9 +149,9 @@ directory under `target/`. It then runs:
 Three null runs of `main` (`ac59a98`) per bench, plus the label runs of #188 (`b49a9f5` against
 `ac59a98`), whose base and candidate executables had one hash and which therefore count as null
 runs, too. They predate the `timers` group, so the messaging figures cover the other 10 rows and
-none of the 6 `timers` rows. Every bench run reported `stack_shift_threads` of at least 4. Treating
-a row differently because of these data is a separate decision, which names either replacement
-coverage or the coverage it gives up.
+none of the 6 `timers` rows. The stash bench came later and has no null run yet. Every bench run
+reported `stack_shift_threads` of at least 4. Treating a row differently because of these data is a
+separate decision, which names either replacement coverage or the coverage it gives up.
 
 ### Messaging
 

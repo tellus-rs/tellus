@@ -72,6 +72,7 @@ all: check fmt lint test doc
 bench:
     cargo bench -p tellus --bench messaging
     cargo bench -p tellus --features "persistence,persistence-in-memory" --bench persistence
+    cargo bench -p tellus --features "persistence,persistence-in-memory" --bench stash
 
 bench-save baseline:
     cargo bench -p tellus --bench messaging -- --save-baseline {{ baseline }}
@@ -85,11 +86,20 @@ bench-persistence-save baseline:
 bench-persistence-compare baseline:
     cargo bench -p tellus --features "persistence,persistence-in-memory" --bench persistence -- --baseline-lenient {{ baseline }}
 
+bench-stash-save baseline:
+    cargo bench -p tellus --features "persistence,persistence-in-memory" --bench stash -- --save-baseline {{ baseline }}
+
+bench-stash-compare baseline:
+    cargo bench -p tellus --features "persistence,persistence-in-memory" --bench stash -- --baseline-lenient {{ baseline }}
+
 bench-bencher:
     cargo bench -p tellus --bench messaging -- --output-format bencher
 
 bench-persistence-bencher:
     cargo bench -p tellus --features "persistence,persistence-in-memory" --bench persistence -- --output-format bencher
+
+bench-stash-bencher:
+    cargo bench -p tellus --features "persistence,persistence-in-memory" --bench stash -- --output-format bencher
 
 bench-gossip size="5":
     TELLUS_REMOTING_ROLE=bench-gossip TELLUS_REMOTING_CLUSTER_SIZE={{ size }} cargo test -p tellus --test cluster --features cluster-dev --release
@@ -123,7 +133,7 @@ bench-report:
     if [[ $regressed -ne 0 ]]; then
         printf '_Regression: 95%% confident a benchmark is at least %s%% slower._\n\n' "$threshold_pct"
     fi
-    printf '_One stack position, with the head always running second: a hint, not a verdict. A change to code the benches run gets the stack sweep, label `sweep` or `sweep-persistence` ([protocol](https://github.com/tellus-rs/tellus/blob/main/.github/stack-sweep/README.md))._\n'
+    printf '_One stack position, with the head always running second: a hint, not a verdict. A change to code the benches run gets the stack sweep, label `sweep`, `sweep-persistence` or `sweep-stash` ([protocol](https://github.com/tellus-rs/tellus/blob/main/.github/stack-sweep/README.md))._\n'
 
 profile:
     cargo run --release -p tellus --example profile --features hotpath

@@ -203,6 +203,11 @@ name              = "persistence"
 harness           = false
 required-features = [ "persistence", "persistence-in-memory" ]
 
+[[bench]]
+name              = "stash"
+harness           = false
+required-features = [ "persistence", "persistence-in-memory" ]
+
 [[test]]
 name              = "cluster"
 harness           = false

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Usage: codegen.sh [--bench messaging|persistence] BASE CANDIDATE [--rename REGEX=REPLACEMENT]...
+# Usage: codegen.sh [--bench messaging|persistence|stash] BASE CANDIDATE [--rename REGEX=REPLACEMENT]...
 # Builds the bench of both commits with v0 symbol mangling and compares their code: fncounts.py over
 # all functions, fndiff.py over the per-message path below. A diagnostic, never a performance verdict.
 # TARGET=x86_64-unknown-linux-gnu cross-builds from aarch64 with the x86_64 GNU toolchain.
@@ -37,6 +37,21 @@ case $bench in
     patterns+=(
       '^tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?(_unstashed|_stashed)?::<.*>::\{closure#0\}$'
       '^<core::future::poll_fn::PollFn<tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?(_unstashed|_stashed)?<.*> as core::future::future::Future>::poll$'
+      '^tellus::actor_context::catch_(panic_)?and_log::<.*tellus::persistence::spawn::settle_or_log_failure<'
+      '^<core::future::poll_fn::PollFn<tellus::actor_context::catch_unwind_async<.*tellus::persistence::spawn::(append_events|save_snapshot|read_page)<'
+      '^tellus::persistence::spawn::encode_events::<'
+      '^tellus::persistence::spawn::replay_page::<'
+    )
+    ;;
+  stash)
+    features=(--features "persistence,persistence-in-memory")
+    patterns+=(
+      '^tellus::actor_context::spawn(_untimed|_timed)?_stashed::<[^>]*>::\{closure#0\}$'
+      '^<core::future::poll_fn::PollFn<tellus::actor_context::spawn(_untimed|_timed)?_stashed<[^>]*>::\{closure#0\}::\{closure#[0-9]+\}> as core::future::future::Future>::poll$'
+      '^tellus::actor_context::receive_incoming::<'
+      '^<tellus::stash::Stash<[^>]*>>::apply_requests$'
+      '^tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?_stashed::<.*>::\{closure#0\}$'
+      '^<core::future::poll_fn::PollFn<tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?_stashed<.*> as core::future::future::Future>::poll$'
       '^tellus::actor_context::catch_(panic_)?and_log::<.*tellus::persistence::spawn::settle_or_log_failure<'
       '^<core::future::poll_fn::PollFn<tellus::actor_context::catch_unwind_async<.*tellus::persistence::spawn::(append_events|save_snapshot|read_page)<'
       '^tellus::persistence::spawn::encode_events::<'
