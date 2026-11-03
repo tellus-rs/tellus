@@ -25,8 +25,8 @@ case $bench in
   messaging)
     features=()
     patterns+=(
-      '^tellus::actor_context::spawn(_untimed|_timed)?::<[^>]*>::\{closure#0\}$'
-      '^<core::future::poll_fn::PollFn<tellus::actor_context::spawn(_untimed|_timed)?<[^>]*>::\{closure#0\}::\{closure#[0-9]+\}> as core::future::future::Future>::poll$'
+      '^tellus::actor_context::spawn(_untimed|_timed)?(_unstashed|_stashed)?::<[^>]*>::\{closure#0\}$'
+      '^<core::future::poll_fn::PollFn<tellus::actor_context::spawn(_untimed|_timed)?(_unstashed|_stashed)?<[^>]*>::\{closure#0\}::\{closure#[0-9]+\}> as core::future::future::Future>::poll$'
       '^<tellus::mailbox::Mailbox<[^>]*>>::recv::\{closure#0\}$'
       '^tellus::actor_context::receive_incoming::<'
       '^tellus::actor_context::should_restart::<'
@@ -35,11 +35,11 @@ case $bench in
   persistence)
     features=(--features "persistence,persistence-in-memory")
     patterns+=(
-      '^tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?::<.*>::\{closure#0\}$'
-      '^<core::future::poll_fn::PollFn<tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?<.*> as core::future::future::Future>::poll$'
+      '^tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?(_unstashed|_stashed)?::<.*>::\{closure#0\}$'
+      '^<core::future::poll_fn::PollFn<tellus::persistence::spawn::spawn_event_sourced(_untimed|_timed)?(_unstashed|_stashed)?<.*> as core::future::future::Future>::poll$'
       '^tellus::actor_context::catch_(panic_)?and_log::<.*tellus::persistence::spawn::settle_or_log_failure<'
       '^<core::future::poll_fn::PollFn<tellus::actor_context::catch_unwind_async<.*tellus::persistence::spawn::(append_events|save_snapshot|read_page)<'
-      'tellus::persistence::spawn::encode_events<'
+      '^tellus::persistence::spawn::encode_events::<'
       '^tellus::persistence::spawn::replay_page::<'
     )
     ;;
