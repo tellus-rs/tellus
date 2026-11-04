@@ -115,16 +115,16 @@ The justfile picks the nightly of the date `rustc --version` reports, which must
 `tellus-persistence-postgres` tests run against a container, so `just all` needs Docker. The
 benchmark report, the allocation checks and the demo's status recipes also use `jq`.
 
-Regression benchmarks (criterion) run with `just bench`: messaging, and persistence against an
-in-memory store. On CI every pull request is benchmarked against its merge base and the comparison
-posted as a comment. That comparison measures one stack position and is a hint, never a verdict; the
-performance gate is the [stack sweep](.github/stack-sweep/README.md), started by the label `sweep`
-(messaging) or `sweep-persistence` (persistence) on a pull request. Every commit on `main` is
-tracked over time on the [benchmark dashboard][benchmarks-url].
+Regression benchmarks (criterion) run with `just bench`: messaging, persistence against an in-memory
+store, and stashing. On CI every pull request is benchmarked against its merge base and the
+comparison posted as a comment. That comparison measures one stack position and is a hint, never a
+verdict; the performance gate is the [stack sweep](.github/stack-sweep/README.md), started by the
+label `sweep` (messaging), `sweep-persistence` (persistence) or `sweep-stash` (stashing) on a pull
+request. Every commit on `main` is tracked over time on the [benchmark dashboard][benchmarks-url].
 
 For a local before and after, `just bench-save <baseline>` and `just bench-compare <baseline>` (and
-the `bench-persistence-` pair) compare against a saved baseline. `just profile` and `just
-profile-persistence` attribute the time of the hot paths per function with
+the `bench-persistence-` and `bench-stash-` pairs) compare against a saved baseline. `just profile`
+and `just profile-persistence` attribute the time of the hot paths per function with
 [hotpath](https://crates.io/crates/hotpath), and their `-alloc` variants the allocations. The
 `-alloc-gate` recipes fail if a function which must not allocate does. `just criterion-profile`
 runs one criterion benchmark as a hotpath report. `just bench-cluster`, `bench-gossip` and

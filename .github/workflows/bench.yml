@@ -83,6 +83,18 @@ jobs:
             echo "baseline=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # The same for the stash benchmark, which the merge base may predate as well.
+      - name: Benchmark merge base (stash)
+        id: base-stash
+        run: |
+          if [ -f tellus/benches/stash.rs ]; then
+            just bench-stash-save main
+            echo "baseline=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "the merge base predates the stash benchmark; skipping the baseline"
+            echo "baseline=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Benchmark PR head
         run: |
           git checkout -f --detach "$GITHUB_SHA"
@@ -92,6 +104,11 @@ jobs:
         if: steps.base-persistence.outputs.baseline == 'true'
         run: |
           just bench-persistence-compare main
+
+      - name: Benchmark PR head (stash)
+        if: steps.base-stash.outputs.baseline == 'true'
+        run: |
+          just bench-stash-compare main
 
       - name: Report
         run: |
@@ -143,6 +160,10 @@ jobs:
         run: |
           just bench-persistence-bencher | tee bench-persistence-output.txt
 
+      - name: Benchmark (stash)
+        run: |
+          just bench-stash-bencher | tee bench-stash-output.txt
+
       # One dashboard section per "name", all in the same data file, which is keyed by name.
       - name: Store result
         uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
@@ -165,6 +186,20 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           tool: cargo
           output-file-path: bench-persistence-output.txt
+          gh-pages-branch: gh-pages
+          benchmark-data-dir-path: dev/bench
+          auto-push: true
+          alert-threshold: "150%"
+          comment-on-alert: true
+          fail-on-alert: false
+
+      - name: Store result (stash)
+        uses: benchmark-action/github-action-benchmark@4322e5726e6334590d251fc4f92bec0efafc45dc # v1.22.2
+        with:
+          name: Stash
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo
+          output-file-path: bench-stash-output.txt
           gh-pages-branch: gh-pages
           benchmark-data-dir-path: dev/bench
           auto-push: true

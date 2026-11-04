@@ -125,34 +125,41 @@ Benchmarks:
   runs the recipe whenever a policy, the justfile or the workflow changes, with the CLI version
   taken from `Cargo.lock`.
 - `just bench`: tellus's own criterion regression benchmarks, messaging
-  (`tellus/benches/messaging.rs`) and persistence against an in-memory store
-  (`tellus/benches/persistence.rs`, features `persistence` and `persistence-in-memory`); `just
-  bench-save <baseline>` / `just
-  bench-compare <baseline>` and the `bench-persistence-*` pair for local before/after comparisons.
-  CI benchmarks every PR against its merge base, both benches, and posts the comparison as an
+  (`tellus/benches/messaging.rs`), persistence against an in-memory store
+  (`tellus/benches/persistence.rs`, features `persistence` and `persistence-in-memory`) and stashing
+  (`tellus/benches/stash.rs`, the same features): an actor and an event-sourced actor which stash
+  the first seven items of every batch of eight and unstash them on the eighth. Stashing is a bench
+  binary of its own, since an extra actor in a bench crate changes the generated code of the
+  crate's other loops: inside the persistence bench, the stashing counter changed the instruction
+  counts of `spawn_event_sourced_untimed::<Counter>` and `replay_page`. `just bench-save
+  <baseline>` / `just bench-compare <baseline>` and the `bench-persistence-*` and `bench-stash-*`
+  pairs for local before/after comparisons.
+  CI benchmarks every PR against its merge base, all three benches, and posts the comparison as an
   informational PR comment; it does not fail the build. The report flags a benchmark whose 95%
   confidence lower bound exceeds `bench_regression_threshold`, but that verdict is not gate-grade
   on a shared CI runner: `flood/bounded` measured +19.9%, +13.3%, -9.5%, -35.7% and +8.1% across
   five runs of identical code, each with a tight criterion confidence interval, because criterion
-  sees within-run variance only. Pushes to `main` additionally publish both benches to the
-  gh-pages dashboard (`dev/bench`) via `bench-bencher` and `bench-persistence-bencher`, one
-  section per store-result step name: "Core" (messaging) and "Persistence". Adding a section means
+  sees within-run variance only. Pushes to `main` additionally publish the three benches to the
+  gh-pages dashboard (`dev/bench`) via `bench-bencher`, `bench-persistence-bencher` and
+  `bench-stash-bencher`, one section per store-result step name: "Core" (messaging), "Persistence"
+  and "Stash". Adding a section means
   a bencher recipe plus a benchmark and a store-result step in `bench.yml`; `dev/bench/index.html`
   on `gh-pages` is a customized copy of the action's default page (headline plus one sub-heading
   per section) which the action leaves alone once it exists.
 - `Stack sweep` (`.github/workflows/stack-sweep.yml`): the performance gate, with its protocol in
   `.github/stack-sweep/README.md`. The label `sweep` on a pull request sweeps the messaging bench,
-  `sweep-persistence` the persistence bench, of its head against its parent; `gh workflow run
-  stack-sweep.yml -f base=<parent> -f candidate=<commit> [-f bench=persistence]` does the same by
-  hand, and `-f null_run=true` without a candidate sweeps the base against itself. It runs the
-  bench at 16 worker-stack positions on `ubuntu-latest` and `ubuntu-24.04-arm`, 4 jobs each with an
-  A/A control. Where a worker stack lies moves single rows by tens of percent either way
-  (`docs/investigations/actor-id-alignment/`), so a regression from one stack position, the PR
-  comparison included, needs this before it counts. A `Report` job applies `report.py`'s fixed
-  limits (below +3% passes, above +5% fails, borderline rows get a second run whose ID is passed as
-  well); `test_report.py` pins them, and CI runs it. `.github/stack-sweep/codegen.sh <base>
-  <candidate>` compares the generated code of a bench of two commits per function, a diagnostic
-  and never a verdict; `test_codegen.py` pins its comparison rules.
+  `sweep-persistence` the persistence bench and `sweep-stash` the stash bench, of its head against
+  its parent; `gh workflow run stack-sweep.yml -f base=<parent> -f candidate=<commit> [-f
+  bench=persistence|stash]` does the same by hand, and `-f null_run=true` without a candidate
+  sweeps the base against itself. It runs the bench at 16 worker-stack positions on `ubuntu-latest`
+  and `ubuntu-24.04-arm`, 4 jobs each with an A/A control. Where a worker stack lies moves single
+  rows by tens of percent either way (`docs/investigations/actor-id-alignment/`), so a regression
+  from one stack position, the PR comparison included, needs this before it counts. A `Report` job
+  applies `report.py`'s fixed limits (below +3% passes, above +5% fails, borderline rows get a
+  second run whose ID is passed as well); `test_report.py` pins them, and CI runs it.
+  `.github/stack-sweep/codegen.sh <base> <candidate>` compares the generated code of a bench of two
+  commits per function, a diagnostic and never a verdict; `test_codegen.py` pins its comparison
+  rules.
 - `just bench-cluster`: the remoting throughput and latency numbers (pipelined and serial tells and
   asks, a bulk transfer), run by the `cluster.rs` test in its bench role across spawned processes;
   not part of CI, for comparing before and after a change to `tellus/src/cluster`.
