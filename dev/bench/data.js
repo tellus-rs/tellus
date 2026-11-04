@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793777533974,
+  "lastUpdate": 1793777535955,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14989,6 +14989,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 165184,
             "range": "± 2667",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6add845d323266e99d9d848b7c0fdf246fb56ba5",
+          "message": "Merge pull request #253 from pawurb/update_hotpath\n\nchore(deps): update hotpath-rs",
+          "timestamp": "2026-11-04T08:24:32+01:00",
+          "tree_id": "a312f207d7991431459bd67e10a311b3e3075286",
+          "url": "https://github.com/tellus-rs/tellus/commit/6add845d323266e99d9d848b7c0fdf246fb56ba5"
+        },
+        "date": 1793777535337,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2421728,
+            "range": "± 114099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2445979,
+            "range": "± 89691",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 975259,
+            "range": "± 22162",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 116420,
+            "range": "± 1561",
             "unit": "ns/iter"
           }
         ]
