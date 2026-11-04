@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793778563683,
+  "lastUpdate": 1793778565129,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15373,6 +15373,50 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 116390,
             "range": "± 3079",
+            "unit": "ns/iter"
+          }
+        ]
+      }
+    ],
+    "Stash": [
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "398f92d5f2512c40b4151875198db95c0e950b28",
+          "message": "Merge pull request #252 from tellus-rs/bench/stash\n\nchore: add the stash bench as a binary of its own",
+          "timestamp": "2026-11-04T08:35:19+01:00",
+          "tree_id": "dde3246a33fc113e64851156a1009cd83061c022",
+          "url": "https://github.com/tellus-rs/tellus/commit/398f92d5f2512c40b4151875198db95c0e950b28"
+        },
+        "date": 1793778564892,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25147043,
+            "range": "± 1213317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24715410,
+            "range": "± 1058125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4008565,
+            "range": "± 283412",
             "unit": "ns/iter"
           }
         ]
