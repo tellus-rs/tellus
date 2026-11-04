@@ -40,7 +40,9 @@ Tasks are defined in the [justfile](justfile):
   would miss, since `--all-targets` excludes them and nothing else builds them, hence the separate
   `cargo hack test -p tellus --doc` over the full powerset: it costs seconds, because rustdoc
   consumes the crate rather than producing test binaries and edition 2024 merges a configuration's
-  doctests into one binary. No run spans the workspace: a build containing multiple crates
+  doctests into one binary. That run uses the nightly the justfile derives, since stable rustdoc
+  ignores the error code pinned in a `compile_fail` fence. No run spans the workspace: a build
+  containing multiple crates
   feature-unifies `tellus` with their features enabled, so only scoped runs exercise the
   reduced-feature configurations, and only a scoped run builds a backend crate against the feature
   set it actually declares (`cargo hack` keeps that property: it is invoked per crate, never with

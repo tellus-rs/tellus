@@ -107,7 +107,7 @@ pub(crate) const TIMER_FAILED_TO_DROP: &str = "timer message failed to drop";
 /// The run loop an actor gets is chosen by its mode when it is spawned; nothing outside tellus can
 /// spawn one another way:
 ///
-/// ```compile_fail
+/// ```compile_fail,E0277
 /// use tellus::{Actor, ActorConfig, ActorRef, TimerMode};
 /// use tokio::sync::watch;
 ///
