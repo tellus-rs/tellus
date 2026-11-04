@@ -139,6 +139,12 @@ start-cluster-demo-k8s` in a kind cluster, and `just run-cluster-demo-tui` watch
 terminal. Both crates are checked, linted and tested by `just all` like the rest; running the
 stack itself is a soak test and stays manual.
 
+## Contributing
+
+Contributions are welcome; [CONTRIBUTING.md](CONTRIBUTING.md) describes how to build, test and
+submit them. Please report vulnerabilities privately, as described in the
+[security policy](SECURITY.md).
+
 ## License
 
 This code is open source software licensed under the
