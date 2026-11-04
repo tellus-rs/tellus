@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793809492380,
+  "lastUpdate": 1793809495405,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15493,6 +15493,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 116390,
             "range": "± 3079",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ade43e7d85aba524f250cb1be7ed0204c134f2fd",
+          "message": "Merge pull request #254 from tellus-rs/docs/contributing-security\n\ndocs: add a contributing guide and a security policy",
+          "timestamp": "2026-11-04T17:17:00+01:00",
+          "tree_id": "75aa580ac94f71654cdf77b7ab9119a877dc189f",
+          "url": "https://github.com/tellus-rs/tellus/commit/ade43e7d85aba524f250cb1be7ed0204c134f2fd"
+        },
+        "date": 1793809493756,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2519526,
+            "range": "± 171694",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2556437,
+            "range": "± 174205",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 976112,
+            "range": "± 4208",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 116797,
+            "range": "± 1967",
             "unit": "ns/iter"
           }
         ]
