@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793778106482,
+  "lastUpdate": 1793778108789,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15157,6 +15157,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 116420,
             "range": "± 1561",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "04ac298083d47a63932f57397b77f9f26cfe9535",
+          "message": "Merge pull request #251 from tellus-rs/test/doctests-on-nightly\n\ntest: run the doctests on the derived nightly",
+          "timestamp": "2026-11-04T08:35:15+01:00",
+          "tree_id": "3a7066d1458bd51e74339d0f5e9b7ed7cd5580fb",
+          "url": "https://github.com/tellus-rs/tellus/commit/04ac298083d47a63932f57397b77f9f26cfe9535"
+        },
+        "date": 1793778108450,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3258338,
+            "range": "± 319563",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2966439,
+            "range": "± 188186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 949793,
+            "range": "± 11352",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 121604,
+            "range": "± 3711",
             "unit": "ns/iter"
           }
         ]
