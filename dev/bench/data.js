@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793778565129,
+  "lastUpdate": 1793809492380,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9659,6 +9659,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 23012386,
             "range": "± 942037",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ade43e7d85aba524f250cb1be7ed0204c134f2fd",
+          "message": "Merge pull request #254 from tellus-rs/docs/contributing-security\n\ndocs: add a contributing guide and a security policy",
+          "timestamp": "2026-11-04T17:17:00+01:00",
+          "tree_id": "75aa580ac94f71654cdf77b7ab9119a877dc189f",
+          "url": "https://github.com/tellus-rs/tellus/commit/ade43e7d85aba524f250cb1be7ed0204c134f2fd"
+        },
+        "date": 1793809491265,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11825691,
+            "range": "± 925054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 12138189,
+            "range": "± 878979",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 824303,
+            "range": "± 33979",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 623364,
+            "range": "± 3203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5105850,
+            "range": "± 65627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3556982,
+            "range": "± 40675",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16946172,
+            "range": "± 383271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 17418911,
+            "range": "± 509892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16622587,
+            "range": "± 350699",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 17258847,
+            "range": "± 528831",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17274720,
+            "range": "± 376527",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18383269,
+            "range": "± 471694",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 23502906,
+            "range": "± 784101",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17054478,
+            "range": "± 404140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 18595857,
+            "range": "± 439436",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 22998500,
+            "range": "± 767143",
             "unit": "ns/iter"
           }
         ]
