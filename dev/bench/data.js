@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793866614464,
+  "lastUpdate": 1793899740347,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9899,6 +9899,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22738314,
             "range": "± 781406",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8b28219f3d55a44431946c296af146d8cedbc263",
+          "message": "Merge pull request #255 from tellus-rs/docs/defer-messages-example\n\ndocs: add a how-to example for stashing",
+          "timestamp": "2026-11-05T17:21:04Z",
+          "tree_id": "c9a1172f9c08ff4bf7d0a125e03c4d89498a3657",
+          "url": "https://github.com/tellus-rs/tellus/commit/8b28219f3d55a44431946c296af146d8cedbc263"
+        },
+        "date": 1793899739639,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 10110011,
+            "range": "± 502269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9740963,
+            "range": "± 400963",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 737611,
+            "range": "± 12888",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 531644,
+            "range": "± 17728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3492571,
+            "range": "± 59146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2744034,
+            "range": "± 54372",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 13154603,
+            "range": "± 331137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 14821515,
+            "range": "± 491037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 13754805,
+            "range": "± 437934",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 14705909,
+            "range": "± 840763",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 13464729,
+            "range": "± 976194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 16149693,
+            "range": "± 610991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 19597858,
+            "range": "± 462227",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 13192880,
+            "range": "± 256828",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 16246100,
+            "range": "± 627255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 19251033,
+            "range": "± 429415",
             "unit": "ns/iter"
           }
         ]
