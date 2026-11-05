@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793899743640,
+  "lastUpdate": 1793904262928,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10019,6 +10019,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 19251033,
             "range": "± 429415",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6afc0eae8730144cc090dc4862e64bf8aff38a3b",
+          "message": "Merge pull request #259 from tellus-rs/docs/cluster-unwatch-contract\n\ndocs: drop absolute from the remote unwatch contract",
+          "timestamp": "2026-11-05T19:35:53+01:00",
+          "tree_id": "d34518f4b664d93d9896619efeb6436d03275d13",
+          "url": "https://github.com/tellus-rs/tellus/commit/6afc0eae8730144cc090dc4862e64bf8aff38a3b"
+        },
+        "date": 1793904262206,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14217708,
+            "range": "± 1009795",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15195909,
+            "range": "± 1515354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1151547,
+            "range": "± 56172",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 810913,
+            "range": "± 5632",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5789919,
+            "range": "± 130411",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4272956,
+            "range": "± 36907",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19753317,
+            "range": "± 427356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20476781,
+            "range": "± 351125",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19703822,
+            "range": "± 594129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20351508,
+            "range": "± 632996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19825065,
+            "range": "± 432533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21673762,
+            "range": "± 623133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27178530,
+            "range": "± 612877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19806954,
+            "range": "± 440673",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21693051,
+            "range": "± 759926",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27375733,
+            "range": "± 792610",
             "unit": "ns/iter"
           }
         ]
