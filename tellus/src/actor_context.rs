@@ -169,9 +169,8 @@ where
     }
 
     /// Stop watching another actor: no terminated signal for it will be received anymore, even if
-    /// it has already terminated and the signal is already enqueued or stashed. Its stashed signals
-    /// are dropped, while one stashed after the call is kept. Unwatching an actor which is not
-    /// watched only drops its stashed signals.
+    /// it has already terminated and the signal is already enqueued or stashed. A signal this actor
+    /// stashes after the call is the exception: it is received after unstashing.
     pub fn unwatch<N>(&self, other: &ActorRef<N>) {
         if let Some(watched) = self.watched.borrow_mut().remove(&other.actor_id()) {
             unwatch(self.self_ref().actor_id(), other.actor_id(), watched);

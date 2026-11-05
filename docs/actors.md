@@ -364,13 +364,14 @@ item back, as Akka classic's `preRestart` does, so the new state receives them f
 is after `init`, or after recovery and `recovered` for an event-sourced actor, and the new state
 decides for itself. Termination drops the stashed items like the queued ones, under
 `drop_containing_panic`, so a `ReplyTo` stashed inside a request resolves its `ask` as `NoReply`.
-`unwatch` drops the stashed terminated signals of the unwatched actor, unstashed ones not received
-yet included, so its promise holds for the stash too. A signal stashed after the call stays. An
-unstashed item skips the unwatch check of the run loop, which consumed the watch when the signal
-first arrived. Event-sourced actors stash the same way through `handle`, since both run loops take
-their next item through the same code. A `Stashed` actor which never stashes pays one length check
-per item in the run loop and one check for requests once the item is settled. An `Unstashed` actor
-pays nothing, since its loop holds no stash code.
+`unwatch` drops every terminated signal of the unwatched actor from the stash. That includes the
+signals already unstashed but not received yet, and those stashed earlier in the same `receive`. A
+signal stashed after `unwatch` is kept, so the actor receives it once it unstashes. An unstashed
+item skips the unwatch check of the run loop, which consumed the watch when the signal first
+arrived. Event-sourced actors stash the same way through `handle`, since both run loops take their
+next item through the same code. A `Stashed` actor which never stashes pays one length check per
+item in the run loop and one check for requests once the item is settled. An `Unstashed` actor pays
+nothing, since its loop holds no stash code.
 
 In a unit test, `TestContext::stashed` creates the context of a stashed actor and
 `TestContext::timed_stashed` one with timers. [`TestContext::take_stashed`](../tellus/src/testing.rs)
@@ -530,10 +531,11 @@ terminated, registration fails and the signal is delivered right away, so watchi
 
 `ActorContext::unwatch(other)` reverts a watch with a strong contract: after it returns, no
 terminated signal for `other` is received, even if `other` has already terminated and the signal
-is already enqueued. This is enforced on the watcher's side: the run loop delivers a terminated
-signal only if its sender is still watched, consuming the watch, so a stale signal is dropped
-before `receive` ever sees it. The same watcher-side bookkeeping deregisters a terminating actor
-from everything it still watches.
+is already enqueued. The one exception is a signal the actor stashes after the call (see stashing
+above). This is enforced on the watcher's side: the run loop delivers a terminated signal only if
+its sender is still watched, consuming the watch, so a stale signal is dropped before `receive` ever
+sees it. The same watcher-side bookkeeping deregisters a terminating actor from everything it still
+watches.
 
 With the `cluster` feature an actor on another node can be watched the same way; a synthesized
 signal for a downed node then carries a weaker contract, spelled out in
