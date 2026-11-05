@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793899740347,
+  "lastUpdate": 1793899742025,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15829,6 +15829,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 118392,
             "range": "± 2866",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8b28219f3d55a44431946c296af146d8cedbc263",
+          "message": "Merge pull request #255 from tellus-rs/docs/defer-messages-example\n\ndocs: add a how-to example for stashing",
+          "timestamp": "2026-11-05T17:21:04Z",
+          "tree_id": "c9a1172f9c08ff4bf7d0a125e03c4d89498a3657",
+          "url": "https://github.com/tellus-rs/tellus/commit/8b28219f3d55a44431946c296af146d8cedbc263"
+        },
+        "date": 1793899741645,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2108484,
+            "range": "± 159939",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2078802,
+            "range": "± 81463",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 902804,
+            "range": "± 34721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105626,
+            "range": "± 8498",
             "unit": "ns/iter"
           }
         ]
