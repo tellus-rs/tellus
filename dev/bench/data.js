@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793904265597,
+  "lastUpdate": 1793904268245,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16215,6 +16215,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 2995270,
             "range": "± 144782",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6afc0eae8730144cc090dc4862e64bf8aff38a3b",
+          "message": "Merge pull request #259 from tellus-rs/docs/cluster-unwatch-contract\n\ndocs: drop absolute from the remote unwatch contract",
+          "timestamp": "2026-11-05T19:35:53+01:00",
+          "tree_id": "d34518f4b664d93d9896619efeb6436d03275d13",
+          "url": "https://github.com/tellus-rs/tellus/commit/6afc0eae8730144cc090dc4862e64bf8aff38a3b"
+        },
+        "date": 1793904267908,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29423379,
+            "range": "± 1584570",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30426269,
+            "range": "± 1652275",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4661003,
+            "range": "± 281385",
             "unit": "ns/iter"
           }
         ]
