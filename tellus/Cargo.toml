@@ -126,6 +126,10 @@ name = "how_to_call_async_code"
 path = "examples/how_to/call_async_code.rs"
 
 [[example]]
+name = "how_to_defer_messages"
+path = "examples/how_to/defer_messages.rs"
+
+[[example]]
 name              = "how_to_configure_supervision"
 path              = "examples/how_to/configure_supervision.rs"
 required-features = [ "serde" ]
