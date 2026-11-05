@@ -161,6 +161,44 @@ async fn unwatch_drops_a_stashed_terminated_signal() {
     assert_eq!(events.recv().await, None);
 }
 
+/// `unwatch` drops a stash request made before it: the watcher stashes the terminated signal it is
+/// handling and then unwatches, so unstashing hands back only the message stashed later.
+#[tokio::test]
+async fn unwatch_drops_a_stash_request_made_before_it() {
+    let (system, mut events) = probe_system(ActorConfig::default());
+
+    system.root().tell(ProbeMessage::Hold);
+    system
+        .root()
+        .tell(ProbeMessage::WatchAndUnwatch(UnwatchOrder::StashFirst));
+    assert_eq!(next_event(&mut events).await, ProbeEvent::StashedTerminated);
+    system.root().tell(ProbeMessage::Keep(4));
+    system.root().tell(ProbeMessage::Release);
+
+    assert_eq!(next_event(&mut events).await, ProbeEvent::Stashed(4));
+    assert_eq!(next_event(&mut events).await, ProbeEvent::Kept(4, 1));
+    stop(system).await;
+    assert_eq!(events.recv().await, None);
+}
+
+/// A terminated signal stashed after `unwatch` is kept: the watcher unwatches and then stashes the
+/// signal it is handling, so unstashing hands it back.
+#[tokio::test]
+async fn a_terminated_signal_stashed_after_unwatch_is_received_after_unstashing() {
+    let (system, mut events) = probe_system(ActorConfig::default());
+
+    system.root().tell(ProbeMessage::Hold);
+    system
+        .root()
+        .tell(ProbeMessage::WatchAndUnwatch(UnwatchOrder::UnwatchFirst));
+    assert_eq!(next_event(&mut events).await, ProbeEvent::StashedTerminated);
+    system.root().tell(ProbeMessage::Release);
+
+    assert_eq!(next_event(&mut events).await, ProbeEvent::Terminated);
+    stop(system).await;
+    assert_eq!(events.recv().await, None);
+}
+
 /// Unstashed items are received before a due timer: they arrived before its deadline.
 #[tokio::test]
 async fn unstashed_items_are_received_before_a_due_timer() {
@@ -253,6 +291,7 @@ impl Actor for Probe {
             generation: self.generations.fetch_add(1, SeqCst) + 1,
             holding: false,
             watched: None,
+            unwatch_order: None,
         })
     }
 
@@ -293,11 +332,15 @@ impl Actor for Probe {
                 holding.watched = Some(stopper);
             }
 
-            Incoming::Message(ProbeMessage::Unwatch) => {
-                if let Some(stopper) = &holding.watched {
-                    context.unwatch(stopper);
-                }
+            Incoming::Message(ProbeMessage::WatchAndUnwatch(unwatch_order)) => {
+                let stopper = context.spawn(Stopper);
+                context.watch(&stopper);
+                stopper.tell(());
+                holding.watched = Some(stopper);
+                holding.unwatch_order = Some(unwatch_order);
             }
+
+            Incoming::Message(ProbeMessage::Unwatch) => holding.unwatch(context),
 
             Incoming::Message(ProbeMessage::StashAndFail(n)) => {
                 self.stash(context, Incoming::Message(ProbeMessage::Keep(n)));
@@ -323,7 +366,19 @@ impl Actor for Probe {
             Incoming::Message(ProbeMessage::Ask(reply_to)) => reply_to.reply(holding.generation),
 
             Incoming::Terminated(other) if holding.holding => {
-                self.stash(context, Incoming::Terminated(other));
+                match holding.unwatch_order.take() {
+                    None => self.stash(context, Incoming::Terminated(other)),
+
+                    Some(UnwatchOrder::StashFirst) => {
+                        self.stash(context, Incoming::Terminated(other));
+                        holding.unwatch(context);
+                    }
+
+                    Some(UnwatchOrder::UnwatchFirst) => {
+                        holding.unwatch(context);
+                        self.stash(context, Incoming::Terminated(other));
+                    }
+                }
                 self.emit(ProbeEvent::StashedTerminated);
             }
 
@@ -351,6 +406,15 @@ struct Holding {
     generation: u32,
     holding: bool,
     watched: Option<ActorRef<()>>,
+    unwatch_order: Option<UnwatchOrder>,
+}
+
+impl Holding {
+    fn unwatch(&self, context: &ActorContext<ProbeMessage, Timed, Stashed>) {
+        if let Some(stopper) = &self.watched {
+            context.unwatch(stopper);
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -360,11 +424,19 @@ enum ProbeMessage {
     ReleaseWithTimer,
     Fill(u32),
     Watch,
+    WatchAndUnwatch(UnwatchOrder),
     Unwatch,
     StashAndFail(u32),
     Fired,
     Keep(u32),
     Ask(ReplyTo<u32>),
+}
+
+/// Whether the watcher stashes the terminated signal it is handling before or after unwatching.
+#[derive(Debug)]
+enum UnwatchOrder {
+    StashFirst,
+    UnwatchFirst,
 }
 
 #[derive(Debug, PartialEq, Eq)]
