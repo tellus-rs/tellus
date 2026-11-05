@@ -635,7 +635,7 @@ as unknown targets, at-most-once either way.
   promise the synthesized signal makes. It fires only when the `Watch` frame cannot be sent, see
   above. A node which never becomes a member is answered instead when its lane is given up, together
   with the asks that lane fails.
-- **Unwatch stays absolute.** It is enforced on the watcher's side in the run loop, which does not
+- **Unwatch keeps its contract.** It is enforced on the watcher's side in the run loop, which does not
   know or care whether a signal came from the local or a remote actor.
 - **Watching is race-free.** A `Watch` for an already terminated (or never bound) actor is
   answered with an immediate terminated signal by the watched node, mirroring the local atomic
