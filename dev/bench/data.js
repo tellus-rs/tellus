@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793809497683,
+  "lastUpdate": 1793866609091,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -9779,6 +9779,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22998500,
             "range": "± 767143",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ce8709258235abfc0aade06a910e61449ba4494",
+          "message": "Merge pull request #257 from tellus-rs/docs/unwatch-stashed-signal\n\ndocs: state the stash exception to the unwatch contract",
+          "timestamp": "2026-11-05T09:08:59+01:00",
+          "tree_id": "fe6ddbdae3782dca4982bf5e01f6cf87ec92a398",
+          "url": "https://github.com/tellus-rs/tellus/commit/5ce8709258235abfc0aade06a910e61449ba4494"
+        },
+        "date": 1793866607980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11318132,
+            "range": "± 710307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 11376941,
+            "range": "± 869820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 888470,
+            "range": "± 25770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 634465,
+            "range": "± 10090",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5022733,
+            "range": "± 83449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3447572,
+            "range": "± 17044",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16820854,
+            "range": "± 582514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16856770,
+            "range": "± 587250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16566957,
+            "range": "± 493317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16902792,
+            "range": "± 545686",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 16743612,
+            "range": "± 1022061",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18046557,
+            "range": "± 545839",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 22933057,
+            "range": "± 663047",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 16691564,
+            "range": "± 513770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 18133327,
+            "range": "± 485721",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 22738314,
+            "range": "± 781406",
             "unit": "ns/iter"
           }
         ]
