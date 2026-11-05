@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793866612426,
+  "lastUpdate": 1793866614464,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15795,6 +15795,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3807777,
             "range": "± 271700",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5ce8709258235abfc0aade06a910e61449ba4494",
+          "message": "Merge pull request #257 from tellus-rs/docs/unwatch-stashed-signal\n\ndocs: state the stash exception to the unwatch contract",
+          "timestamp": "2026-11-05T09:08:59+01:00",
+          "tree_id": "fe6ddbdae3782dca4982bf5e01f6cf87ec92a398",
+          "url": "https://github.com/tellus-rs/tellus/commit/5ce8709258235abfc0aade06a910e61449ba4494"
+        },
+        "date": 1793866613850,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25354783,
+            "range": "± 1644497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24876669,
+            "range": "± 1277133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3652665,
+            "range": "± 328581",
             "unit": "ns/iter"
           }
         ]
