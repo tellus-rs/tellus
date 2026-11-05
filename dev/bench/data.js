@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1793905266710,
+  "lastUpdate": 1793905268894,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16165,6 +16165,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163500,
             "range": "± 6077",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "20d286105c110e560fe57d8142685dbcb7c0f412",
+          "message": "Merge pull request #260 from tellus-rs/fix/yanked-chacha20\n\nfix(security): update yanked chacha20 to 0.10.2",
+          "timestamp": "2026-11-05T19:53:19+01:00",
+          "tree_id": "cb43a672974de55032263401329d10c03c3d9bb7",
+          "url": "https://github.com/tellus-rs/tellus/commit/20d286105c110e560fe57d8142685dbcb7c0f412"
+        },
+        "date": 1793905268279,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2432139,
+            "range": "± 67446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2415181,
+            "range": "± 59653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 972820,
+            "range": "± 5772",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 112365,
+            "range": "± 2293",
             "unit": "ns/iter"
           }
         ]
