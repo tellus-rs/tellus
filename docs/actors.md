@@ -566,13 +566,19 @@ A `HostConfig` sets the buffer described below, 64 messages per entity by defaul
 timeout. Passivation is off unless `HostConfig::with_idle_timeout` sets a timeout, and that method
 refuses zero.
 
-The host is given two functions. `spawn` must spawn a fresh child through the context it is
-handed, on every call, e.g. via `ActorContext::spawn` or `ActorContext::spawn_event_sourced`; it
-must not return an actor it has returned before, nor one from outside the host's subtree. One
-entity per key, stopping the entities with the host and the delivery of buffered messages all rest
-on that, and the signature cannot enforce it. `passivate` builds the message asking an entity to
-stop, since an actor is stopped by itself or by its parent alone; an entity which does not stop on
-that message is never passivated.
+The host is given one function, `spawn`, returning an `ActorRef<Hosted<M>>`. It must spawn a fresh
+child through the context it is handed, on every call, e.g. via `ActorContext::spawn` or
+`ActorContext::spawn_event_sourced`; it must not return an actor it has returned before, nor one
+from outside the host's subtree. One entity per key, stopping the entities with the host and the
+delivery of buffered messages all rest on that, and the signature cannot enforce it.
+
+An entity's message type is `Hosted<M>`, where `M` is its domain message. The host wraps every
+message routed to it in `Hosted::Message` and asks it to stop with `Hosted::Passivate`, since an
+actor is stopped by itself or by its parent alone. A `HostEnvelope` carries the bare `M`, so
+clients cannot request passivation through the host, and the domain messages need no stop variant.
+A message told to the entity's reference directly has to be wrapped, e.g. via `into()`. That
+includes `Hosted::Passivate`, which, told directly, bypasses the host's buffering like any message
+which stops the entity.
 
 Passivation is what makes a host more than a map of references: it frees the memory of entities
 nobody talks to. That is safe only where the entity's state is recoverable or disposable, which is
@@ -582,7 +588,7 @@ Passivation ends an entity's timers with the rest of its state, and they are not
 automatically in the next incarnation. An event-sourced entity can record a deadline in its state
 and start the timer again in `recovered`. That restores the timer only once a message has spawned
 the next incarnation; nothing wakes a passivated entity at its deadline, so this is not a durable
-scheduled delivery. An entity can also defer stopping on the passivate message while a deadline is
+scheduled delivery. An entity can also defer stopping on `Hosted::Passivate` while a deadline is
 pending. From the moment the host sent that message, it buffers the messages routed through it for
 that entity until the entity has stopped (see below). Messages sent to the entity's reference
 directly, and its own timers, still reach the stopping incarnation.
@@ -595,7 +601,7 @@ cancel the tasks it spawned.
 
 A sweep asks every entity idle for at least the timeout to stop, and only an entity whose mailbox
 accepted that message counts as stopping. A full mailbox leaves the entity live and eligible at the
-next sweep, so a passivate message is never silently lost. An entity which has not stopped by the
+next sweep, so a `Hosted::Passivate` is never silently lost. An entity which has not stopped by the
 following sweep is logged at debug level as pending, without any claim about why. It may be
 finishing a long command, a recovery or a persistence settlement before it reaches the queued
 message.
@@ -618,7 +624,9 @@ dead letters.
 
 Ownership across nodes is not part of this. A host is local: it is the single node half of the
 sharded regions the roadmap describes, where the owner of a key is computed from the member list
-rather than being wherever the message happened to arrive.
+rather than being wherever the message happened to arrive. Neither a host's nor an entity's
+reference crosses nodes, since `HostEnvelope` and `Hosted` implement no `Schema`. A remote client
+reaches an entity through a local actor of the application which forwards to the host.
 
 ## Resolving `ActorSystem::terminated`
 
@@ -777,7 +785,7 @@ has to wait for the actor, since `tell` returns before the message is handled.
   at least the configured timeout, and a host checks that about once per timeout. There is no upper
   bound on when the entity has stopped: the host's own mailbox, scheduling, the entity finishing
   the command it is on and, for an event-sourced entity, its settlement all come first. An entity
-  which does not stop on its passivate message is never passivated, and messages for it queue in
-  the host's buffer until it does.
+  which does not stop on `Hosted::Passivate` is never passivated, and messages for it queue in the
+  host's buffer until it does.
 - These guarantees are stated for actors in one process; [cluster.md](cluster.md) spells out how
   they extend to actors on other nodes and where they weaken.

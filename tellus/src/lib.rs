@@ -35,9 +35,10 @@
 //! [ActorContext], an actor has no stash and pays nothing for it.
 //!
 //! A [Host] hosts entities: actors identified by a key, spawned on the first [HostEnvelope] for
-//! that key and, if configured, passivated once no message has been routed to them through the
-//! host for a while. Messages routed to an entity while the host passivates it are buffered for
-//! its next incarnation. See `docs/actors.md` in the repository for the guarantees.
+//! that key and, if configured, passivated by [Hosted::Passivate] once no message has been routed
+//! to them through the host for a while. Messages routed to an entity while the host passivates it
+//! are buffered for its next incarnation. See `docs/actors.md` in the repository for the
+//! guarantees.
 //!
 //! With the `persistence` feature, actors can be event sourced by implementing [EventSourced] and
 //! spawning via [ActorContext::spawn_event_sourced] or [ActorSystem::event_sourced]. Commands are
@@ -111,7 +112,7 @@ pub use crate::{
     actor_ref::ActorRef,
     actor_system::{ActorSystem, TerminatedError},
     backoff::{Backoff, InvalidBackoff},
-    host::{Host, HostConfig, HostEnvelope, InvalidHostConfig},
+    host::{Host, HostConfig, HostEnvelope, Hosted, InvalidHostConfig},
     request_response::{AskError, ReplyTo},
     stash::{StashMode, Stashed, Unstashed},
     timers::{Timed, TimerMode, Untimed},

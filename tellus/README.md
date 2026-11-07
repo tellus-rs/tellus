@@ -218,9 +218,11 @@ Failures are logged at error level either way.
 
 A `Host` is an actor hosting entities: children identified by a key, spawned on the first
 `HostEnvelope` for that key. With `HostConfig::with_idle_timeout` it passivates an entity to which
-no message has been routed through the host for that long. The messages routed to an entity while
-it stops are buffered, up to the configured buffer, and delivered to its next incarnation. See
-[docs/actors.md](../docs/actors.md#hosts) for the guarantees.
+no message has been routed through the host for that long, by telling it `Hosted::Passivate`; an
+entity's messages are `Hosted<M>`, so passivation stays out of its domain messages `M`. The
+messages routed to an entity while it stops are buffered, up to the configured buffer, and
+delivered to its next incarnation. See [docs/actors.md](../docs/actors.md#hosts) for the
+guarantees.
 
 ### Configuration
 
