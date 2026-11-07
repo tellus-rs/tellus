@@ -30,7 +30,7 @@ use tellus::{
     Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
     cluster::{
         self, BootstrapConfig, Change, ClusterState, EndpointConfig, Key, Manifest, Member,
-        MemberState, SeedDiscovery, Transition,
+        MemberState, Schema, SeedDiscovery, Transition,
         pubsub::{self, Topic},
         receptionist,
         transport::{ConnectedControl, QuicConnection, QuicTransport, Transport, TransportError},
@@ -280,6 +280,8 @@ enum Job {
     Stop,
 }
 
+impl Schema for Job {}
+
 impl Manifest for Job {
     const MANIFEST: &'static str = "job";
 }
@@ -289,6 +291,8 @@ struct Pong {
     addr: SocketAddr,
     up_members: usize,
 }
+
+impl Schema for Pong {}
 
 /// The worker's child, subscribed to the event topic: it records the latest event of every
 /// publisher, so a node's view shows whom pub-sub currently reaches it from.
@@ -328,6 +332,8 @@ struct Event {
     from: SocketAddr,
     seq: u64,
 }
+
+impl Schema for Event {}
 
 impl Manifest for Event {
     const MANIFEST: &'static str = "event";

@@ -79,8 +79,9 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `advertised_addr` | required | neither an unspecified IP nor port 0 |
 | `outbound_capacity` | 8192 | not 0 |
 | `max_streams_per_peer` | 16 | not 0; lowered to what the transport offers, 100 for QUIC |
-| `max_frame_size` | 1048576 (1 MiB) | at least 112, one framed member or reachability record |
-| `codec` | `postcard` | `postcard` |
+| `max_frame_size` | 1048576 (1 MiB) | at least 195, the widest handshake |
+| `codec` | `postcard` | `postcard`; a custom codec's name at most 64 bytes |
+| `app_version` | none | a semantic version, at most 64 bytes rendered |
 | `heartbeat_interval` | 1s | not 0 |
 | `watch_refresh_interval` | 2s | not 0 |
 | `failure_detector` | `phi_accrual` | `phi_accrual` or `deadline`, see below |
@@ -478,8 +479,12 @@ decodes as the body of an older one. The dialer sends the body of its newest ver
 acceptor answers with the body of the negotiated version. Without a version in common the acceptor
 answers with its bare envelope and closes, the dialer fails the attempt as incompatible, and both
 log the two ranges. A frame or field a later version adds is sent only to a peer which negotiated
-that version. This build speaks version 1, whose body names the node, its intent (`Member`, `Join`
-or `Probe`) and its cluster ID, if it has one.
+that version. This build speaks version 2 only, whose body names the node, its intent (`Member`,
+`Join` or `Probe`), its cluster ID, if it has one, the name of its codec and the version of its
+application, if one is configured. A peer naming another codec is refused as `CodecMismatch`. The
+frames carrying a message, a reply or a multicast carry the schema version of their payload, see
+Rolling upgrades; nothing gates that field, since version 1, the one of tellus 0.5, is not spoken:
+a 0.5 node and this one refuse each other at the handshake.
 
 All frames from one node toward another ride one lane: a set of outbound queues drained by one
 connection. Sending enqueues synchronously at `tell` time; the receiving endpoint injects into local
@@ -723,7 +728,8 @@ manifest the same way.
 
 tellus compares manifests, but it cannot check that a manifest names the same type on every node. A
 manifest must be unique per type across the cluster, and every node must use a compatible payload
-schema for it. Collisions across nodes are unsupported: the receiving node decodes a payload with
+schema for it, which the schema version every payload carries checks, see Rolling upgrades below.
+Collisions across nodes are unsupported: the receiving node decodes a payload with
 its own type for the manifest. Two different types whose serialized layouts are compatible hence
 decode, and the message delivered is silently misinterpreted; incompatible layouts are dead-lettered
 as undecodable. Debug builds panic when two types of one process claim the same manifest, and that
@@ -750,6 +756,52 @@ Discovery has these properties:
   working when that node is replaced.
 - **Registering an actor which has terminated already registers nothing**, and returns `Ok`, since
   the registration would outlive its actor by no time at all.
+
+## Rolling upgrades
+
+A message type changes while nodes of the old and of the new application run side by side, so
+every payload carries what crossing that boundary needs. Every type crossing nodes implements
+`cluster::Schema`, which `Manifest` requires: a schema version, `VERSION`, sent alongside every
+payload of the type; `decode`, which the receiver calls with the version the payload carries; and
+`encode`, which the sender calls with the `Peer` the payload is for. The defaults encode and decode
+the current shape as `VERSION`, 0 unless overridden, and refuse every other version. tellus
+implements `Schema` for the types with one shape forever: `bool`, `char`, the integer and float
+primitives, `String`, `()`, and `Option` and `Vec` of each of those, plus `ActorRef` and `ReplyTo`.
+A container of an application type is no `Schema`, since its elements' hooks would never run; the
+application wraps it in a type of its own. Since `Manifest` requires `Schema`, a published or
+registered type deserializes as well as it serializes.
+
+Old code cannot be taught a new shape, so only the new code bridges the two. New code reading an
+old payload is an upcast: `decode` matches the old version, decodes the old shape into its own type
+and converts, as persistence does in `Versioned::decode`. Old code reading a new payload needs the
+new code to send the old shape: `encode` reads `Peer::app_version`, the version of the application
+the peer announced at its handshake, and encodes the old shape when that version predates the
+change, usually through a view borrowing the fields of the current shape. The announced version is
+the `app_version` of `EndpointConfig`, a semantic version compared by semver precedence. It is
+`None` when the peer configured none, and before a handshake with the peer has completed, which a
+message enqueued ahead of the first connection sees; an `encode` override treats `None` as the
+oldest version it still encodes.
+
+A payload of a version the receiving type does not decode is a dead letter: the warning names the
+type and both versions, an ask fails as `NoReply`, and nothing is decoded with the wrong shape. That
+holds in every codec. With postcard, which is positional, a shape changed without a version bump is
+the one thing nothing catches: two fields of one type swapped, a field replaced by another of the
+same type, or a variant inserted or reordered decode silently wrong, while a field added or removed
+is a dead letter. So every change to a shape bumps `VERSION`.
+
+A rolling upgrade then takes one rollout: the new binary bumps `VERSION`, decodes the old version
+and encodes it for peers whose application version predates the change, and the operator rolls it
+out node by node. A rollback brings old peers back, which the same `encode` serves, as long as the
+next release keeps the downcast. Without the sender route, two rollouts do the same: first a release
+which decodes both shapes but still sends the old one, then one which sends the new one. A reply
+forwarded through a node is re-encoded there with that node's schema and the origin's application
+version, as is any payload the node sends.
+
+Every node of a cluster uses one codec. Its name rides every handshake, and a peer naming another
+one is refused as `CodecMismatch`, terminal like `ForeignCluster`, so switching the codec is no
+rolling upgrade. The codec name and the rendered application version are bounded to 64 bytes each,
+refused by `start_endpoint` and at the handshake alike, and the widest handshake, 195 bytes, is the
+floor of `max_frame_size`.
 
 ## Receptionist
 
@@ -817,9 +869,9 @@ A topic is a key under another name: `cluster::pubsub::Topic<M>` wraps the `Key<
 `pubsub::publish(&topic, message)` resolves the topic through the receptionist and tells each
 resolved subscriber, this node's own included. This node's own subscribers are told first, each a
 clone of the message, which is why `M: Clone` is required. There is no mediator and no second queue.
-The message is serialized only if a subscriber lives on another node, and then exactly once. Toward
-each node, the subscribers hashing onto one data stream share one `Multicast` frame, which names
-them all and carries the payload once. A group too large for `max_frame_size` is split over several
+The message is serialized only if a subscriber lives on another node, and then once per node, since
+`Schema::encode` may shape it per peer. Toward each node, the subscribers hashing onto one data
+stream share one `Multicast` frame, which names them all and carries the payload once. A group too large for `max_frame_size` is split over several
 frames on that stream, in order. The receiving node delivers a multicast to each of its targets in
 turn, and a target it cannot deliver to is a dead letter of its own. The answer is the number of
 subscribers told, never of deliveries: an unreachable node or a full outbound queue makes the
@@ -827,10 +879,12 @@ message a dead letter for every subscriber its frame names, as for a `tell`.
 
 Serializing a `ReplyTo` moves its destination into this node's pending replies, so one
 destination cannot travel to several nodes. A message whose serialization takes one is possible
-only through a cloneable wrapper an application writes around a `ReplyTo`. Such a message is sent
-as an ordinary message frame to the first remote subscriber alone, which receives the working
-destination. Every further remote subscriber is told on its own, finds the destination taken and
-gets a dead letter. A local subscriber, told first, receives its clone as for any local `tell`.
+only through a cloneable wrapper an application writes around a `ReplyTo`. The node whose encoding
+took the destination gets it as an ordinary message frame to its first subscriber alone, which
+receives the working destination, and every further subscriber of that node is told on its own,
+finds the destination taken and gets a dead letter. A node whose encoding left the destination
+alone, e.g. an older peer for which `encode` omits it, gets its multicast as usual. A local
+subscriber, told first, receives its clone as for any local `tell`.
 
 A topic and a discovery key of the same name are distinct keys, since the key's kind travels with
 it. So a lookup of `Key::new(name)` never lists the subscribers of the topic `name`, and neither
@@ -1160,6 +1214,12 @@ swap is added.
   node buffer more. The bytes are counted as if every registration carried its key, which bounds the
   snapshot however it is grouped. A single registration is bounded by the frame size. The cap of
   2^16 members, plus twice `down_watermarks` fences, applies to join snapshots only.
+- **A shape is known to the application alone.** tellus carries a schema version with every
+  payload and hands the peer's application version to every `encode`, but which shape a peer
+  understands, how an old one is upcast and how a new one is encoded for an old peer is the
+  application's `Schema` implementation. A shape changed without a version bump is caught by
+  nothing under postcard, see Rolling upgrades, and a tellus 0.5 node does not speak this protocol
+  version at all.
 - **A publish costs one frame per node and data stream, not one per node.** A node's subscribers
   spread over the streams of the lane toward it like any recipients, so a topic with many
   subscribers on one node costs up to `max_streams_per_peer` frames toward it. The receiving node

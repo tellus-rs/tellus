@@ -12,6 +12,7 @@ use crate::{
         membership::Member,
         node::NodeId,
         registry::LocalRefError,
+        schema::Schema,
         state::ClusterState,
         wire,
     },
@@ -48,7 +49,7 @@ pub(crate) const MAX_SNAPSHOT_BYTES: usize = 64 << 20;
 /// one has it registered for another message type.
 pub fn lookup<M>(key: &Key<M>) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
-    M: Manifest + Serialize + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
     resolve_key(endpoint, key)
@@ -67,7 +68,7 @@ where
 /// other message types.
 pub fn lookup_at<M>(key: &Key<M>, addr: SocketAddr) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
-    M: Manifest + Serialize + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
     resolve_key_at(endpoint, key, addr)
@@ -161,7 +162,7 @@ impl<M> Subscription<M> {
     /// another message type.
     pub fn current(&mut self) -> Result<Vec<ActorRef<M>>, ReceptionistError>
     where
-        M: Manifest + Serialize + Send + 'static,
+        M: Manifest + Send + 'static,
     {
         let listing = self.listing.borrow_and_update().clone();
         resolve(self.endpoint, &listing)
@@ -651,7 +652,7 @@ pub(crate) fn resolve_key<M>(
     key: &Key<M>,
 ) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
-    M: Manifest + Serialize + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     let listing = endpoint.receptionist().listing(&key.wire());
     resolve(endpoint, &listing)
@@ -663,7 +664,7 @@ fn resolve_key_at<M>(
     addr: SocketAddr,
 ) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
-    M: Manifest + Serialize + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     // The listing first, the Up filter in `resolve` after, else a death in between answers.
     let listing = endpoint.receptionist().listing(&key.wire()).at(addr);
@@ -701,7 +702,7 @@ fn resolve<M>(
     listing: &Listing,
 ) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
-    M: Serialize + Send + 'static,
+    M: Schema + Send + 'static,
 {
     let up = endpoint.membership().up_nodes();
     let refs = listing
@@ -862,9 +863,10 @@ mod tests {
                 ReceptionistError, Registration, Settlement, SnapshotSource, WireGroup,
                 on_registrations, resolve_key, resolve_key_at, settled_at, snapshot, subscribe_at,
             },
+            schema::Schema,
         },
     };
-    use serde::Serialize;
+    use serde::{Deserialize, Serialize};
     use std::{
         net::SocketAddr,
         thread,
@@ -1377,19 +1379,28 @@ mod tests {
     /// answers, a type naming another manifest is the other type.
     #[test]
     fn a_lookup_matches_the_manifest_not_the_rust_type() {
+        #[derive(Serialize, Deserialize)]
         struct Registered;
+
+        impl Schema for Registered {}
 
         impl Manifest for Registered {
             const MANIFEST: &'static str = "tests.registered";
         }
 
+        #[derive(Serialize, Deserialize)]
         struct Renamed;
+
+        impl Schema for Renamed {}
 
         impl Manifest for Renamed {
             const MANIFEST: &'static str = "tests.registered";
         }
 
+        #[derive(Serialize, Deserialize)]
         struct Other;
+
+        impl Schema for Other {}
 
         impl Manifest for Other {
             const MANIFEST: &'static str = "tests.other";
@@ -1687,7 +1698,7 @@ mod tests {
 
     fn pool_at<M>(endpoint: &EndpointInner, port: u16) -> Result<Vec<ActorId>, ReceptionistError>
     where
-        M: Manifest + Serialize + Send + 'static,
+        M: Manifest + Send + 'static,
     {
         resolve_key_at(endpoint, &Key::<M>::new("pool"), addr(port))
             .map(|refs| refs.iter().map(|actor_ref| actor_ref.actor_id()).collect())

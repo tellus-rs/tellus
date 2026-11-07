@@ -321,7 +321,7 @@ fn stream_index(key: StreamKey, streams: NonZeroUsize) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId,
+        ActorId, SchemaVersion,
         cluster::{
             discovery::Nonce,
             frame::{Frame, StreamKey},
@@ -362,6 +362,7 @@ mod tests {
         Frame::Message {
             target,
             reply_tags: Vec::new(),
+            schema_version: SchemaVersion::new(0),
             payload: Cow::Borrowed(&[]),
         }
     }
@@ -470,6 +471,7 @@ mod tests {
             Frame::Message {
                 target,
                 reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             },
         );
@@ -493,6 +495,7 @@ mod tests {
             Frame::Message {
                 target: watcher,
                 reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             },
         );

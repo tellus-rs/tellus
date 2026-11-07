@@ -1,11 +1,12 @@
 use crate::{
-    ActorId, ActorRef, ReplyTo,
+    ActorId, ActorRef, ReplyTo, SchemaVersion,
     cluster::{
         codec::{Codec, CodecError},
         discovery::Nonce,
         endpoint::{self, EndpointInner},
         frame::{Frame, StreamKey},
         node::NodeId,
+        schema::Schema,
         sink::{RemoteSendError, encode_and_send},
     },
     request_response::SendReply,
@@ -13,23 +14,21 @@ use crate::{
     watch::{ActorTerminated, TerminatedHandler, Watcher, WatcherRegistry},
 };
 use derive_more::Debug;
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, DeserializeOwned},
-    ser,
-};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 use std::{
     any::{Any, type_name},
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, hash_map::Entry},
+    error::Error,
     net::SocketAddr,
     sync::{Arc, Mutex, Weak, atomic::AtomicU64},
 };
 use thiserror::Error;
 use tracing::{debug, warn};
 
-type DeliverReply = fn(Box<dyn Any + Send>, &[u8], &dyn Codec) -> Result<(), CodecError>;
+type DeliverReply =
+    fn(Box<dyn Any + Send>, SchemaVersion, &[u8], &dyn Codec) -> Result<(), CodecError>;
 
 thread_local! {
     static MINTED_TAGS: RefCell<Option<Vec<ReplyTag>>> = const { RefCell::new(None) };
@@ -38,7 +37,7 @@ thread_local! {
 #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
 impl<R> Serialize for ReplyTo<R>
 where
-    R: DeserializeOwned + Send + 'static,
+    R: Schema + Send + 'static,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -78,7 +77,7 @@ where
 #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
 impl<'de, R> Deserialize<'de> for ReplyTo<R>
 where
-    R: Serialize + Send + 'static,
+    R: Schema + Send + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -514,11 +513,23 @@ pub(crate) fn discard_replies(tags: &[ReplyTag]) {
 }
 
 /// Only the peer a request was sent to may answer it: a nonce is unique to this node only.
-pub(crate) fn on_reply(endpoint: &EndpointInner, peer: NodeId, nonce: Nonce, payload: &[u8]) {
+pub(crate) fn on_reply(
+    endpoint: &EndpointInner,
+    peer: NodeId,
+    nonce: Nonce,
+    schema_version: SchemaVersion,
+    payload: &[u8],
+) {
     match endpoint.pending_replies().take_from(nonce, peer) {
         Some(pending) => {
-            if let Err(error) = (pending.deliver)(pending.send_reply, payload, endpoint.codec()) {
-                warn!(%peer, %nonce, %error, "dead letter");
+            let delivered = (pending.deliver)(
+                pending.send_reply,
+                schema_version,
+                payload,
+                endpoint.codec(),
+            );
+            if let Err(error) = delivered {
+                warn!(%peer, %nonce, %error, source = error.source(), "dead letter");
             }
         }
 
@@ -700,16 +711,17 @@ struct WireReplyTo {
 
 fn deliver_reply<R>(
     send_reply: Box<dyn Any + Send>,
+    schema_version: SchemaVersion,
     payload: &[u8],
     codec: &dyn Codec,
 ) -> Result<(), CodecError>
 where
-    R: DeserializeOwned + Send + 'static,
+    R: Schema + Send + 'static,
 {
     let send_reply = send_reply
         .downcast::<SendReply<R>>()
         .expect("the entry was added with this reply type's sink");
-    let reply = codec.decode_to::<R>(payload)?;
+    let reply = R::decode(codec, schema_version, payload)?;
     send_reply(reply);
     Ok(())
 }
@@ -761,7 +773,7 @@ fn remote_proxy<R>(
     recipient: Option<ActorId>,
 ) -> ReplyTo<R>
 where
-    R: Serialize + Send + 'static,
+    R: Schema + Send + 'static,
 {
     let proxy_origin = ProxyOrigin {
         node: origin,
@@ -803,17 +815,19 @@ fn send_reply_frame<R>(
     recipient: Option<ActorId>,
 ) -> Result<(), RemoteSendError>
 where
-    R: Serialize,
+    R: Schema,
 {
     let endpoint = endpoint::get().ok_or(RemoteSendError::EndpointNotStarted)?;
+    let peer = endpoint.peer(origin);
 
     encode_and_send(
         endpoint,
         origin,
-        || endpoint.codec().encode(reply),
-        |payload, _| Frame::Reply {
+        || reply.encode(endpoint.codec(), &peer),
+        |schema_version, payload, _| Frame::Reply {
             nonce,
             recipient,
+            schema_version,
             payload: Cow::Owned(payload),
         },
     )?;
@@ -824,7 +838,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, MailboxCapacity,
+        ActorId, MailboxCapacity, SchemaVersion,
         cluster::{
             codec::{Codec, CodecError},
             discovery::Nonce,
@@ -1354,6 +1368,7 @@ mod tests {
 
     fn deliver_nothing(
         _send_reply: Box<dyn Any + Send>,
+        _schema_version: SchemaVersion,
         _payload: &[u8],
         _codec: &dyn Codec,
     ) -> Result<(), CodecError> {

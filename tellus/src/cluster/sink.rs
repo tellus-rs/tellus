@@ -1,5 +1,5 @@
 use crate::{
-    ActorId, AskError,
+    ActorId, AskError, SchemaVersion,
     cluster::{
         codec::{Codec, CodecError},
         endpoint::{self, EndpointInner},
@@ -7,28 +7,30 @@ use crate::{
         lanes::LaneError,
         node::NodeId,
         reply::{self, ReplyTag},
+        schema::{Peer, Schema},
     },
 };
 use derive_more::Debug;
-use serde::Serialize;
 use std::borrow::Cow;
 use thiserror::Error;
+
+type Encode<M> = fn(&M, &dyn Codec, &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError>;
 
 #[derive(Debug)]
 pub(crate) struct RemoteSink<M> {
     node: NodeId,
     #[debug(skip)]
-    encode: fn(&M, &dyn Codec) -> Result<Vec<u8>, CodecError>,
+    encode: Encode<M>,
 }
 
 impl<M> RemoteSink<M> {
     pub(crate) fn new(node: NodeId) -> Self
     where
-        M: Serialize,
+        M: Schema,
     {
         Self {
             node,
-            encode: encode_message::<M>,
+            encode: M::encode,
         }
     }
 
@@ -43,14 +45,16 @@ impl<M> RemoteSink<M> {
         message: M,
     ) -> Result<Vec<ReplyTag>, RemoteSendError> {
         let endpoint = endpoint::get().ok_or(RemoteSendError::EndpointNotStarted)?;
+        let peer = endpoint.peer(self.node);
 
         encode_and_send(
             endpoint,
             self.node,
-            || (self.encode)(&message, endpoint.codec()),
-            |payload, reply_tags| Frame::Message {
+            || (self.encode)(&message, endpoint.codec(), &peer),
+            |schema_version, payload, reply_tags| Frame::Message {
                 target,
                 reply_tags: reply_tags.to_vec(),
+                schema_version,
                 payload: Cow::Owned(payload),
             },
         )
@@ -104,11 +108,11 @@ pub(crate) fn encode_and_send<E, F>(
     into_frame: F,
 ) -> Result<Vec<ReplyTag>, RemoteSendError>
 where
-    E: FnOnce() -> Result<Vec<u8>, CodecError>,
-    F: FnOnce(Vec<u8>, &[ReplyTag]) -> Frame<'static>,
+    E: FnOnce() -> Result<(SchemaVersion, Vec<u8>), CodecError>,
+    F: FnOnce(SchemaVersion, Vec<u8>, &[ReplyTag]) -> Frame<'static>,
 {
-    let (payload, reply_tags) = reply::record_minted(encode);
-    send_encoded(endpoint, peer, payload, reply_tags, into_frame)
+    let (encoded, reply_tags) = reply::record_minted(encode);
+    send_encoded(endpoint, peer, encoded, reply_tags, into_frame)
 }
 
 /// The reply tags are the ones minted encoding the payload, discarded unless the frame is queued.
@@ -116,16 +120,16 @@ where
 pub(crate) fn send_encoded<F>(
     endpoint: &EndpointInner,
     peer: NodeId,
-    payload: Result<Vec<u8>, CodecError>,
+    encoded: Result<(SchemaVersion, Vec<u8>), CodecError>,
     reply_tags: Vec<ReplyTag>,
     into_frame: F,
 ) -> Result<Vec<ReplyTag>, RemoteSendError>
 where
-    F: FnOnce(Vec<u8>, &[ReplyTag]) -> Frame<'static>,
+    F: FnOnce(SchemaVersion, Vec<u8>, &[ReplyTag]) -> Frame<'static>,
 {
-    let frame = payload
+    let frame = encoded
         .map_err(RemoteSendError::from)
-        .map(|payload| into_frame(payload, &reply_tags));
+        .map(|(schema_version, payload)| into_frame(schema_version, payload, &reply_tags));
 
     let stream = frame.as_ref().ok().and_then(Frame::stream_key);
     let mut cancellations = endpoint.pending_replies().stamp(&reply_tags, peer, stream);
@@ -167,17 +171,10 @@ pub(crate) fn admit_frame(
     Ok(frame)
 }
 
-fn encode_message<M>(message: &M, codec: &dyn Codec) -> Result<Vec<u8>, CodecError>
-where
-    M: Serialize,
-{
-    codec.encode(message)
-}
-
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId,
+        ActorId, SchemaVersion,
         cluster::{
             frame::Frame,
             sink::{RemoteSendError, admit_frame},
@@ -191,6 +188,7 @@ mod tests {
         let frame = || Frame::Message {
             target: ActorId::new(),
             reply_tags: Vec::new(),
+            schema_version: SchemaVersion::new(0),
             payload: Cow::Owned(vec![0; 31]),
         };
         let len = frame().encoded_len().expect("frame size");

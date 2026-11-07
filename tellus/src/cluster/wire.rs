@@ -7,14 +7,11 @@ use crate::{
         manifest::{self, Manifest},
         node::NodeId,
         registry::LocalRefError,
+        schema::Schema,
         sink::RemoteSink,
     },
 };
-use serde::{
-    Deserialize, Deserializer, Serialize, Serializer,
-    de::{self, DeserializeOwned},
-    ser,
-};
+use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 use thiserror::Error;
 
 /// A reference which cannot be serialized or resolved out of band.
@@ -62,7 +59,7 @@ impl From<LocalRefError> for RefError {
 /// [Manifest::MANIFEST] as `M`.
 pub fn serialize_ref<M>(actor_ref: &ActorRef<M>) -> Result<Vec<u8>, RefError>
 where
-    M: Manifest + DeserializeOwned + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     manifest::claim::<M>();
     let endpoint = endpoint::get().ok_or(RefError::EndpointNotStarted)?;
@@ -83,7 +80,7 @@ where
 /// [Manifest::MANIFEST] as `M`.
 pub fn deserialize_ref<M>(bytes: &[u8]) -> Result<ActorRef<M>, RefError>
 where
-    M: Manifest + Serialize + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     manifest::claim::<M>();
     let endpoint = endpoint::get().ok_or(RefError::EndpointNotStarted)?;
@@ -102,7 +99,7 @@ where
 #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
 impl<M> Serialize for ActorRef<M>
 where
-    M: DeserializeOwned + Send + 'static,
+    M: Schema + Send + 'static,
 {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -132,7 +129,7 @@ where
 #[cfg_attr(docsrs, doc(cfg(feature = "cluster")))]
 impl<'de, M> Deserialize<'de> for ActorRef<M>
 where
-    M: Serialize + Send + 'static,
+    M: Schema + Send + 'static,
 {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
@@ -155,7 +152,7 @@ pub(crate) fn resolve<M>(
     id: ActorId,
 ) -> Result<ActorRef<M>, LocalRefError>
 where
-    M: Serialize + Send + 'static,
+    M: Schema + Send + 'static,
 {
     if node == endpoint.node() {
         endpoint.registry().local_ref::<M>(id)

@@ -436,7 +436,7 @@ cross-file invariants:
   `cluster::codec`, `cluster::downing`, `cluster::failure` and `cluster::formation`, and one each
   for the directory and the fan-out over it: `cluster::receptionist` (`lookup`, `lookup_at`,
   `subscribe`, `settled`) and `cluster::pubsub` (`Topic`, `subscribe`, `publish`, which tells the
-  local subscribers the receptionist resolves and serializes once for the remote ones, one
+  local subscribers the receptionist resolves and serializes once per remote node, one
   `Multicast` frame per node and data stream). `ActorRef` is serializable via a process-wide
   endpoint singleton (`endpoint.rs`) plus a lazy registry (`registry.rs`) evicting through the
   core's watcher mechanism. All frames towards a node ride one lane, split into a control queue and
@@ -512,9 +512,17 @@ cross-file invariants:
 
 The wire protocol is versioned through the handshake envelope (`Frame` discriminant 0, magic,
 oldest and newest version, frozen for every version), negotiated before the body is decoded
-(`PROTOCOL_VERSIONS` in `cluster/frame.rs`). A new version adds handshake body fields only by
-appending, and every new frame or field is gated on the negotiated version. Every wire change
-updates the pinned-byte tests in `frame.rs`.
+(`PROTOCOL_VERSIONS` in `cluster/frame.rs`). This build speaks version 2 only: its body appends
+the codec name and the application version to version 1's, a codec mismatch is refused at the
+handshake (`RefusalReason::CodecMismatch`), and the `Message`, `Reply` and `Multicast` frames carry
+a `SchemaVersion` unconditionally, since version 1 is not spoken. A new version adds handshake body
+fields only by appending, and every new frame or field is gated on the negotiated version. Every
+wire change updates the pinned-byte tests in `frame.rs`. Every type crossing nodes implements
+`cluster::Schema` (`cluster/schema.rs`, required by `Manifest`): `VERSION`, `encode`, which sees
+the `Peer` with the application version its handshake announced (kept per node in
+`EndpointInner::peers`, a leaf lock evicted in `flush_fenced`), and `decode`, which upcasts; tellus
+implements it only for types with one shape forever, so a container of an application type needs a
+wrapper. `docs/cluster.md`, "Rolling upgrades", is the contract.
 
 Changes to the run loop, mailbox or termination sequence almost always affect the ordering and
 watch guarantees spelled out in `docs/actors.md`; the integration tests in `tellus/tests/` encode

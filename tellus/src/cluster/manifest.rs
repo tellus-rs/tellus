@@ -1,3 +1,4 @@
+use crate::cluster::schema::Schema;
 #[cfg(debug_assertions)]
 use crate::sync::lock;
 #[cfg(debug_assertions)]
@@ -12,12 +13,15 @@ use std::{
 /// rather than answered with a reference which drops every message told to it.
 ///
 /// A manifest must be unique per type across the cluster. Every node must use a compatible
-/// payload schema for it. Collisions across nodes are unsupported: the receiving node decodes a
-/// payload with its own type for the manifest. Two different types with compatible serialized
-/// layouts hence decode, and the message delivered is silently misinterpreted; incompatible
-/// layouts are dead-lettered. Debug builds panic when two types of one process claim the same
-/// manifest, which is the only collision detected.
-pub trait Manifest {
+/// payload schema for it, which [Schema] versions. Collisions across nodes are unsupported: the
+/// receiving node decodes a payload with its own type for the manifest. Two different types with
+/// compatible serialized layouts hence decode, and the message delivered is silently
+/// misinterpreted; incompatible layouts are dead-lettered. Debug builds panic when two types of
+/// one process claim the same manifest, which is the only collision detected.
+pub trait Manifest
+where
+    Self: Schema,
+{
     /// The stable name of the type across the cluster, independent of the Rust type: it must not
     /// change with a type rename or move, since nodes built from other code compare it.
     const MANIFEST: &'static str;
@@ -66,21 +70,34 @@ where
 
 #[cfg(all(test, debug_assertions))]
 mod tests {
-    use crate::cluster::manifest::{Manifest, claim};
+    use crate::cluster::{
+        manifest::{Manifest, claim},
+        schema::Schema,
+    };
+    use serde::{Deserialize, Serialize};
 
+    #[derive(Serialize, Deserialize)]
     struct First;
+
+    impl Schema for First {}
 
     impl Manifest for First {
         const MANIFEST: &'static str = "tests.collision";
     }
 
+    #[derive(Serialize, Deserialize)]
     struct Second;
+
+    impl Schema for Second {}
 
     impl Manifest for Second {
         const MANIFEST: &'static str = "tests.collision";
     }
 
+    #[derive(Serialize, Deserialize)]
     struct Repeated;
+
+    impl Schema for Repeated {}
 
     impl Manifest for Repeated {
         const MANIFEST: &'static str = "tests.repeated";

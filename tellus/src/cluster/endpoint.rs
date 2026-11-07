@@ -13,7 +13,7 @@ use crate::{
         failure::{
             self, FailureDetectorFactory, Liveness, PeerLiveness, PhiAccrualFailureDetector,
         },
-        frame::{Frame, RefusalReason},
+        frame::{Frame, Handshake, RefusalReason},
         lanes::{Drain, Generation, LaneError, Lanes},
         leave::{Departure, LeaveError},
         membership::{self, DownOutcome, Member, MemberState, Membership},
@@ -26,15 +26,15 @@ use crate::{
         receptionist::{self, PublishedChange, Receptionist, Snapshot},
         registry::{LimitExceeded, Registered, Registry},
         reply::{self, PendingReplies},
+        schema::{AppVersion, Peer, Schema},
         state::{Changes, ClusterState, ForeignCluster},
         transport::Transport,
         watch::{WatcherTable, WireWatchTable},
     },
-    sync::lock,
+    sync::{lock, read, write},
 };
 use derive_more::Debug;
 use flume::Sender;
-use serde::de::DeserializeOwned;
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -43,7 +43,7 @@ use std::{
     ops::ControlFlow,
     panic::{AssertUnwindSafe, catch_unwind},
     sync::{
-        Arc, Mutex, MutexGuard, OnceLock,
+        Arc, Mutex, MutexGuard, OnceLock, RwLock,
         atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering},
     },
     time::{Duration, Instant},
@@ -121,10 +121,21 @@ pub struct EndpointConfig {
     /// chunk. Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
     pub max_frame_size: NonZeroUsize,
 
-    /// The codec encoding and decoding message payloads. Defaults to [Postcard]; from a config
-    /// file one of the provided codecs is chosen by name, see docs/cluster.md.
+    /// The codec encoding and decoding message payloads, the same on every node of a cluster:
+    /// its [name](Codec::name) is carried in every handshake, and a peer naming another one is
+    /// refused. Defaults to [Postcard]; from a config file one of the provided codecs is chosen
+    /// by name, see docs/cluster.md. [start_endpoint] refuses a name longer than 64 bytes.
     #[debug(skip)]
     pub codec: Arc<dyn Codec>,
+
+    /// The version of the application this node runs, announced to every peer at the handshake
+    /// and handed to [Schema::encode](crate::cluster::Schema::encode) on the other side as the
+    /// peer's [app_version](crate::cluster::Peer::app_version), which is what lets a newer
+    /// application encode the older shape of a message for it. From a config file a semantic
+    /// version string, e.g. `app_version: "1.4.0"`. `None`, the default, announces nothing, which
+    /// a peer sees as no information. [start_endpoint] refuses a version rendering longer than
+    /// 64 bytes.
+    pub app_version: Option<AppVersion>,
 
     /// The interval at which every Up member is sent a gossip frame: the member list, or an empty
     /// frame to a member already sent the current list, except on every 10th tick. Every gossip
@@ -288,6 +299,7 @@ impl EndpointConfig {
             max_streams_per_peer: Self::DEFAULT_MAX_STREAMS_PER_PEER,
             max_frame_size: Self::DEFAULT_MAX_FRAME_SIZE,
             codec: Arc::new(Postcard),
+            app_version: None,
             heartbeat_interval: Self::DEFAULT_HEARTBEAT_INTERVAL,
             watch_refresh_interval: Self::DEFAULT_WATCH_REFRESH_INTERVAL,
             failure_detector: Arc::new(|| Box::new(PhiAccrualFailureDetector::default())),
@@ -325,16 +337,36 @@ pub enum InvalidEndpointConfig {
         advertised_addr: SocketAddr,
     },
 
-    /// The configured `max_frame_size` cannot hold the smallest chunk of a member snapshot or of
-    /// a reachability snapshot, so a connection setup could not send one without the receiver
-    /// refusing it.
+    /// The configured `max_frame_size` cannot hold the widest handshake or the smallest chunk of
+    /// a member snapshot or of a reachability snapshot, so a connection setup could not send one
+    /// without the receiver refusing it.
     #[error("max_frame_size of {max_frame_size} bytes is below the minimum of {min} bytes")]
     MaxFrameSizeTooSmall {
         /// The configured size.
         max_frame_size: usize,
 
-        /// The smallest size a snapshot chunk can respect.
+        /// The smallest size a handshake and a snapshot chunk can respect.
         min: usize,
+    },
+
+    /// The configured codec's name is longer than a handshake carries.
+    #[error("codec name of {len} bytes exceeds {max} bytes")]
+    CodecNameTooLong {
+        /// The length of the name in bytes.
+        len: usize,
+
+        /// The longest name a handshake carries.
+        max: usize,
+    },
+
+    /// The configured `app_version` renders longer than a handshake carries.
+    #[error("app_version of {len} bytes exceeds {max} bytes")]
+    AppVersionTooLong {
+        /// The length of the rendered version in bytes.
+        len: usize,
+
+        /// The longest version a handshake carries.
+        max: usize,
     },
 
     /// The configured `heartbeat_interval` is zero.
@@ -382,6 +414,9 @@ struct UncheckedEndpointConfig {
 
     #[serde(default)]
     codec: Option<CodecConfig>,
+
+    #[serde(default)]
+    app_version: Option<AppVersion>,
 
     #[serde(default, with = "humantime_serde")]
     heartbeat_interval: Option<Duration>,
@@ -434,6 +469,7 @@ impl TryFrom<UncheckedEndpointConfig> for EndpointConfig {
                 .unwrap_or(defaults.max_streams_per_peer),
             max_frame_size: unchecked.max_frame_size.unwrap_or(defaults.max_frame_size),
             codec: unchecked.codec.map_or(defaults.codec, CodecConfig::codec),
+            app_version: unchecked.app_version,
             heartbeat_interval: unchecked
                 .heartbeat_interval
                 .unwrap_or(defaults.heartbeat_interval),
@@ -642,6 +678,8 @@ pub(crate) struct EndpointInner {
     unreachable_warnings: Mutex<UnreachableWarnings>,
     sever_tx: watch::Sender<u64>,
     gossiped_versions: Mutex<HashMap<NodeId, u64>>,
+    // A leaf lock: never held while user code runs!
+    peers: RwLock<HashMap<NodeId, Arc<Peer>>>,
     gossip_ticks: AtomicU64,
     #[cfg(feature = "cluster-dev")]
     dropped_terminated: AtomicU64,
@@ -825,7 +863,7 @@ impl EndpointInner {
         actor_ref: &ActorRef<M>,
     ) -> Result<(), LimitExceeded>
     where
-        M: DeserializeOwned + Send + 'static,
+        M: Schema + Send + 'static,
     {
         let applied = match self.registry.register(key, actor_ref)? {
             Registered::Unchanged => true,
@@ -1205,6 +1243,26 @@ impl EndpointInner {
         lock(&self.gossiped_versions).remove(&peer);
     }
 
+    /// The peer a payload for the node is encoded for, without an application version until a
+    /// handshake with it has completed.
+    pub(crate) fn peer(&self, node: NodeId) -> Arc<Peer> {
+        read(&self.peers)
+            .get(&node)
+            .cloned()
+            .unwrap_or_else(|| Arc::new(Peer::new(node, None)))
+    }
+
+    /// Lock order: the peers, then `Membership::entries`. The Down check runs under the peers
+    /// lock, which `flush_fenced` evicts under, so a death between the admission and this record
+    /// leaves no entry behind.
+    pub(crate) fn record_peer(&self, node: NodeId, app_version: Option<AppVersion>) {
+        let mut peers = write(&self.peers);
+        if self.membership.is_down(node) {
+            return;
+        }
+        peers.insert(node, Arc::new(Peer::new(node, app_version)));
+    }
+
     /// `None` if no lane exists; gossip skips on connectivity alone, never on suspicion.
     pub(crate) fn lane_connected(&self, addr: SocketAddr) -> Option<bool> {
         self.lanes.connected(addr)
@@ -1238,6 +1296,7 @@ impl EndpointInner {
         lock(&self.departures)
             .deferred
             .retain(|node, _| !fence.covers(*node));
+        write(&self.peers).retain(|node, _| !fence.covers(*node));
         self.lanes.remove_fenced(fence);
         self.liveness.quiesce_fenced(fence);
         self.update(|_, reachability| reachability.prune_fenced(fence));
@@ -1495,6 +1554,7 @@ impl EndpointInner {
             unreachable_warnings: Mutex::new(UnreachableWarnings::default()),
             sever_tx: watch::channel(0).0,
             gossiped_versions: Mutex::new(HashMap::new()),
+            peers: RwLock::new(HashMap::new()),
             gossip_ticks: AtomicU64::new(0),
             #[cfg(feature = "cluster-dev")]
             dropped_terminated: AtomicU64::new(0),
@@ -1724,11 +1784,30 @@ fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
     if advertised_addr.port() == 0 {
         return Err(InvalidEndpointConfig::ZeroAdvertisedPort { advertised_addr });
     }
-    let min_frame_size = membership::MIN_FRAME_SIZE.max(reachability::MIN_FRAME_SIZE);
+    let min_frame_size = Handshake::MAX_ENCODED_LEN
+        .max(membership::MIN_FRAME_SIZE)
+        .max(reachability::MIN_FRAME_SIZE);
     if config.max_frame_size.get() < min_frame_size {
         return Err(InvalidEndpointConfig::MaxFrameSizeTooSmall {
             max_frame_size: config.max_frame_size.get(),
             min: min_frame_size,
+        });
+    }
+    let codec_name_len = config.codec.name().len();
+    if codec_name_len > Handshake::MAX_STRING_LEN {
+        return Err(InvalidEndpointConfig::CodecNameTooLong {
+            len: codec_name_len,
+            max: Handshake::MAX_STRING_LEN,
+        });
+    }
+    let app_version_len = config
+        .app_version
+        .as_ref()
+        .map_or(0, |app_version| app_version.to_string().len());
+    if app_version_len > Handshake::MAX_STRING_LEN {
+        return Err(InvalidEndpointConfig::AppVersionTooLong {
+            len: app_version_len,
+            max: Handshake::MAX_STRING_LEN,
         });
     }
     if config.heartbeat_interval.is_zero() {
@@ -2310,6 +2389,7 @@ fn refusal_backoff(strikes: u32) -> Duration {
 mod tests {
     use crate::cluster::{
         ClusterState,
+        codec::{Codec, DecodeVisitor, Postcard},
         downing::{Disconnected, Downing, DowningProvider},
         endpoint::{
             Coordinator, EndpointConfig, EndpointInner, FULL_GOSSIP_EVERY, ForeignClusters,
@@ -2318,7 +2398,7 @@ mod tests {
             validate,
         },
         failure::{Deadline, DeadlineFailureDetector},
-        frame::{Frame, RefusalReason},
+        frame::{Frame, Handshake, RefusalReason},
         lanes::{Drain, LaneError},
         leave::LeaveError,
         membership::{self, Member, MemberState},
@@ -2329,11 +2409,8 @@ mod tests {
         state::{BrokenLink, Change, ForeignCluster},
     };
     #[cfg(feature = "serde")]
-    use crate::cluster::{
-        codec::{Codec, Postcard},
-        downing::KeepMajority,
-        failure::PhiAccrual,
-    };
+    use crate::cluster::{downing::KeepMajority, failure::PhiAccrual};
+    use semver::Version;
     use std::{
         collections::{BTreeSet, HashSet},
         net::SocketAddr,
@@ -2971,7 +3048,9 @@ mod tests {
     #[test]
     fn an_invalid_config_is_refused() {
         let addr = "127.0.0.1:2552".parse().expect("valid address");
-        let required_min = membership::MIN_FRAME_SIZE.max(reachability::MIN_FRAME_SIZE);
+        let required_min = Handshake::MAX_ENCODED_LEN
+            .max(membership::MIN_FRAME_SIZE)
+            .max(reachability::MIN_FRAME_SIZE);
         let mut config = EndpointConfig::new(addr);
         config.max_frame_size =
             NonZeroUsize::new(required_min - 1).expect("the minimum is above one");
@@ -3403,6 +3482,7 @@ mod tests {
                 "max_streams_per_peer": 4,
                 "max_frame_size": 65536,
                 "codec": "postcard",
+                "app_version": "1.4.0-rc.1",
                 "heartbeat_interval": "500ms",
                 "watch_refresh_interval": "1s",
                 "failure_detector": { "deadline": "3s" },
@@ -3422,6 +3502,10 @@ mod tests {
         assert_eq!(config.outbound_capacity.get(), 128);
         assert_eq!(config.max_streams_per_peer.get(), 4);
         assert_eq!(config.max_frame_size.get(), 65_536);
+        assert_eq!(
+            config.app_version,
+            Some("1.4.0-rc.1".parse().expect("a semantic version"))
+        );
         assert_eq!(config.heartbeat_interval, Duration::from_millis(500));
         assert_eq!(config.watch_refresh_interval, Duration::from_secs(1));
         assert_eq!(config.down_retention, Duration::from_secs(60));
@@ -3471,6 +3555,7 @@ mod tests {
         assert_eq!(config.outbound_capacity, defaults.outbound_capacity);
         assert_eq!(config.max_streams_per_peer, defaults.max_streams_per_peer);
         assert_eq!(config.max_frame_size, defaults.max_frame_size);
+        assert_eq!(config.app_version, None);
         assert_eq!(config.heartbeat_interval, defaults.heartbeat_interval);
         assert_eq!(
             config.watch_refresh_interval,
@@ -3540,6 +3625,9 @@ mod tests {
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "max_frame_size": 1 }"#;
+        assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
+
+        let json = r#"{ "advertised_addr": "127.0.0.1:2552", "app_version": "latest" }"#;
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "leave_timeuot": "10s" }"#;
@@ -4038,5 +4126,58 @@ mod tests {
         assert!(cluster.is_some());
         assert_eq!(endpoint.effective_cluster(), cluster);
         assert_eq!(endpoint.state_rx().borrow().cluster(), cluster);
+    }
+
+    /// The codec name and the application version travel in the handshake, so a value longer
+    /// than it carries is refused at start, while the exact length passes.
+    #[test]
+    fn handshake_strings_are_bounded_at_start() {
+        struct Named(&'static str);
+
+        impl Codec for Named {
+            fn name(&self) -> &'static str {
+                self.0
+            }
+
+            fn encode(
+                &self,
+                message: &dyn erased_serde::Serialize,
+            ) -> Result<Vec<u8>, crate::cluster::codec::CodecError> {
+                Postcard.encode(message)
+            }
+
+            fn decode(
+                &self,
+                payload: &[u8],
+                visit: DecodeVisitor<'_>,
+            ) -> Result<(), crate::cluster::codec::CodecError> {
+                Postcard.decode(payload, visit)
+            }
+        }
+
+        let max = Handshake::MAX_STRING_LEN;
+        let mut config = EndpointConfig::new(addr(2552));
+
+        config.codec = Arc::new(Named("c".repeat(max).leak()));
+        assert!(validate(&config).is_ok());
+        config.codec = Arc::new(Named("c".repeat(max + 1).leak()));
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::CodecNameTooLong { len, max: limit })
+                if len == max + 1 && limit == max
+        ));
+
+        config.codec = Arc::new(Postcard);
+        let with_build = |len: usize| {
+            Version::parse(&format!("1.0.0+{}", "b".repeat(len - 6))).expect("a semantic version")
+        };
+        config.app_version = Some(with_build(max));
+        assert!(validate(&config).is_ok());
+        config.app_version = Some(with_build(max + 1));
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::AppVersionTooLong { len, max: limit })
+                if len == max + 1 && limit == max
+        ));
     }
 }
