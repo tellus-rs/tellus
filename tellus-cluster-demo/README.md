@@ -4,10 +4,11 @@ A five node tellus cluster which runs forever under continuous chaos, on Docker 
 Kubernetes.
 
 The nodes find each other through seed discovery, DNS or the Kubernetes API. Every cycle a chaos
-agent crashes one node, stops one with SIGTERM or partitions two nodes off the other three. A load
-balancer in front of the nodes stays available throughout, and a verifier holds the cluster to its
-promises once every quiet window. Both stacks run the same two binaries, node and verifier, and
-prove the same things; what differs is who starts the containers and how a fault is injected.
+agent crashes one node, partitions two nodes off the other three, stops one with SIGTERM or rolls
+all five to the other version of the application, one node per quiet window. A load balancer in
+front of the nodes stays available throughout, and a verifier holds the cluster to its promises
+once every quiet window. Both stacks run the same two binaries, node and verifier, and prove the
+same things; what differs is who starts the containers and how a fault is injected.
 
 ## Running it
 
@@ -82,12 +83,17 @@ Under Docker Compose:
 - **The load balancer** (`Caddyfile`), health checking all five nodes every two seconds, so a
   self-downed or leaving node leaves the rotation before it stops answering. It retries a failed
   request on another node for up to two seconds, so a crashed node costs no request.
-- **The chaos agent** (`chaos.sh`), rotating through three faults, one per cycle: `pumba kill` for a
+- **The chaos agent** (`chaos.sh`), rotating through four faults, one per cycle: `pumba kill` for a
   crash, `pumba netem loss --percent 100` in both directions between the two sides for a partition,
-  and a SIGTERM for a clean departure. The cluster handles the departure through `leave` rather than
-  through failure detection. A container signaled through the Docker API counts as manually stopped,
-  so no restart policy brings it back and the agent starts it again itself. It names the fault it is
-  running in a state file, which lets the verifier tell a legitimate disagreement from a violation.
+  a SIGTERM for a clean departure, and a roll of all five nodes to the other version of the
+  application. The cluster handles the departure through `leave` rather than through failure
+  detection. A container signaled through the Docker API counts as manually stopped, so no restart
+  policy brings it back and the agent starts it again itself. The roll writes the target version to
+  a file on the shared volume, which every container start reads into
+  `CFG__ENDPOINT__APP_VERSION`, then stops and restarts the nodes one at a time, a quiet window
+  after each, so the verifier checks every mixed cluster; the next roll goes back. It names the
+  fault it is running in a state file, which lets the verifier tell a legitimate disagreement from a
+  violation.
 - **The verifier** (`src/bin/verifier.rs`), polling the load balancer twice a second. Once per quiet
   window it checks that every node is a member, that every node sees all five as Up, none of them as
   unreachable and no broken link between them. It also checks that every node's receptionist
@@ -95,13 +101,19 @@ Under Docker Compose:
   subscribers of the event topic and have received an event from every node within the last three
   seconds, and every node must be able to message every other one. Before those it checks for a
   split brain, two members whose Up sets do not overlap, and checks nothing further if it finds one.
-  A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. It
-  serves its own `/events` stream as well: the chaos transitions it reads from the state file, each
-  verdict, each violation and each change of the load balancer's availability.
+  A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. Every
+  node also reports the version of the application it runs. A verification seeing more than one is
+  mixed, and its messaging check is what proves that the versions talk to each other. A uniform
+  version replacing another is a violation unless every mixed cluster in between, one to four
+  nodes on the new version, was verified: a roll which outruns the verifier is reported, not
+  missed. It serves its own `/events` stream as well: the chaos transitions it reads from the state
+  file, each verdict, each violation and each change of the load balancer's availability.
 
 On Kubernetes the nodes are a StatefulSet of five behind a headless service, and the load balancer
 is a service rather than Caddy. A partition is a pair of NetworkPolicies the agent switches on by
-labeling pods, and the agent shares a pod with the verifier so the two still meet over a file.
+labeling pods, a roll is the StatefulSet's own rolling update with its partition stepped down one
+ordinal per quiet window, and the agent shares a pod with the verifier so the two still meet over a
+file.
 [`k8s/README.md`](k8s/README.md) explains each of those, including why the nodes are a StatefulSet
 when a Deployment is the natural default. The verifier is the same binary with the same
 configuration, and is unaware of which stack it runs on.
@@ -138,6 +150,17 @@ configuration, and is unaware of which stack it runs on.
   to, and `GET /cluster` answers how many subscribers it resolves and whom it heard from within the
   last three seconds. A quiet window hence shows fan-out reaching every member, a restarted one
   included, through the subscription which replicated after its rejoin.
+- **Rolling upgrade**: the node binary holds two versions of the application, and
+  `endpoint.app_version` chooses which one a node runs: major 1 is the legacy one, major 2 the
+  current one. The current one's pong, the answer to a probe, is schema version 1 and carries the
+  answering node's application version, which the legacy pong lacks. Its `Schema` encodes version
+  0 for a peer whose announced application version is below 2 and decodes version 0 into the
+  current shape, so a legacy node and a current one probe each other without either dead-lettering
+  anything; the job itself is unchanged. The roll moves the five nodes from 1.0.0 to 2.0.0 one at a
+  time, with every mixed cluster verified, and the next roll moves them back, forever. A probe
+  answered across versions reports no version, since the pong which crossed was version 0; the
+  nodes' own versions come from `GET /cluster`. `docs/cluster.md`, "Rolling upgrades", is the
+  contract this shows.
 
 ## Configuration
 
@@ -163,12 +186,20 @@ The relevant settings are:
   simultaneously starting nodes from forming two clusters which never merge. In exchange, a cold
   start forms no cluster before all five containers are running. That suits a fixed size cluster
   and not an elastic one.
-- `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS` and `RECOVERY_SECS` (chaos), `DEAD_SECS` (chaos,
-  Compose only), `FLUSH_SETTLE_SECS` (chaos, Kubernetes only), and `TELLUS_SETTLE_SECS` and
-  `TELLUS_LB_OUTAGE_SECS` (verifier): the verifier only checks after the chaos agent has been quiet
-  for the settle window. So the settle window must stay below the quiet window, and the quiet window
-  must be long enough for a restarted node to have rejoined. A load balancer outage longer than
-  `TELLUS_LB_OUTAGE_SECS` is a violation.
+- `endpoint.app_version` (1.0.0): the version of the application a node runs and announces at
+  every handshake, which the roll overrides per node with `CFG__ENDPOINT__APP_VERSION`. Only
+  majors 1 and 2 run; anything else, or no version at all, fails the start.
+- `STARTUP_SECS`, `QUIET_SECS`, `PARTITION_SECS` and `RECOVERY_SECS` (chaos), `DEAD_SECS` and
+  `STOP_WAIT_SECS` (chaos, Compose only), `FLUSH_SETTLE_SECS` and `ROLLOUT_TIMEOUT_SECS` (chaos,
+  Kubernetes only), and `TELLUS_SETTLE_SECS` and `TELLUS_LB_OUTAGE_SECS` (verifier): the verifier
+  only checks after the chaos agent has been quiet for the settle window. So the settle window must
+  stay below the quiet window, and the quiet window must be long enough for a restarted node to
+  have rejoined. A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation.
+- `ROLL_QUIET_SECS` (chaos, defaults to `QUIET_SECS`): the quiet window between two nodes of one
+  roll. It must stay above the settle window as well, or no mixed cluster is verified, which the
+  verifier reports as `upgraded from 1.0.0 to 2.0.0 with 0 of 4 mixed clusters verified`; setting
+  it to 10 is the way to see that violation on purpose. `RETRY_SECS` (chaos) is how long a roll
+  step waits before retrying a failed Docker or kubectl call.
 - The `endpoint` section spells out the pluggable provider defaults, the adaptive phi accrual
   detector and `KeepMajority` after ten seconds of unreachability, so what the demo shows is what
   a deployment gets, visibly rather than implied. Every other `EndpointConfig` field keeps its
@@ -203,3 +234,16 @@ The relevant settings are:
   replaces it at once, and the replacement usually comes up on a different address, so the
   crashed member is gone for good and has to be detected before the cluster can converge. Compose
   needs its `DEAD_SECS` only because a container comes back at the same static address.
+- `docker start` cannot change a container's environment, so under Compose the node's `command`
+  is a shell line which reads `/chaos/version` from the shared volume into
+  `CFG__ENDPOINT__APP_VERSION`, if the file exists, and then execs the node. A node which downs
+  itself in the middle of a roll therefore restarts at the target version early, which the
+  verifier reports as a mixed cluster it did not verify. On Kubernetes a container restart keeps
+  the pod's environment, and a pod the crash fault deletes between rolls is recreated at the
+  version the cluster runs.
+- A roll step which cannot complete, a node which does not stop or start, a patch which fails or
+  a pod which is not replaced, is retried every `RETRY_SECS` with the fault still named in the
+  state file, rather than skipped: two nodes down at once would be a mixed cluster the verifier
+  never saw. A roll stuck that way shows as an `upgrade` or `downgrade` state which never ends.
+- The verifier's view of a roll lives in its memory, so a roll which completes between a verifier
+  restart and its first verification is not held to the mixed cluster rule.

@@ -208,6 +208,9 @@ impl App {
                 if node.phase.is_none() {
                     node.phase = Some(view.phase);
                 }
+                if node.app_version.is_none() {
+                    node.app_version = Some(view.app_version);
+                }
                 if node.workers.is_none() {
                     node.workers = Some(view.workers);
                 }
@@ -226,6 +229,7 @@ impl App {
             NodeEvent::Hello {
                 name,
                 addr,
+                app_version,
                 started_at,
                 resumed,
             } => {
@@ -244,6 +248,7 @@ impl App {
 
                     None => node.started_at = Some(started_at),
                 }
+                node.app_version = Some(app_version);
             }
 
             NodeEvent::Phase { phase } => {
@@ -437,13 +442,15 @@ impl App {
 
             VerifierEvent::Verified {
                 violations,
+                mixed,
                 quiet_for_millis,
             } => {
                 let quiet_for = Duration::from_millis(quiet_for_millis);
                 let (severity, text) = if violations == 0 {
+                    let versions = if mixed { ", mixed versions" } else { "" };
                     (
                         Severity::Info,
-                        format!("cluster verified after {quiet_for:.0?} quiet"),
+                        format!("cluster verified after {quiet_for:.0?} quiet{versions}"),
                     )
                 } else {
                     (
@@ -509,6 +516,7 @@ pub struct NodeSource {
     pub started_at: Option<u64>,
     pub inspect_started_at: Option<u64>,
     pub phase: Option<Phase>,
+    pub app_version: Option<String>,
     pub snapshot: Option<ClusterState>,
     pub settlement: Option<Settlement>,
     pub workers: Option<usize>,
@@ -530,6 +538,7 @@ impl NodeSource {
             started_at: None,
             inspect_started_at: None,
             phase: None,
+            app_version: None,
             snapshot: None,
             settlement: None,
             workers: None,
@@ -547,6 +556,7 @@ impl NodeSource {
 
     fn reset_demo_facts(&mut self) {
         self.phase = None;
+        self.app_version = None;
         self.workers = None;
         self.subscribers = None;
         self.publishers.clear();
@@ -711,9 +721,14 @@ mod tests {
     }
 
     fn hello(started_at: u64, resumed: bool) -> NodeEvent {
+        hello_of("1.0.0", started_at, resumed)
+    }
+
+    fn hello_of(app_version: &str, started_at: u64, resumed: bool) -> NodeEvent {
         NodeEvent::Hello {
             name: "node1".to_string(),
             addr: addr(7001),
+            app_version: app_version.to_string(),
             started_at,
             resumed,
         }
@@ -1005,6 +1020,7 @@ mod tests {
             serde_json::from_value::<ClusterView>(json!({
                 "name": "node1",
                 "phase": phase,
+                "app_version": "2.0.0",
                 "state": serde_json::to_value(state(1, vec![up(7001)], vec![])).expect("json"),
                 "settlement": { "version": 1, "settled": true },
                 "workers": 4,
@@ -1042,6 +1058,59 @@ mod tests {
         app.apply(Input::Node(0, NodeInput::Cluster(view(Phase::Member))), NOW);
         assert_eq!(app.nodes[0].phase, Some(Phase::Downed));
         assert_eq!(app.nodes[0].workers, Some(1));
+    }
+
+    /// The version comes from the hello, which a restart with another version replaces; the poll
+    /// fills it only while the stream has not said it.
+    #[test]
+    fn the_version_follows_the_hello_and_the_poll_fills_it_only_when_unknown() {
+        let mut app = App::new(&config());
+        let view = serde_json::from_value::<ClusterView>(json!({
+            "name": "node1",
+            "phase": Phase::Member,
+            "app_version": "3.0.0",
+            "state": serde_json::to_value(state(1, vec![up(7001)], vec![])).expect("json"),
+            "settlement": { "version": 1, "settled": true },
+            "workers": 1,
+            "subscribers": 1,
+            "publishers": [],
+        }))
+        .expect("a view deserializes");
+        app.apply(Input::Node(0, NodeInput::Cluster(view.clone())), NOW);
+        assert_eq!(app.nodes[0].app_version.as_deref(), Some("3.0.0"));
+
+        demo(&mut app, 0, 1, hello_of("1.0.0", 100, false));
+        assert_eq!(app.nodes[0].app_version.as_deref(), Some("1.0.0"));
+        app.apply(Input::Node(0, NodeInput::Cluster(view)), NOW);
+        assert_eq!(app.nodes[0].app_version.as_deref(), Some("1.0.0"));
+
+        demo(&mut app, 0, 2, hello_of("2.0.0", 200, false));
+        assert_eq!(app.nodes[0].app_version.as_deref(), Some("2.0.0"));
+        assert_eq!(app.nodes[0].phase, None);
+    }
+
+    #[test]
+    fn a_mixed_verification_says_so_on_the_timeline() {
+        let mut app = App::new(&config());
+        let verified = |mixed| {
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
+                at: 1,
+                event: VerifierEvent::Verified {
+                    violations: 0,
+                    mixed,
+                    quiet_for_millis: 30_000,
+                },
+            })))
+        };
+        app.apply(verified(false), NOW);
+        app.apply(verified(true), NOW);
+        assert_eq!(
+            texts(&app),
+            vec![
+                "cluster verified after 30s quiet",
+                "cluster verified after 30s quiet, mixed versions"
+            ]
+        );
     }
 
     #[test]
@@ -1108,6 +1177,7 @@ mod tests {
             Input::Verifier(VerifierInput::Status(VerifierStatus {
                 chaos: "quiet".to_string(),
                 verifications: 3,
+                mixed_verifications: 0,
                 violations: 0,
                 lb_requests: 10,
                 lb_failures: 0,

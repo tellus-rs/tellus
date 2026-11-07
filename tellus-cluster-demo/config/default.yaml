@@ -2,6 +2,7 @@ bootstrap:
   min_peers: 5
 
 endpoint:
+  app_version: "1.0.0"
   failure_detector:
     phi_accrual: {}
   downing_provider:

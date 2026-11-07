@@ -23,7 +23,7 @@ use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo,
     RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
     cluster::{
-        self, BootstrapConfig, EndpointConfig, FixedSeeds, Key, Manifest,
+        self, BootstrapConfig, EndpointConfig, FixedSeeds, Key, Manifest, Schema,
         downing::KeepMajority,
         failure::{Deadline, DeadlineFailureDetector},
         receptionist,
@@ -361,6 +361,8 @@ enum Command {
         reply_to: ReplyTo<Option<f64>>,
     },
 }
+
+impl Schema for Command {}
 
 impl Manifest for Command {
     const MANIFEST: &'static str = "device-manager-command";

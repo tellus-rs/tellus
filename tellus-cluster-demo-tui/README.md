@@ -32,8 +32,10 @@ Two environment variables, both optional:
 
 ## What it shows and where it comes from
 
-- **The membership matrix**: one row per node and one column per address any node lists or
-  advertises. Each cell is what the row's node currently says about the column's address: `up`,
+- **The membership matrix**: one row per node, with its phase and the version of the application
+  it runs, and one column per address any node lists or advertises. A roll shows as the version
+  column changing one row per quiet window. Each cell is what the row's node currently says about
+  the column's address: `up`,
   `left` (departed through a leave), `down`, `up+down`, `unreach` (Up but derived unreachable),
   `me`, or `?`. `up+down` is a retained Left or Down entry beside a fresh Up one, i.e. a restart
   whose old incarnation is not forgotten yet. A partition shows as a block pattern, convergence as
@@ -42,13 +44,16 @@ Two environment variables, both optional:
 - **The selected node's detail**: both streams' health, the cluster state version, the phase and the
   cluster ID. It shows the receptionist's counts and its verdict with the version it judged, flagged
   when that is not the state's version. The member list with incarnations, the unreachable members,
-  the publishers heard within the freshness window and the last probe round trips follow. It also
+  the publishers heard within the freshness window and the last probe round trips follow, each
+  probe with the application version the answer carried, which an answer from across versions
+  does not. It also
   lists the broken links, each as `observer ↛ subject`, and the addresses which answered as members
   of a foreign cluster, each with that cluster's ID. Both read `none` while there is none, and any
   entry is highlighted. A broken link lasts until it heals or `cluster::down` removes one of its
   ends; a foreign cluster never merges.
 - **The verifier strip**: the chaos agent's current action, how long it has been quiet,
-  verifications, violations, the load balancer's availability and its longest outage.
+  verifications, how many of them saw mixed application versions, violations, the load balancer's
+  availability and its longest outage.
 - **The timeline**: membership transitions per node, verdict flips, phase changes, chaos
   transitions, verdicts, violations and load balancer changes, merged across sources and ordered
   by the servers' own timestamps. Times are UTC, and the timeline keeps the latest 1000 entries.

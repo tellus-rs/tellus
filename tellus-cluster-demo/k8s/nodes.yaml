@@ -37,6 +37,12 @@ spec:
   # The five nodes start at once, as they do under Compose, so bootstrap faces the race it is
   # meant to survive rather than a convenient rollout.
   podManagementPolicy: Parallel
+  # Above the replica count, so a template change alone updates no pod: the chaos agent steps the
+  # partition down one ordinal at a time, with a quiet window after each.
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      partition: 5
   selector:
     matchLabels:
       app: tellus
@@ -66,6 +72,10 @@ spec:
           env:
             - name: RUST_LOG
               value: info
+            # The application version the chaos agent's roll replaces, so its read of the
+            # template finds one.
+            - name: CFG__ENDPOINT__APP_VERSION
+              value: "1.0.0"
             - name: CFG__NODE_NAME
               valueFrom:
                 fieldRef:

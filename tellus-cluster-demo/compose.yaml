@@ -2,6 +2,10 @@ name: tellus-cluster-demo
 
 x-node: &node
   image: tellus-cluster-demo:latest
+  # `docker start` reuses the container's environment, so the application version a restart
+  # runs is read from the chaos volume at every start; `exec` keeps the node PID 1, where the
+  # SIGTERM faults are delivered.
+  command: [ "sh", "-c", "[ ! -r /chaos/version ] || export CFG__ENDPOINT__APP_VERSION=$$(cat /chaos/version); exec node" ]
   # NET_ADMIN is what pumba's netem needs to install the tc rules cutting the cluster network.
   cap_add:
     - NET_ADMIN
@@ -9,6 +13,8 @@ x-node: &node
   environment: &node-env
     RUST_LOG: ${RUST_LOG:-info}
     CONFIG_OVERLAYS: dns
+  volumes:
+    - chaos:/chaos:ro
 
 services:
   node1:

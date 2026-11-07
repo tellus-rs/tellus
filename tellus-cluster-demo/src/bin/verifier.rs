@@ -4,7 +4,10 @@
 //! every node sees every other as Up with none unreachable and no broken link. Every node's
 //! receptionist resolves every worker and is settled. Every node resolves every subscriber of the
 //! event topic and has heard from every node lately, and every node can still message every other.
-//! A load balancer outage longer than the configured one is a violation at any time.
+//! A load balancer outage longer than the configured one is a violation at any time. Every node
+//! reports the version of the application it runs: a verification seeing more than one is mixed,
+//! and a uniform version replacing another is a violation unless every mixed cluster in between,
+//! one to all but one node on the new version, was verified.
 //!
 //! Violations are logged, counted and served at `/violations`, which keeps the latest 200; the
 //! process keeps running, since this is a forever test rather than a run to completion.
@@ -21,6 +24,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use tellus::cluster::AppVersion;
 use tellus_cluster_demo::{
     ClusterView, Phase, ProbeOutcome, ProbeReport, VerifierEvent, VerifierStatus, Violation,
 };
@@ -125,15 +129,30 @@ impl VerifierState {
         }
     }
 
-    async fn verified(&self, violations: Vec<String>) {
+    /// `versions` is one application version per node, `None` when a node did not answer, which
+    /// leaves the roll untouched: that window's cluster then counts as unverified.
+    async fn verified(&self, mut violations: Vec<String>, versions: Option<Vec<String>>) {
         let mut report = self.report.lock().await;
         report.verifications += 1;
+        let mixed = match versions {
+            Some(versions) => {
+                let (roll, mixed, violation) = roll_transition(report.roll.clone(), &versions);
+                report.roll = roll;
+                violations.extend(violation);
+                if mixed {
+                    report.mixed_verifications += 1;
+                }
+                mixed
+            }
+
+            None => false,
+        };
         let quiet_for = report
             .quiet_since
             .map(|since| since.elapsed())
             .unwrap_or_default();
         if violations.is_empty() {
-            info!(?quiet_for, "cluster verified");
+            info!(?quiet_for, mixed, "cluster verified");
         }
         let count = violations.len();
         for violation in violations {
@@ -141,6 +160,7 @@ impl VerifierState {
         }
         self.events.push(VerifierEvent::Verified {
             violations: count,
+            mixed,
             quiet_for_millis: millis(quiet_for),
         });
     }
@@ -187,11 +207,13 @@ struct Report {
     chaos: String,
     quiet_since: Option<Instant>,
     verifications: usize,
+    mixed_verifications: usize,
     violations: usize,
     lb_requests: usize,
     lb_failures: usize,
     longest_lb_outage_millis: u128,
     lb: LbState,
+    roll: Roll,
     recent_violations: Vec<Violation>,
 }
 
@@ -201,11 +223,13 @@ impl Report {
             chaos: UNKNOWN.to_string(),
             quiet_since: None,
             verifications: 0,
+            mixed_verifications: 0,
             violations: 0,
             lb_requests: 0,
             lb_failures: 0,
             longest_lb_outage_millis: 0,
             lb: LbState::Unknown,
+            roll: Roll::new(),
             recent_violations: Vec::new(),
         }
     }
@@ -214,6 +238,7 @@ impl Report {
         VerifierStatus {
             chaos: self.chaos.clone(),
             verifications: self.verifications,
+            mixed_verifications: self.mixed_verifications,
             violations: self.violations,
             lb_requests: self.lb_requests,
             lb_failures: self.lb_failures,
@@ -236,6 +261,23 @@ enum LbState {
         since: Instant,
         last_violation_at: Instant,
     },
+}
+
+/// What the verifications since the last uniform application version have shown: that version,
+/// and how many nodes were on another one in each mixed verification since.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Roll {
+    last_uniform: Option<String>,
+    rolled_counts: BTreeSet<usize>,
+}
+
+impl Roll {
+    fn new() -> Self {
+        Self {
+            last_uniform: None,
+            rolled_counts: BTreeSet::new(),
+        }
+    }
 }
 
 fn init_tracing() {
@@ -384,6 +426,62 @@ fn lb_transition(
     }
 }
 
+/// The next state, whether this verification was mixed, and the violation when one version has
+/// replaced the last uniform one without every mixed cluster in between, one to all but one node
+/// on the new version, having been verified. `versions` is one application version per node.
+fn roll_transition(roll: Roll, versions: &[String]) -> (Roll, bool, Option<String>) {
+    let distinct = versions.iter().collect::<BTreeSet<_>>();
+    if distinct.len() > 1 {
+        let mut roll = roll;
+        if let Some(previous) = &roll.last_uniform {
+            let rolled = versions
+                .iter()
+                .filter(|version| *version != previous)
+                .count();
+            roll.rolled_counts.insert(rolled);
+        }
+        return (roll, true, None);
+    }
+    let Some(version) = distinct.into_iter().next() else {
+        return (roll, false, None);
+    };
+    let violation = match &roll.last_uniform {
+        Some(previous) if previous != version => {
+            let mixed_clusters = 1..versions.len();
+            let verified = mixed_clusters
+                .clone()
+                .filter(|count| roll.rolled_counts.contains(count))
+                .count();
+            (verified < mixed_clusters.len()).then(|| {
+                format!(
+                    "{} from {previous} to {version} with {verified} of {} mixed clusters verified",
+                    direction(previous, version),
+                    mixed_clusters.len()
+                )
+            })
+        }
+
+        _ => None,
+    };
+    let roll = Roll {
+        last_uniform: Some(version.clone()),
+        rolled_counts: BTreeSet::new(),
+    };
+    (roll, false, violation)
+}
+
+/// `upgraded` or `downgraded` by semver precedence, `changed` if either does not parse.
+fn direction(previous: &str, current: &str) -> &'static str {
+    match (
+        previous.parse::<AppVersion>(),
+        current.parse::<AppVersion>(),
+    ) {
+        (Ok(previous), Ok(current)) if current > previous => "upgraded",
+        (Ok(_), Ok(_)) => "downgraded",
+        _ => "changed",
+    }
+}
+
 /// Verifies once per quiet window: the chaos agent's state file names the fault it is running,
 /// so the cluster is only held to its promises once it has had [Config::settle] without one.
 async fn verify(config: Arc<Config>, state: Arc<VerifierState>) -> anyhow::Result<()> {
@@ -402,8 +500,8 @@ async fn verify(config: Arc<Config>, state: Arc<VerifierState>) -> anyhow::Resul
             continue;
         }
 
-        let violations = verify_cluster(&client, &config.nodes).await;
-        state.verified(violations).await;
+        let (violations, versions) = verify_cluster(&client, &config.nodes).await;
+        state.verified(violations, versions).await;
         verified = true;
     }
 }
@@ -421,7 +519,9 @@ async fn chaos_state(path: &Path) -> String {
     }
 }
 
-async fn verify_cluster(client: &Client, nodes: &[String]) -> Vec<String> {
+/// The violations and, once every node answered, the application version of each: a
+/// configuration fact every node reports in every phase, so a split brain still yields them.
+async fn verify_cluster(client: &Client, nodes: &[String]) -> (Vec<String>, Option<Vec<String>>) {
     let mut violations = Vec::new();
 
     let mut views = Vec::with_capacity(nodes.len());
@@ -432,12 +532,16 @@ async fn verify_cluster(client: &Client, nodes: &[String]) -> Vec<String> {
         }
     }
     if views.len() < nodes.len() {
-        return violations;
+        return (violations, None);
     }
+    let versions = views
+        .iter()
+        .map(|view| view.app_version.clone())
+        .collect::<Vec<_>>();
 
     if let Some(split) = split_brain(&views) {
         violations.push(split);
-        return violations;
+        return (violations, Some(versions));
     }
 
     let expected = views.iter().map(ClusterView::addr).collect::<BTreeSet<_>>();
@@ -526,7 +630,7 @@ async fn verify_cluster(client: &Client, nodes: &[String]) -> Vec<String> {
         }
     }
 
-    violations
+    (violations, Some(versions))
 }
 
 /// Two members whose Up sets do not overlap are two clusters, which never merge on their own. It
@@ -600,9 +704,9 @@ fn millis(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LbState, VerifierState, lb_transition, split_brain};
+    use crate::{LbState, Roll, VerifierState, lb_transition, roll_transition, split_brain};
     use serde_json::json;
-    use std::{net::SocketAddr, time::Duration};
+    use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
     use tellus_cluster_demo::{ClusterView, Phase, VerifierEvent};
     use tokio::time::Instant;
 
@@ -627,6 +731,7 @@ mod tests {
         serde_json::from_value(json!({
             "name": name,
             "phase": phase,
+            "app_version": "1.0.0",
             "state": {
                 "version": 1,
                 "this": { "addr": addr(port), "incarnation": incarnation(port) },
@@ -801,5 +906,153 @@ mod tests {
         assert_eq!(status.lb_available, Some(true));
         assert_eq!(status.lb_requests, 3);
         assert_eq!(status.lb_failures, 1);
+    }
+
+    fn versions(old: usize, new: usize) -> Vec<String> {
+        let old = (0..old).map(|_| "1.0.0".to_string());
+        let new = (0..new).map(|_| "2.0.0".to_string());
+        old.chain(new).collect()
+    }
+
+    fn uniform(version: &str) -> Roll {
+        Roll {
+            last_uniform: Some(version.to_string()),
+            rolled_counts: BTreeSet::new(),
+        }
+    }
+
+    #[test]
+    fn a_first_uniform_verification_only_records() {
+        let (roll, mixed, violation) = roll_transition(Roll::new(), &versions(5, 0));
+
+        assert_eq!(roll, uniform("1.0.0"));
+        assert!(!mixed);
+        assert_eq!(violation, None);
+    }
+
+    /// Before a uniform version is known, old and new cannot be told apart, so nothing is
+    /// recorded and the uniform version seen next does not count as a change.
+    #[test]
+    fn a_first_mixed_verification_records_no_count() {
+        let (roll, mixed, violation) = roll_transition(Roll::new(), &versions(3, 2));
+        assert_eq!(roll, Roll::new());
+        assert!(mixed);
+        assert_eq!(violation, None);
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(0, 5));
+        assert_eq!(roll, uniform("2.0.0"));
+        assert!(!mixed);
+        assert_eq!(violation, None);
+    }
+
+    #[test]
+    fn a_mixed_verification_records_the_nodes_on_the_other_version() {
+        let (roll, mixed, violation) = roll_transition(uniform("1.0.0"), &versions(3, 2));
+
+        assert_eq!(roll.last_uniform.as_deref(), Some("1.0.0"));
+        assert_eq!(roll.rolled_counts, BTreeSet::from([2]));
+        assert!(mixed);
+        assert_eq!(violation, None);
+    }
+
+    #[test]
+    fn the_same_version_twice_is_silent_and_resets_the_counts() {
+        let roll = Roll {
+            last_uniform: Some("1.0.0".to_string()),
+            rolled_counts: BTreeSet::from([1, 2]),
+        };
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(5, 0));
+
+        assert_eq!(roll, uniform("1.0.0"));
+        assert!(!mixed);
+        assert_eq!(violation, None);
+    }
+
+    #[test]
+    fn a_roll_back_to_the_last_uniform_version_is_silent() {
+        let roll = Roll {
+            last_uniform: Some("1.0.0".to_string()),
+            rolled_counts: BTreeSet::from([1, 2]),
+        };
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(4, 1));
+        assert!(mixed);
+        assert_eq!(violation, None);
+        assert_eq!(roll.rolled_counts, BTreeSet::from([1, 2]));
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(5, 0));
+
+        assert_eq!(roll, uniform("1.0.0"));
+        assert!(!mixed);
+        assert_eq!(violation, None);
+    }
+
+    #[test]
+    fn a_change_after_every_mixed_cluster_is_fine() {
+        let mut roll = uniform("1.0.0");
+        for new in 1..5 {
+            let (next, mixed, violation) = roll_transition(roll, &versions(5 - new, new));
+            assert!(mixed);
+            assert_eq!(violation, None);
+            roll = next;
+        }
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(0, 5));
+
+        assert_eq!(roll, uniform("2.0.0"));
+        assert!(!mixed);
+        assert_eq!(violation, None);
+    }
+
+    #[test]
+    fn a_change_with_a_mixed_cluster_missing_is_a_violation() {
+        let roll = Roll {
+            last_uniform: Some("1.0.0".to_string()),
+            rolled_counts: BTreeSet::from([1, 2, 4]),
+        };
+
+        let (roll, mixed, violation) = roll_transition(roll, &versions(0, 5));
+
+        assert_eq!(roll, uniform("2.0.0"));
+        assert!(!mixed);
+        assert_eq!(
+            violation,
+            Some("upgraded from 1.0.0 to 2.0.0 with 3 of 4 mixed clusters verified".to_string())
+        );
+    }
+
+    #[test]
+    fn a_change_without_a_mixed_cluster_names_the_direction() {
+        let (_, _, violation) = roll_transition(uniform("2.0.0"), &versions(5, 0));
+        assert_eq!(
+            violation,
+            Some("downgraded from 2.0.0 to 1.0.0 with 0 of 4 mixed clusters verified".to_string())
+        );
+
+        let (_, _, violation) = roll_transition(uniform("1.0.0"), &vec!["two".to_string(); 3]);
+        assert_eq!(
+            violation,
+            Some("changed from 1.0.0 to two with 0 of 2 mixed clusters verified".to_string())
+        );
+    }
+
+    /// A verification a node did not answer leaves the roll alone, so the window it stood for is
+    /// never counted as verified.
+    #[tokio::test]
+    async fn a_verification_without_versions_leaves_the_roll_untouched() {
+        let state = VerifierState::new(LB_OUTAGE);
+        state.verified(Vec::new(), Some(versions(5, 0))).await;
+        state.verified(Vec::new(), Some(versions(4, 1))).await;
+        state
+            .verified(vec!["node3 did not answer".to_string()], None)
+            .await;
+
+        let report = state.report.lock().await;
+        assert_eq!(report.verifications, 3);
+        assert_eq!(report.mixed_verifications, 1);
+        assert_eq!(report.violations, 1);
+        assert_eq!(report.roll.last_uniform.as_deref(), Some("1.0.0"));
+        assert_eq!(report.roll.rolled_counts, BTreeSet::from([1]));
     }
 }

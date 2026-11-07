@@ -1,5 +1,6 @@
-use crate::persistence::{
-    persistence_id::PersistenceId, schema_version::SchemaVersion, seq_no::SeqNo,
+use crate::{
+    persistence::{persistence_id::PersistenceId, seq_no::SeqNo},
+    schema_version::SchemaVersion,
 };
 use std::{borrow::Cow, convert::Infallible, error::Error, num::NonZeroUsize};
 use thiserror::Error;

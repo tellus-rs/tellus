@@ -1,20 +1,30 @@
 #!/bin/sh
-# The chaos agent: every cycle it kills one node, stops one node or partitions two nodes off the
-# other three, and names what it is doing in the state file the verifier reads, so the cluster is
-# only held to its promises once it has had a quiet window to recover.
+# The chaos agent: every cycle it kills one node, partitions two nodes off the other three, stops
+# one node or rolls all five to the other application version, and names what it is doing in the
+# state file the verifier reads, so the cluster is only held to its promises once it has had a
+# quiet window to recover.
 
 set -eu
 
 NODE_COUNT=${NODE_COUNT:-5}
 POD_PREFIX=${POD_PREFIX:-tellus-}
 SELECTOR=${SELECTOR:-app=tellus}
+STATEFULSET=${STATEFULSET:-tellus}
+VERSION_ENV=CFG__ENDPOINT__APP_VERSION
+OLD_VERSION=${OLD_VERSION:-1.0.0}
+NEW_VERSION=${NEW_VERSION:-2.0.0}
 FLUSH_SELECTOR=${FLUSH_SELECTOR:-app=tellus-conntrack}
 FLUSH_SETTLE_SECS=${FLUSH_SETTLE_SECS:-5}
 STATE_FILE=${STATE_FILE:-/chaos/state}
 STARTUP_SECS=${STARTUP_SECS:-60}
 QUIET_SECS=${QUIET_SECS:-45}
+# The quiet window between two pods of one roll; the windows before and after the roll are the
+# cycle's own. Below the verifier's settle time no mixed cluster is verified, which it reports.
+ROLL_QUIET_SECS=${ROLL_QUIET_SECS:-$QUIET_SECS}
 PARTITION_SECS=${PARTITION_SECS:-75}
 RECOVERY_SECS=${RECOVERY_SECS:-25}
+ROLLOUT_TIMEOUT_SECS=${ROLLOUT_TIMEOUT_SECS:-120}
+RETRY_SECS=${RETRY_SECS:-10}
 
 state() {
     echo "$1" > "$STATE_FILE"
@@ -46,6 +56,83 @@ leave_node() {
     state "leave $(pod "$1")"
     kubectl delete pod "$(pod "$1")" || echo "kubectl delete failed"
     sleep "$RECOVERY_SECS"
+}
+
+# Runs a command until it succeeds. The state file keeps naming the fault meanwhile, so a step
+# which cannot complete never lets the verifier take a half-rolled cluster for a quiet one.
+until_done() {
+    until "$@"; do
+        echo "chaos: '$*' failed, retrying in ${RETRY_SECS}s" >&2
+        sleep "$RETRY_SECS"
+    done
+}
+
+# Rolls every pod to the other application version, highest ordinal first as the StatefulSet
+# controller does, with the partition stepped down one ordinal at a time and a quiet window after
+# each, so the verifier checks every mixed cluster. Re-asserting the partition above the replica
+# count before the template change is what keeps that change from updating every pod at once.
+roll_nodes() {
+    if [ "$version" = "$OLD_VERSION" ]; then
+        target=$NEW_VERSION
+        verb=upgrade
+    else
+        target=$OLD_VERSION
+        verb=downgrade
+    fi
+
+    state "$verb to $target"
+    until_done partition_at "$NODE_COUNT"
+    until_done kubectl set env "statefulset/$STATEFULSET" "$VERSION_ENV=$target" > /dev/null
+    until_done template_observed
+    for ordinal in $(seq $((NODE_COUNT - 1)) -1 0); do
+        if [ "$ordinal" -ne $((NODE_COUNT - 1)) ]; then
+            state quiet
+            sleep "$ROLL_QUIET_SECS"
+        fi
+        roll_node "$ordinal" "$target" "$verb"
+    done
+    version=$target
+}
+
+# The kubelet's SIGTERM within the grace period, as leave_node, but issued by the StatefulSet
+# controller, which recreates the pod from the updated template. The wait is on this pod's own
+# revision: the updated count is at the partition's threshold before the pod is replaced when an
+# interrupted roll left pods of the other direction at the target already.
+roll_node() {
+    state "$3 $(pod "$1") to $2"
+    until_done partition_at "$1"
+    until_done pod_updated "$1"
+    sleep "$RECOVERY_SECS"
+}
+
+partition_at() {
+    kubectl patch statefulset "$STATEFULSET" \
+        -p "{\"spec\":{\"updateStrategy\":{\"rollingUpdate\":{\"partition\":$1}}}}" > /dev/null
+}
+
+# The update revision is the controller's, so it names the new template only once the controller
+# has observed the generation the template change made.
+template_observed() {
+    generations=$(kubectl get statefulset "$STATEFULSET" \
+        -o jsonpath='{.metadata.generation} {.status.observedGeneration}') || return 1
+    [ "${generations% *}" = "${generations#* }" ]
+}
+
+pod_updated() {
+    revision=$(kubectl get statefulset "$STATEFULSET" -o jsonpath='{.status.updateRevision}') ||
+        return 1
+    [ -n "$revision" ] || return 1
+    hash=$(kubectl get pod "$(pod "$1")" \
+        -o jsonpath='{.metadata.labels.controller-revision-hash}') || return 1
+    [ "$hash" = "$revision" ] || return 1
+    kubectl wait --for=condition=Ready --timeout="${ROLLOUT_TIMEOUT_SECS}s" pod "$(pod "$1")" \
+        > /dev/null
+}
+
+current_version() {
+    kubectl get statefulset "$STATEFULSET" \
+        -o jsonpath="{.spec.template.spec.containers[0].env[?(@.name==\"$VERSION_ENV\")].value}" \
+        2> /dev/null
 }
 
 # Labeling is the whole fault: partition.yaml denies each side ingress from the other, and a
@@ -113,6 +200,10 @@ trap 'heal; exit 0' INT TERM
 
 heal
 
+# The version the cluster runs, so an agent restarted mid roll rolls away from it, not toward it.
+version=$(current_version)
+[ -n "$version" ] || version=$OLD_VERSION
+
 state startup
 kubectl wait --for=condition=Ready --timeout="${STARTUP_SECS}s" pod -l "$SELECTOR" ||
     echo "not every pod became ready"
@@ -125,10 +216,11 @@ while true; do
     sleep "$QUIET_SECS"
 
     cycle=$((cycle + 1))
-    node=$(((cycle / 3) % NODE_COUNT))
-    case $((cycle % 3)) in
+    node=$(((cycle / 4) % NODE_COUNT))
+    case $((cycle % 4)) in
         1) kill_node "$node" ;;
         2) partition "$node" "$(((node + 1) % NODE_COUNT))" ;;
-        0) leave_node "$node" ;;
+        3) leave_node "$node" ;;
+        0) roll_nodes ;;
     esac
 done

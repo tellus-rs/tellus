@@ -3,7 +3,7 @@
 //! subscriber the receptionist resolves, see docs/cluster.md.
 
 use crate::{
-    ActorId, ActorRef,
+    ActorId, ActorRef, SchemaVersion,
     actor_ref::Sink,
     cluster::{
         codec::CodecError,
@@ -14,10 +14,10 @@ use crate::{
         node::NodeId,
         receptionist::{ReceptionistError, resolve_key},
         reply,
+        schema::Schema,
         sink::{self, RemoteSendError, admit_frame},
     },
 };
-use serde::{Serialize, de::DeserializeOwned};
 use std::{
     borrow::Cow,
     fmt::{self, Debug, Formatter},
@@ -81,7 +81,7 @@ impl<M> Clone for Topic<M> {
 /// registrations or bytes of registrations one node may.
 pub fn subscribe<M>(topic: &Topic<M>, actor_ref: &ActorRef<M>) -> Result<(), RegisterError>
 where
-    M: Manifest + DeserializeOwned + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     register(topic.key(), actor_ref)
 }
@@ -90,12 +90,13 @@ where
 /// node's own subscribers included, and answer how many were told.
 ///
 /// This node's own subscribers are told first, each a clone of the message. The message is
-/// serialized only if a subscriber lives on another node, and then once. One frame carries it to
-/// all subscribers of one node which share a stream toward it. That frame is split into several
-/// only to stay within the maximum frame size. A message whose serialization takes a
-/// [ReplyTo](crate::ReplyTo) goes to the first subscriber on another node alone, since a reply
-/// destination is serialized only once. Every further subscriber on another node is told
-/// separately and gets a dead letter.
+/// encoded only if a subscriber lives on another node, and then once per such node, through
+/// [Schema::encode] for that node. One frame carries it to all
+/// subscribers of one node which share a stream toward it. That frame is split into several only
+/// to stay within the maximum frame size. A reply destination is serialized only once: the node
+/// whose encoding takes a [ReplyTo](crate::ReplyTo) gets it in a frame to its first subscriber
+/// alone, every further subscriber of that node is told separately and gets a dead letter, and a
+/// node whose encoding leaves the destination alone gets its multicast as usual.
 ///
 /// [ActorRef::tell]'s contract holds per subscriber: a full outbound queue or an unreachable node
 /// makes the message a dead letter for each subscriber its frame names. The answer counts the
@@ -112,7 +113,7 @@ where
 /// [receptionist::settled]: crate::cluster::receptionist::settled
 pub fn publish<M>(topic: &Topic<M>, message: M) -> Result<usize, ReceptionistError>
 where
-    M: Manifest + Clone + Serialize + Send + 'static,
+    M: Manifest + Clone + Send + 'static,
 {
     let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
     publish_at(endpoint, topic, message)
@@ -124,7 +125,7 @@ fn publish_at<M>(
     message: M,
 ) -> Result<usize, ReceptionistError>
 where
-    M: Manifest + Clone + Serialize + Send + 'static,
+    M: Manifest + Clone + Send + 'static,
 {
     let subscribers = resolve_key(endpoint, topic.key())?;
     let count = subscribers.len();
@@ -164,71 +165,85 @@ where
     }
 }
 
-/// Encodes exactly once: serializing a [ReplyTo](crate::ReplyTo) moves its destination away.
+/// Encodes once per destination node, since the shape may differ per peer, and decides per
+/// encoding: serializing a [ReplyTo](crate::ReplyTo) moves its destination away and mints reply
+/// tags, which only a message frame carries.
 fn multicast<M>(endpoint: &EndpointInner, subscribers: &[(NodeId, ActorRef<M>)], message: M)
 where
-    M: Clone + Serialize + Send + 'static,
+    M: Clone + Schema + Send + 'static,
 {
-    let (payload, reply_tags) = reply::record_minted(|| endpoint.codec().encode(&message));
+    for (node, node_subscribers) in node_groups(subscribers) {
+        let peer = endpoint.peer(node);
+        let (encoded, reply_tags) =
+            reply::record_minted(|| message.encode(endpoint.codec(), &peer));
 
-    if !reply_tags.is_empty() {
-        let ((node, first), rest) = subscribers
-            .split_first()
-            .expect("a multicast has a subscriber");
-        let target = first.actor_id();
-        let sent = sink::send_encoded(
-            endpoint,
-            *node,
-            payload,
-            reply_tags,
-            |payload, reply_tags| Frame::Message {
-                target,
-                reply_tags: reply_tags.to_vec(),
-                payload: Cow::Owned(payload),
-            },
-        );
-        if let Err(error) = sent {
-            first.dead_letter(&error);
-        }
-        tell_each(rest.iter().map(|(_, subscriber)| subscriber), message);
-        return;
-    }
-
-    let payload = match payload {
-        Ok(payload) => payload,
-
-        Err(error) => {
-            for (_, subscriber) in subscribers {
-                subscriber.dead_letter(&error);
+        if !reply_tags.is_empty() {
+            let (first, rest) = node_subscribers
+                .split_first()
+                .expect("a group has a subscriber");
+            let target = first.actor_id();
+            let sent = sink::send_encoded(
+                endpoint,
+                node,
+                encoded,
+                reply_tags,
+                |schema_version, payload, reply_tags| Frame::Message {
+                    target,
+                    reply_tags: reply_tags.to_vec(),
+                    schema_version,
+                    payload: Cow::Owned(payload),
+                },
+            );
+            if let Err(error) = sent {
+                first.dead_letter(&error);
             }
-            return;
+            tell_each(rest.iter().copied(), message.clone());
+            continue;
         }
-    };
-    for (node, group) in subscriber_groups(endpoint, subscribers) {
-        send_multicast(endpoint, node, &group, &payload);
+
+        match encoded {
+            Ok((schema_version, payload)) => {
+                for group in stream_groups(endpoint, &node_subscribers) {
+                    send_multicast(endpoint, node, &group, schema_version, &payload);
+                }
+            }
+
+            Err(error) => {
+                for subscriber in node_subscribers {
+                    subscriber.dead_letter(&error);
+                }
+            }
+        }
     }
 }
 
-fn subscriber_groups<'a, M>(
-    endpoint: &EndpointInner,
-    subscribers: &'a [(NodeId, ActorRef<M>)],
-) -> Vec<(NodeId, Vec<&'a ActorRef<M>>)> {
-    let mut groups = Vec::<(NodeId, Option<usize>, Vec<&ActorRef<M>>)>::new();
+fn node_groups<M>(subscribers: &[(NodeId, ActorRef<M>)]) -> Vec<(NodeId, Vec<&ActorRef<M>>)> {
+    let mut groups = Vec::<(NodeId, Vec<&ActorRef<M>>)>::new();
     for (node, subscriber) in subscribers {
+        match groups.iter_mut().find(|(group_node, _)| group_node == node) {
+            Some((_, group)) => group.push(subscriber),
+            None => groups.push((*node, vec![subscriber])),
+        }
+    }
+    groups
+}
+
+fn stream_groups<'a, M>(
+    endpoint: &EndpointInner,
+    subscribers: &[&'a ActorRef<M>],
+) -> Vec<Vec<&'a ActorRef<M>>> {
+    let mut groups = Vec::<(Option<usize>, Vec<&ActorRef<M>>)>::new();
+    for subscriber in subscribers {
         let stream = endpoint.data_stream(subscriber.actor_id());
         match groups
             .iter_mut()
-            .find(|(group_node, group_stream, _)| group_node == node && *group_stream == stream)
+            .find(|(group_stream, _)| *group_stream == stream)
         {
-            Some((_, _, group)) => group.push(subscriber),
-            None => groups.push((*node, stream, vec![subscriber])),
+            Some((_, group)) => group.push(subscriber),
+            None => groups.push((stream, vec![subscriber])),
         }
     }
-
-    groups
-        .into_iter()
-        .map(|(node, _, group)| (node, group))
-        .collect()
+    groups.into_iter().map(|(_, group)| group).collect()
 }
 
 /// The frames must be sent in order, else they overtake each other on the group's stream.
@@ -236,10 +251,11 @@ fn send_multicast<M>(
     endpoint: &EndpointInner,
     node: NodeId,
     subscribers: &[&ActorRef<M>],
+    schema_version: SchemaVersion,
     payload: &[u8],
 ) {
     let max_frame_size = endpoint.config().max_frame_size.get();
-    let targets_per_frame = match targets_per_frame(payload, max_frame_size) {
+    let targets_per_frame = match targets_per_frame(schema_version, payload, max_frame_size) {
         Ok(targets) => targets.max(1),
 
         Err(error) => {
@@ -257,6 +273,7 @@ fn send_multicast<M>(
                 .iter()
                 .map(|subscriber| subscriber.actor_id())
                 .collect(),
+            schema_version,
             payload: Cow::Owned(payload.to_vec()),
         };
         let sent = admit_frame(frame, max_frame_size)
@@ -271,10 +288,15 @@ fn send_multicast<M>(
 
 /// The most targets a multicast of the payload holds within the maximum frame size, zero if not
 /// even one fits.
-fn targets_per_frame(payload: &[u8], max_frame_size: usize) -> Result<usize, postcard::Error> {
+fn targets_per_frame(
+    schema_version: SchemaVersion,
+    payload: &[u8],
+    max_frame_size: usize,
+) -> Result<usize, postcard::Error> {
     let len = |targets| {
         Frame::Multicast {
             targets,
+            schema_version,
             payload: Cow::Borrowed(payload),
         }
         .encoded_len()
@@ -306,9 +328,10 @@ fn varint_len(mut value: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, Incoming, MailboxCapacity, ReplyTo,
+        ActorId, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
+            codec::{Codec, CodecError, Postcard},
             discovery::Key,
             endpoint::{self, EndpointConfig, EndpointInner},
             frame::Frame,
@@ -318,14 +341,16 @@ mod tests {
             pubsub::{Topic, publish_at},
             receptionist::{ReceptionistError, WireGroup},
             reply,
+            schema::{Peer, Schema},
+            sink::RemoteSink,
         },
         mailbox::Mailbox,
         sync::lock,
     };
     use flume::Receiver;
+    use semver::Version;
     use serde::{
-        Deserialize, Serialize, Serializer,
-        de::DeserializeOwned,
+        Deserialize, Deserializer, Serialize, Serializer, de,
         ser::{self, SerializeTuple},
     };
     use std::{
@@ -354,6 +379,8 @@ mod tests {
         }
     }
 
+    impl Schema for Counted {}
+
     impl Manifest for Counted {
         const MANIFEST: &'static str = "counted";
     }
@@ -381,6 +408,17 @@ mod tests {
         }
     }
 
+    impl<'de> Deserialize<'de> for SharedReply {
+        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Err(de::Error::custom("never deserialized"))
+        }
+    }
+
+    impl Schema for SharedReply {}
+
     impl Manifest for SharedReply {
         const MANIFEST: &'static str = "shared-reply";
     }
@@ -400,6 +438,17 @@ mod tests {
         }
     }
 
+    impl<'de> Deserialize<'de> for PoisonedReply {
+        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Err(de::Error::custom("never deserialized"))
+        }
+    }
+
+    impl Schema for PoisonedReply {}
+
     impl Manifest for PoisonedReply {
         const MANIFEST: &'static str = "poisoned-reply";
     }
@@ -414,7 +463,7 @@ mod tests {
 
     fn subscriber<M>(endpoint: &EndpointInner, name: &str) -> (ActorId, Mailbox<M>)
     where
-        M: Manifest + DeserializeOwned + Send + 'static,
+        M: Manifest + Send + 'static,
     {
         let id = ActorId::new();
         let (self_ref, mailbox) = SelfRef::<M>::new(id, MailboxCapacity::Unbounded);
@@ -594,7 +643,12 @@ mod tests {
         let mut seen = HashSet::new();
         let mut told = HashMap::<SocketAddr, Vec<ActorId>>::new();
         for (addr, stream, frame) in frames {
-            let Frame::Multicast { targets, payload } = frame else {
+            let Frame::Multicast {
+                targets,
+                schema_version: _,
+                payload,
+            } = frame
+            else {
                 panic!("not a multicast frame: {frame:?}");
             };
             assert!(stream.is_some(), "a multicast rides a data stream");
@@ -666,9 +720,10 @@ mod tests {
     }
 
     /// Neither an empty topic nor one with subscribers on this node only serializes the message,
-    /// and one with remote subscribers on several nodes serializes it once.
+    /// and one with remote subscribers on several nodes serializes it once per node, since the
+    /// shape may differ per peer.
     #[test]
-    fn a_publish_serializes_only_for_remote_subscribers_and_once() {
+    fn a_publish_serializes_only_for_remote_subscribers_and_once_per_node() {
         let (endpoint, dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let topic = Topic::<Counted>::new("counted");
@@ -696,7 +751,7 @@ mod tests {
             publish_at(endpoint, &topic, Counted(3)).expect("resolves"),
             8
         );
-        assert_eq!(SERIALIZATIONS.get(), 1);
+        assert_eq!(SERIALIZATIONS.get(), 2);
         assert_eq!(queued(&dial_requests).len(), 2);
     }
 
@@ -740,7 +795,13 @@ mod tests {
         };
 
         let reply = endpoint.codec().encode(&7_u64).expect("encodes");
-        reply::on_reply(endpoint, first_node, tag.nonce, &reply);
+        reply::on_reply(
+            endpoint,
+            first_node,
+            tag.nonce,
+            SchemaVersion::new(0),
+            &reply,
+        );
         assert_eq!(reply_rx.try_recv(), Ok(7));
         assert_eq!(endpoint.pending_replies().len(), 0);
     }
@@ -789,5 +850,236 @@ mod tests {
             assert_eq!(endpoint.pending_replies().len(), 0);
             assert!(queued(&dial_requests).is_empty());
         }
+    }
+
+    /// Encodes the bare number for a peer below application version 2 and the number with a
+    /// flag, as version 1, for a newer one.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    struct Shaped(u64);
+
+    impl Schema for Shaped {
+        const VERSION: SchemaVersion = SchemaVersion::new(1);
+
+        fn encode(
+            &self,
+            codec: &dyn Codec,
+            peer: &Peer,
+        ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+            if peer.app_version().is_none_or(|version| version.major < 2) {
+                return Ok((SchemaVersion::new(0), codec.encode(&self.0)?));
+            }
+            Ok((Self::VERSION, codec.encode(&(self.0, true))?))
+        }
+    }
+
+    impl Manifest for Shaped {
+        const MANIFEST: &'static str = "shaped";
+    }
+
+    /// Serializes its reply destination for a peer of application version 2 or later only.
+    #[derive(Clone)]
+    struct GatedReply(SharedReply);
+
+    impl Serialize for GatedReply {
+        fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            self.0.serialize(serializer)
+        }
+    }
+
+    impl<'de> Deserialize<'de> for GatedReply {
+        fn deserialize<D>(_deserializer: D) -> Result<Self, D::Error>
+        where
+            D: Deserializer<'de>,
+        {
+            Err(de::Error::custom("never deserialized"))
+        }
+    }
+
+    impl Schema for GatedReply {
+        fn encode(
+            &self,
+            codec: &dyn Codec,
+            peer: &Peer,
+        ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+            if peer.app_version().is_some_and(|version| version.major >= 2) {
+                return Ok((Self::VERSION, codec.encode(&self.0)?));
+            }
+            Ok((Self::VERSION, codec.encode(&0_u64)?))
+        }
+    }
+
+    impl Manifest for GatedReply {
+        const MANIFEST: &'static str = "gated-reply";
+    }
+
+    /// A publish encodes per destination node with the shape that node's application version
+    /// takes: a node which announced none, or an older one, gets the old shape, a newer one the
+    /// new, and every frame carries its schema version.
+    #[test]
+    fn a_publish_encodes_the_shape_each_peer_understands() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let unknown = NodeId::new(addr(2));
+        let older = NodeId::new(addr(3));
+        let newer = NodeId::new(addr(4));
+        for node in [unknown, older, newer] {
+            remote_subscribers::<Shaped>(endpoint, node, "shaped", 1);
+        }
+        endpoint.record_peer(older, Some(Version::new(1, 9, 0)));
+        endpoint.record_peer(newer, Some(Version::new(2, 0, 0)));
+
+        let told = publish_at(endpoint, &Topic::new("shaped"), Shaped(5));
+
+        assert_eq!(told.expect("resolves"), 3);
+        let mut shapes = queued(&dial_requests)
+            .into_iter()
+            .map(|(addr, _, frame)| match frame {
+                Frame::Multicast {
+                    schema_version,
+                    payload,
+                    ..
+                } => (addr, schema_version, payload.into_owned()),
+                frame => panic!("not a multicast: {frame:?}"),
+            })
+            .collect::<Vec<_>>();
+        shapes.sort_by_key(|(addr, _, _)| *addr);
+        let old = Postcard.encode(&5_u64).expect("encodes");
+        let new = Postcard.encode(&(5_u64, true)).expect("encodes");
+        assert_eq!(
+            shapes,
+            [
+                (unknown.addr(), SchemaVersion::new(0), old.clone()),
+                (older.addr(), SchemaVersion::new(0), old),
+                (newer.addr(), SchemaVersion::new(1), new),
+            ]
+        );
+    }
+
+    /// A tell through a remote reference encodes for the peer's application version the same
+    /// way: with no information before the handshake, with the version afterward.
+    #[test]
+    fn a_tell_encodes_the_shape_the_peer_understands() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let node = NodeId::new(addr(2));
+        let target = ActorId::new();
+        let sink = RemoteSink::<Shaped>::new(node);
+
+        endpoint::with_current(endpoint, || sink.try_send_message(target, Shaped(5)))
+            .expect("sends");
+        endpoint.record_peer(node, Some(Version::new(2, 0, 0)));
+        endpoint::with_current(endpoint, || sink.try_send_message(target, Shaped(6)))
+            .expect("sends");
+
+        let shapes = queued(&dial_requests)
+            .into_iter()
+            .map(|(_, _, frame)| match frame {
+                Frame::Message {
+                    schema_version,
+                    payload,
+                    ..
+                } => (schema_version, payload.into_owned()),
+                frame => panic!("not a message: {frame:?}"),
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shapes,
+            [
+                (
+                    SchemaVersion::new(0),
+                    Postcard.encode(&5_u64).expect("encodes")
+                ),
+                (
+                    SchemaVersion::new(1),
+                    Postcard.encode(&(6_u64, true)).expect("encodes")
+                ),
+            ]
+        );
+    }
+
+    /// Whether reply tags were minted is decided per destination encoding: the peer for which the
+    /// destination is omitted gets a multicast, the newer peer for which it is serialized gets a
+    /// message frame carrying the pending reply, which that peer's reply settles.
+    #[test]
+    fn a_destination_serialized_for_one_peer_rides_that_peers_message_frame() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let older = NodeId::new(addr(2));
+        let newer = NodeId::new(addr(3));
+        remote_subscribers::<GatedReply>(endpoint, older, "gated", 1);
+        let [target] = remote_subscribers::<GatedReply>(endpoint, newer, "gated", 1)[..] else {
+            panic!("not one subscriber");
+        };
+        endpoint.record_peer(older, Some(Version::new(1, 0, 0)));
+        endpoint.record_peer(newer, Some(Version::new(2, 0, 0)));
+        let (shared, reply_rx) = SharedReply::new();
+
+        let told = endpoint::with_current(endpoint, || {
+            publish_at(endpoint, &Topic::new("gated"), GatedReply(shared))
+        });
+
+        assert_eq!(told.expect("resolves"), 2);
+        assert_eq!(endpoint.pending_replies().len(), 1);
+        let mut frames = queued(&dial_requests);
+        frames.sort_by_key(|(addr, _, _)| *addr);
+        let [
+            (older_addr, _, Frame::Multicast { .. }),
+            (
+                newer_addr,
+                _,
+                Frame::Message {
+                    target: message_target,
+                    reply_tags,
+                    ..
+                },
+            ),
+        ] = &frames[..]
+        else {
+            panic!("not a multicast and a message: {frames:?}");
+        };
+        assert_eq!(
+            (*older_addr, *newer_addr, *message_target),
+            (older.addr(), newer.addr(), target)
+        );
+        let [tag] = reply_tags[..] else {
+            panic!("not one reply tag: {reply_tags:?}");
+        };
+
+        let reply = endpoint.codec().encode(&7_u64).expect("encodes");
+        reply::on_reply(endpoint, newer, tag.nonce, SchemaVersion::new(0), &reply);
+        assert_eq!(reply_rx.try_recv(), Ok(7));
+        assert_eq!(endpoint.pending_replies().len(), 0);
+    }
+
+    /// A reply of a schema version the asker does not decode is a dead letter which drops the
+    /// destination, so the ask fails as `NoReply` rather than hanging.
+    #[test]
+    fn a_reply_of_an_unsupported_version_drops_the_destination() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let node = NodeId::new(addr(2));
+        remote_subscribers::<SharedReply>(endpoint, node, "replies", 1);
+        let (shared, reply_rx) = SharedReply::new();
+
+        let told = endpoint::with_current(endpoint, || {
+            publish_at(endpoint, &Topic::new("replies"), shared)
+        });
+
+        assert_eq!(told.expect("resolves"), 1);
+        let frames = queued(&dial_requests);
+        let [(_, _, Frame::Message { reply_tags, .. })] = &frames[..] else {
+            panic!("not one message frame: {frames:?}");
+        };
+        let [tag] = reply_tags[..] else {
+            panic!("not one reply tag: {reply_tags:?}");
+        };
+
+        let reply = endpoint.codec().encode(&7_u64).expect("encodes");
+        reply::on_reply(endpoint, node, tag.nonce, SchemaVersion::new(3), &reply);
+        assert_eq!(reply_rx.try_recv(), Err(mpsc::TryRecvError::Disconnected));
+        assert_eq!(endpoint.pending_replies().len(), 0);
     }
 }

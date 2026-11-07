@@ -96,6 +96,8 @@ mod mailbox;
 mod persistence;
 mod quota;
 mod request_response;
+#[cfg(any(feature = "cluster", feature = "persistence"))]
+mod schema_version;
 mod stash;
 mod sync;
 mod timers;
@@ -122,7 +124,6 @@ pub use crate::persistence::{
     effect::Effect,
     event_sourced::EventSourced,
     persistence_id::{InvalidPersistenceId, PersistenceId, PersistenceIdSegment},
-    schema_version::SchemaVersion,
     seq_no::SeqNo,
     store::{
         AppendError, EncodedEvent, EncodedSnapshot, EventStore, NoSnapshots, SnapshotStore,
@@ -133,6 +134,9 @@ pub use crate::persistence::{
 
 #[cfg(feature = "persistence-in-memory")]
 pub use crate::persistence::in_memory_store::InMemoryStore;
+
+#[cfg(any(feature = "cluster", feature = "persistence"))]
+pub use crate::schema_version::SchemaVersion;
 
 #[cfg(doctest)]
 #[doc = include_str!("../README.md")]

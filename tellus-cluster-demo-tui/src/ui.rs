@@ -101,8 +101,8 @@ fn verifier_strip(frame: &mut Frame, app: &App, area: Rect) {
             };
             vec![
                 Span::raw(format!(
-                    "verifications {}   violations ",
-                    status.verifications
+                    "verifications {}   mixed {}   violations ",
+                    status.verifications, status.mixed_verifications
                 )),
                 Span::styled(
                     status.violations.to_string(),
@@ -140,7 +140,11 @@ fn verifier_strip(frame: &mut Frame, app: &App, area: Rect) {
 
 fn matrix(frame: &mut Frame, app: &App, area: Rect) {
     let columns = app.columns();
-    let mut header = vec!["node".to_string(), "phase".to_string()];
+    let mut header = vec![
+        "node".to_string(),
+        "phase".to_string(),
+        "version".to_string(),
+    ];
     header.extend(columns.iter().map(|addr| match app.name_of(*addr) {
         Some(name) => name.to_string(),
         None => addr.to_string(),
@@ -160,6 +164,7 @@ fn matrix(frame: &mut Frame, app: &App, area: Rect) {
                 Span::raw(label),
             ])),
             ratatui::widgets::Cell::from(phase_span(node.phase)),
+            ratatui::widgets::Cell::from(version_span(node.app_version.as_deref())),
         ];
         cells.extend(columns.iter().map(|addr| {
             let span = cell_span(app.cell(index, *addr));
@@ -173,7 +178,11 @@ fn matrix(frame: &mut Frame, app: &App, area: Rect) {
         }
     });
 
-    let mut widths = vec![Constraint::Length(20), Constraint::Length(13)];
+    let mut widths = vec![
+        Constraint::Length(20),
+        Constraint::Length(13),
+        Constraint::Length(8),
+    ];
     widths.extend(columns.iter().map(|_| Constraint::Min(9)));
     let table = Table::new(rows, widths)
         .header(Row::new(header).bold())
@@ -305,6 +314,11 @@ fn detail(frame: &mut Frame, app: &App, area: Rect) {
                         .name_of(probe.addr)
                         .map_or_else(|| probe.addr.to_string(), str::to_string);
                     match &probe.outcome {
+                        ProbeOutcome::Ok {
+                            millis,
+                            app_version: Some(version),
+                            ..
+                        } => format!("{target} {millis} ms v{version}"),
                         ProbeOutcome::Ok { millis, .. } => format!("{target} {millis} ms"),
                         ProbeOutcome::Failed { error } => format!("{target} failed ({error})"),
                     }
@@ -416,6 +430,13 @@ fn phase_span(phase: Option<Phase>) -> Span<'static> {
     }
 }
 
+fn version_span(version: Option<&str>) -> Span<'static> {
+    match version {
+        Some(version) => Span::raw(version.to_string()),
+        None => Span::styled("?", Style::new().dim()),
+    }
+}
+
 fn cell_span(cell: Cell) -> Span<'static> {
     match cell {
         Cell::Unknown => Span::styled("?", Style::new().dim()),
@@ -432,6 +453,9 @@ fn chaos_style(chaos: &str) -> Style {
     match chaos {
         "quiet" => Style::new().green(),
         "unknown" | "startup" => Style::new().dim(),
+        roll if roll.starts_with("upgrade ") || roll.starts_with("downgrade ") => {
+            Style::new().fg(Color::Cyan).bold()
+        }
         _ => Style::new().fg(Color::Magenta).bold(),
     }
 }
@@ -479,6 +503,7 @@ mod tests {
                     event: NodeEvent::Hello {
                         name: "node1".to_string(),
                         addr,
+                        app_version: "1.0.0".to_string(),
                         started_at: 1,
                         resumed: false,
                     },
@@ -528,6 +553,8 @@ mod tests {
     fn a_wide_terminal_shows_every_panel() {
         let screen = render(120, 40);
         assert!(screen.contains("node1"));
+        assert!(screen.contains("version"));
+        assert!(screen.contains("1.0.0"));
         assert!(screen.contains("http://n2"));
         assert!(screen.contains("partition"));
         assert!(screen.contains("timeline"));

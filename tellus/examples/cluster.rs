@@ -39,7 +39,7 @@ use std::{
 use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
     cluster::{
-        self, EndpointConfig, Key, Manifest, MemberState,
+        self, EndpointConfig, Key, Manifest, MemberState, Schema,
         downing::KeepMajority,
         failure::{Deadline, DeadlineFailureDetector},
         receptionist,
@@ -167,6 +167,8 @@ enum Job {
     Stop,
 }
 
+impl Schema for Job {}
+
 impl Manifest for Job {
     const MANIFEST: &'static str = "job";
 }
@@ -177,6 +179,8 @@ struct View {
     addr: SocketAddr,
     members: Vec<(SocketAddr, MemberState)>,
 }
+
+impl Schema for View {}
 
 async fn observer_node() -> anyhow::Result<()> {
     let observer = start_endpoint(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;

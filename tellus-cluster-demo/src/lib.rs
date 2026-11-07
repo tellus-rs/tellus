@@ -16,6 +16,9 @@ pub struct ClusterView {
     /// How far the node is along joining the cluster.
     pub phase: Phase,
 
+    /// The version of the application the node runs, as configured.
+    pub app_version: String,
+
     /// The node's view of the cluster, this node's identity included.
     pub state: ClusterState,
 
@@ -93,6 +96,10 @@ pub enum ProbeOutcome {
 
         /// How many members the answering node lists as Up.
         up_members: usize,
+
+        /// The application version the answering worker reported; `None` when it answered in
+        /// the legacy shape, which carries none.
+        app_version: Option<String>,
     },
 
     /// The worker could not be resolved or did not answer.
@@ -116,6 +123,9 @@ pub enum NodeEvent {
 
         /// The address the node advertises to the cluster.
         addr: SocketAddr,
+
+        /// The version of the application the node runs, as configured.
+        app_version: String,
 
         /// Unix milliseconds at which the process started, the first half of every event id.
         started_at: u64,
@@ -165,6 +175,9 @@ pub enum VerifierEvent {
         /// How many violations it found.
         violations: usize,
 
+        /// Whether the nodes reported more than one application version.
+        mixed: bool,
+
         /// How long the chaos agent had been quiet, in milliseconds.
         quiet_for_millis: u64,
     },
@@ -197,6 +210,9 @@ pub struct VerifierStatus {
 
     /// How many verifications have run.
     pub verifications: usize,
+
+    /// How many of those saw more than one application version.
+    pub mixed_verifications: usize,
 
     /// How many violations have been recorded.
     pub violations: usize,
