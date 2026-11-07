@@ -1,16 +1,16 @@
 use crate::{
-    ActorId, ActorRef,
+    ActorId, ActorRef, SchemaVersion,
     cluster::{
         codec::{Codec, CodecError},
         discovery::WireKey,
         receptionist::{
             MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, Registration, WireGroup, registration_len,
         },
+        schema::Schema,
     },
     sync::{lock, read, write},
     watch::{ActorTerminated, TerminatedHandler, Watcher, WatcherRegistry},
 };
-use serde::de::DeserializeOwned;
 use std::{
     any::Any,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet, hash_map::Entry},
@@ -39,7 +39,7 @@ impl Registry {
     /// Idempotent. Release the routes lock before registering the evictor, which retakes it.
     pub(crate) fn bind<M>(self: &Arc<Self>, actor_ref: &ActorRef<M>)
     where
-        M: DeserializeOwned + Send + 'static,
+        M: Schema + Send + 'static,
     {
         let id = actor_ref.actor_id();
 
@@ -81,7 +81,7 @@ impl Registry {
         actor_ref: &ActorRef<M>,
     ) -> Result<Registered, LimitExceeded>
     where
-        M: DeserializeOwned + Send + 'static,
+        M: Schema + Send + 'static,
     {
         let id = actor_ref.actor_id();
         if actor_ref
@@ -133,6 +133,7 @@ impl Registry {
     pub(crate) fn deliver(
         &self,
         target: ActorId,
+        schema_version: SchemaVersion,
         payload: &[u8],
         codec: &dyn Codec,
     ) -> Result<(), DeliverError> {
@@ -140,7 +141,7 @@ impl Registry {
 
         route
             .ok_or(DeliverError::UnknownTarget)?
-            .deliver(payload, codec)?;
+            .deliver(schema_version, payload, codec)?;
 
         Ok(())
     }
@@ -299,7 +300,12 @@ trait InboundRoute
 where
     Self: Send + Sync,
 {
-    fn deliver(&self, payload: &[u8], codec: &dyn Codec) -> Result<(), CodecError>;
+    fn deliver(
+        &self,
+        schema_version: SchemaVersion,
+        payload: &[u8],
+        codec: &dyn Codec,
+    ) -> Result<(), CodecError>;
 
     fn watcher_registry(&self) -> WatcherRegistry;
 
@@ -312,10 +318,15 @@ struct Route<M> {
 
 impl<M> InboundRoute for Route<M>
 where
-    M: DeserializeOwned + Send + 'static,
+    M: Schema + Send + 'static,
 {
-    fn deliver(&self, payload: &[u8], codec: &dyn Codec) -> Result<(), CodecError> {
-        let message = codec.decode_to::<M>(payload)?;
+    fn deliver(
+        &self,
+        schema_version: SchemaVersion,
+        payload: &[u8],
+        codec: &dyn Codec,
+    ) -> Result<(), CodecError> {
+        let message = M::decode(codec, schema_version, payload)?;
         self.actor_ref.tell(message);
         Ok(())
     }
@@ -349,16 +360,19 @@ impl TerminatedHandler for Evictor {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, MailboxCapacity,
+        ActorId, Incoming, MailboxCapacity, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
+            codec::{Codec, CodecError, Postcard},
             discovery::{KeyKind, WireKey},
             manifest::Manifest,
             receptionist::{MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, WireGroup},
-            registry::{LimitExceeded, LocalRefError, Registry},
+            registry::{DeliverError, LimitExceeded, LocalRefError, Registry},
+            schema::{Schema, UnsupportedSchemaVersion},
         },
         sync::lock,
     };
+    use serde::{Deserialize, Serialize};
     use std::{
         sync::{Arc, mpsc},
         thread,
@@ -661,5 +675,81 @@ mod tests {
                 ids: vec![second],
             }]
         );
+    }
+
+    /// A payload is decoded with the schema version it carries: one the route's type upcasts is
+    /// delivered, one it does not decode is a decoding failure whose source names the type and
+    /// both versions, and nothing of it reaches the actor.
+    #[test]
+    fn a_route_decodes_the_schema_versions_its_type_declares() {
+        #[derive(Debug, PartialEq, Serialize, Deserialize)]
+        struct Upcast(u64);
+
+        impl Schema for Upcast {
+            const VERSION: SchemaVersion = SchemaVersion::new(1);
+
+            fn decode(
+                codec: &dyn Codec,
+                schema_version: SchemaVersion,
+                payload: &[u8],
+            ) -> Result<Self, CodecError> {
+                if schema_version == SchemaVersion::new(0) {
+                    let narrow = codec.decode_to::<u32>(payload)?;
+                    return Ok(Upcast(u64::from(narrow)));
+                }
+                if schema_version == Self::VERSION {
+                    return codec.decode_to(payload);
+                }
+                Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
+                    schema_version,
+                )))
+            }
+        }
+
+        let registry = Arc::new(Registry::new());
+        let id = ActorId::new();
+        let (self_ref, mailbox) = SelfRef::<Upcast>::new(id, MailboxCapacity::Unbounded);
+        registry.bind(self_ref.actor_ref());
+        let codec: &dyn Codec = &Postcard;
+
+        registry
+            .deliver(
+                id,
+                SchemaVersion::new(0),
+                &codec.encode(&7_u32).expect("encodes"),
+                codec,
+            )
+            .expect("version 0 is upcast");
+        registry
+            .deliver(
+                id,
+                SchemaVersion::new(1),
+                &codec.encode(&Upcast(8)).expect("encodes"),
+                codec,
+            )
+            .expect("version 1 is current");
+        let error = registry
+            .deliver(id, SchemaVersion::new(2), &[], codec)
+            .expect_err("version 2 is not decodable");
+
+        let DeliverError::Codec(CodecError::Decode(source)) = &error else {
+            panic!("not a decoding failure: {error:?}");
+        };
+        let source = source.to_string();
+        assert!(
+            source.contains("unsupported schema version 2 of ")
+                && source.ends_with("Upcast, the current version is 1"),
+            "{source}"
+        );
+        let received = mailbox
+            .split()
+            .0
+            .drain()
+            .filter_map(|incoming| match incoming {
+                Incoming::Message(message) => Some(message),
+                Incoming::Terminated(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(received, [Upcast(7), Upcast(8)]);
     }
 }

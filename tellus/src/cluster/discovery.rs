@@ -8,7 +8,7 @@ use crate::{
     },
 };
 use derive_more::Display;
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize};
 use std::{
     any,
     fmt::{self, Debug, Formatter},
@@ -135,7 +135,7 @@ pub enum RegisterError {
 /// registrations or bytes of registrations one node may.
 pub fn register<M>(key: &Key<M>, actor_ref: &ActorRef<M>) -> Result<(), RegisterError>
 where
-    M: Manifest + DeserializeOwned + Send + 'static,
+    M: Manifest + Send + 'static,
 {
     let endpoint = endpoint::get().ok_or(RegisterError::EndpointNotStarted)?;
     if actor_ref.watcher_registry().is_none() {

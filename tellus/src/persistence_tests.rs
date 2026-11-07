@@ -8,15 +8,17 @@
 //! A check panics with a description of the violated property, like an assertion in a test. The
 //! checks need a Tokio runtime, e.g. under `#[tokio::test]`.
 
-use crate::persistence::{
-    persistence_id::PersistenceId,
-    schema_version::SchemaVersion,
-    seq_no::SeqNo,
-    spawn::REPLAY_PAGE,
-    store::{
-        AppendError, EncodedEvent, EncodedSnapshot, EventStore, SnapshotStore, StoredEvent,
-        StoredSnapshot,
+use crate::{
+    persistence::{
+        persistence_id::PersistenceId,
+        seq_no::SeqNo,
+        spawn::REPLAY_PAGE,
+        store::{
+            AppendError, EncodedEvent, EncodedSnapshot, EventStore, SnapshotStore, StoredEvent,
+            StoredSnapshot,
+        },
     },
+    schema_version::SchemaVersion,
 };
 use std::{
     num::NonZeroUsize,

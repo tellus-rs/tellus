@@ -122,6 +122,7 @@ mod peer;
 mod reachability;
 mod registry;
 mod reply;
+mod schema;
 mod sink;
 mod state;
 mod watch;
@@ -141,6 +142,7 @@ pub use crate::cluster::{
     manifest::Manifest,
     membership::{DownError, JoinError, Member, MemberState, MembersError, down, join, members},
     node::{ClusterId, Incarnation},
+    schema::{AppVersion, Peer, Schema, UnsupportedSchemaVersion},
     state::{
         BrokenLink, Change, Changes, ClusterState, ClusterStateError, ForeignCluster, Transition,
         changes, cluster_state, lifecycle,
