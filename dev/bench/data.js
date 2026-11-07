@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794068363679,
+  "lastUpdate": 1794068366638,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16333,6 +16333,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 112365,
             "range": "± 2293",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "106b6ffa5a9a99a2623018157526fcde7f6e464e",
+          "message": "Merge pull request #262 from tellus-rs/feat/schema-evolution\n\nfeat(cluster)!: version message payloads for rolling upgrades",
+          "timestamp": "2026-11-07T17:11:28+01:00",
+          "tree_id": "e4d9a186d424559281bd22671c47b3d7e0a1e3f5",
+          "url": "https://github.com/tellus-rs/tellus/commit/106b6ffa5a9a99a2623018157526fcde7f6e464e"
+        },
+        "date": 1794068366284,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3182251,
+            "range": "± 321290",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3409813,
+            "range": "± 368416",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 947832,
+            "range": "± 13971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 122725,
+            "range": "± 4472",
             "unit": "ns/iter"
           }
         ]
