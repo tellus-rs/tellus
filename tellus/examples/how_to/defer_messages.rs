@@ -5,11 +5,11 @@
 use anyhow::Context;
 use std::{collections::HashMap, convert::Infallible, num::NonZeroUsize, time::Duration};
 use tellus::{
-    Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Incoming, MailboxCapacity,
-    ReplyTo, Stashed, Untimed,
+    Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, AskError, Control, Incoming,
+    MailboxCapacity, ReplyTo, Stashed, Untimed,
 };
 use thiserror::Error;
-use tokio::time::sleep;
+use tokio::{task::yield_now, time::sleep};
 
 const MAILBOX_CAPACITY: NonZeroUsize = NonZeroUsize::new(3).unwrap();
 
@@ -26,9 +26,13 @@ async fn main() -> anyhow::Result<()> {
         lookup(directory, 2),
         lookup(directory, 3),
         async {
-            // Only after the first three have left the full mailbox, before the table is loaded!
-            sleep(Duration::from_millis(50)).await;
-            lookup(directory, 4).await
+            // Full until the directory has received one of the first three lookups!
+            loop {
+                match lookup(directory, 4).await {
+                    Err(AskError::MailboxFull) => yield_now().await,
+                    result => break result,
+                }
+            }
         },
     );
     for (id, customer) in [(1, first?), (2, second?), (3, third?), (4, fourth?)] {
@@ -131,14 +135,13 @@ enum State {
 async fn lookup(
     directory: &ActorRef<Message>,
     id: u64,
-) -> anyhow::Result<Result<String, LookupError>> {
+) -> Result<Result<String, LookupError>, AskError> {
     directory
         .ask(Duration::from_secs(1), |reply_to| Message::Lookup {
             id,
             reply_to,
         })
         .await
-        .with_context(|| format!("asking for customer {id}"))
 }
 
 fn print_customer(id: u64, customer: Result<String, LookupError>) {
