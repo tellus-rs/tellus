@@ -1,6 +1,6 @@
-#[cfg(feature = "persistence")]
-use crate::persistence::{schema_version::SchemaVersion, versioned::Versioned};
 use crate::{ActorContext, ActorId, StashMode, TimerMode};
+#[cfg(feature = "persistence")]
+use crate::{persistence::versioned::Versioned, schema_version::SchemaVersion};
 #[cfg(feature = "persistence")]
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de};
 use std::error::Error;

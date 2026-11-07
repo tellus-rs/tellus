@@ -327,17 +327,26 @@ Item order within a file:
   `stop-cluster-demo-compose`, `logs-cluster-demo-compose`, plus the stack-agnostic
   `status-cluster-demo` and `violations-cluster-demo`): DNS seed discovery through a Docker
   network alias shared by all five
-  nodes, a chaos agent killing one node (pumba), stopping one with SIGTERM or partitioning two off
-  the other three every cycle, Caddy load
+  nodes, a chaos agent killing one node (pumba), partitioning two off the other three, stopping
+  one with SIGTERM or rolling all five to the other application version every cycle, Caddy load
   balancing the nodes' HTTP APIs, and a second network carrying nothing but HTTP so a partitioned
   node stays observable while it self-downs. Kubernetes in kind (`start-cluster-demo-k8s
   [dns|k8s]`, `stop-cluster-demo-k8s`, `logs-cluster-demo-k8s`, needing `kind` v0.33 or later and
   `kubectl`): a StatefulSet behind a headless service, a service instead of Caddy, faults from
-  `k8s/chaos.sh` through kubectl with the partition a pair of label-driven NetworkPolicies, and
-  either discovery backend. Which one a node uses is `CONFIG_OVERLAYS` naming `config/dns.yaml`
-  or `config/k8s.yaml`; `seeds` is deliberately absent from `config/default.yaml`, since overlays
-  merge and a default would leave both variants. The verifier is the same binary on both stacks
-  and holds the cluster to convergence and cross-node messaging in every quiet window. Every node
+  `k8s/chaos.sh` through kubectl with the partition a pair of label-driven NetworkPolicies and
+  the roll the StatefulSet's rolling update with its partition stepped down one ordinal per quiet
+  window, and either discovery backend. Which one a node uses is `CONFIG_OVERLAYS` naming
+  `config/dns.yaml` or `config/k8s.yaml`; `seeds` is deliberately absent from
+  `config/default.yaml`, since overlays merge and a default would leave both variants. The node
+  binary holds two applications, chosen by the major of `endpoint.app_version` (1 legacy, 2
+  current), whose pong differs in shape: the current one is schema version 1, encoded as version
+  0 for a legacy peer and decoded from it, so the roll exercises `docs/cluster.md`'s "Rolling
+  upgrades". On Compose a restarted container reads the target version from a file on the chaos
+  volume through its `command` wrapper; on kind `kubectl set env` changes the template. The
+  verifier is the same binary on both stacks and holds the cluster to convergence and cross-node
+  messaging in every quiet window; it counts verifications which saw more than one application
+  version and reports a uniform version replacing another unless every mixed cluster in between
+  was verified. Every node
   mounts `tellus-cluster-inspect` at `/inspect` (the cluster state snapshot and its change
   stream), logs the transitions `ClusterState::diff` yields between versions of
   `cluster::changes`, and serves the demo's own facts, phase and receptionist counts, as a small
@@ -436,7 +445,7 @@ cross-file invariants:
   `cluster::codec`, `cluster::downing`, `cluster::failure` and `cluster::formation`, and one each
   for the directory and the fan-out over it: `cluster::receptionist` (`lookup`, `lookup_at`,
   `subscribe`, `settled`) and `cluster::pubsub` (`Topic`, `subscribe`, `publish`, which tells the
-  local subscribers the receptionist resolves and serializes once for the remote ones, one
+  local subscribers the receptionist resolves and serializes once per remote node, one
   `Multicast` frame per node and data stream). `ActorRef` is serializable via a process-wide
   endpoint singleton (`endpoint.rs`) plus a lazy registry (`registry.rs`) evicting through the
   core's watcher mechanism. All frames towards a node ride one lane, split into a control queue and
@@ -512,9 +521,17 @@ cross-file invariants:
 
 The wire protocol is versioned through the handshake envelope (`Frame` discriminant 0, magic,
 oldest and newest version, frozen for every version), negotiated before the body is decoded
-(`PROTOCOL_VERSIONS` in `cluster/frame.rs`). A new version adds handshake body fields only by
-appending, and every new frame or field is gated on the negotiated version. Every wire change
-updates the pinned-byte tests in `frame.rs`.
+(`PROTOCOL_VERSIONS` in `cluster/frame.rs`). This build speaks version 2 only: its body appends
+the codec name and the application version to version 1's, a codec mismatch is refused at the
+handshake (`RefusalReason::CodecMismatch`), and the `Message`, `Reply` and `Multicast` frames carry
+a `SchemaVersion` unconditionally, since version 1 is not spoken. A new version adds handshake body
+fields only by appending, and every new frame or field is gated on the negotiated version. Every
+wire change updates the pinned-byte tests in `frame.rs`. Every type crossing nodes implements
+`cluster::Schema` (`cluster/schema.rs`, required by `Manifest`): `VERSION`, `encode`, which sees
+the `Peer` with the application version its handshake announced (kept per node in
+`EndpointInner::peers`, a leaf lock evicted in `flush_fenced`), and `decode`, which upcasts; tellus
+implements it only for types with one shape forever, so a container of an application type needs a
+wrapper. `docs/cluster.md`, "Rolling upgrades", is the contract.
 
 Changes to the run loop, mailbox or termination sequence almost always affect the ordering and
 watch guarantees spelled out in `docs/actors.md`; the integration tests in `tellus/tests/` encode

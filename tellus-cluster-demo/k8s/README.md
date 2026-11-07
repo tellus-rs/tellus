@@ -102,9 +102,25 @@ reads, and expresses each fault in kubectl:
 | crash | `kubectl delete pod tellus-N --force --grace-period=0` |
 | departure | `kubectl delete pod tellus-N`, the kubelet's SIGTERM within the grace period |
 | partition | `kubectl label --overwrite pod ... side=a` / `side=b`, then `kubectl label pod -l app=tellus side-` |
+| roll | `kubectl set env statefulset/tellus CFG__ENDPOINT__APP_VERSION=2.0.0`, then `kubectl patch statefulset tellus` lowering `updateStrategy.rollingUpdate.partition` from 4 to 0, one ordinal per quiet window |
 
 The two ways out of a cluster are the same command with and without its grace period, which reads
 better than the Compose pair.
+
+**Why partition stepping.** A template change rolls a StatefulSet from the highest ordinal down,
+replacing the next pod as soon as the previous one is Ready. The readiness probe answers while a
+node is still bootstrapping, so that rollout would pause for nothing the verifier could check in.
+[`nodes.yaml`](nodes.yaml) presets the partition at five, above the replica count, which makes the
+template change inert, and the agent lowers it one ordinal at a time, waiting for the pod below
+the partition to carry the StatefulSet's update revision and be Ready, then for a quiet window
+before the next. That turns the controller's own rollout into five observable clusters, four of
+them mixed. The order, highest ordinal first, is the controller's. Between rolls the partition
+stays at zero, so a pod the crash fault deletes is recreated at the version the cluster runs, and
+a `kubectl set env` of the other version with the partition reset to five is what the next roll
+starts with. The wait is on the pod rather than on `kubectl rollout status`, which counts updated
+replicas against the partition: an agent restarted in the middle of an upgrade reads the template's
+version as the running one and rolls back, and the pods the upgrade had not reached already carry
+the rollback's revision, so that count passes before the pod below the partition is replaced.
 
 **Why force deletion.** It is the only crash reachable from inside the cluster. A process cannot
 SIGKILL PID 1 of its own PID namespace, so `kubectl exec -- kill -KILL 1` returns success and does
@@ -134,8 +150,10 @@ label at startup and from a `TERM` trap, and always labels with `--overwrite`.
   `K8sSeeds` calls and nothing else. Under DNS discovery it is unused.
 - `tellus-chaos`, which the verifier pod runs as, gets `pods: get, list, watch, patch, delete`
   plus `pods/exec: create`. `patch` is what `kubectl label` uses, `watch` what `kubectl wait`
-  needs at startup, and `exec` is how it reaches the conntrack helper. It has no permission on
-  networkpolicies, because it never creates one.
+  needs at startup, and `exec` is how it reaches the conntrack helper. It also gets
+  `statefulsets: get, list, watch, patch` in the `apps` group: `kubectl set env` and the
+  partition patch the StatefulSet, and the agent reads its revisions from it. It has no permission
+  on networkpolicies, because it never creates one.
 
 A Role and its binding are namespaced, so both live beside the pods. Listing another namespace
 would mean binding there instead and naming this namespace in the subject.

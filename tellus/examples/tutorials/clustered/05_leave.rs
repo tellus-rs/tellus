@@ -22,7 +22,7 @@ use tellus::{
     RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
     cluster::{
         self, BootstrapConfig, ClusterState, EndpointConfig, FixedSeeds, Key, Manifest,
-        MemberState, receptionist, transport::QuicTransport,
+        MemberState, Schema, receptionist, transport::QuicTransport,
     },
 };
 use thiserror::Error;
@@ -371,6 +371,8 @@ enum Command {
 
     Stop,
 }
+
+impl Schema for Command {}
 
 impl Manifest for Command {
     const MANIFEST: &'static str = "device-manager-command";

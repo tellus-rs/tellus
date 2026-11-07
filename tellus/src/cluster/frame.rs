@@ -1,5 +1,5 @@
 use crate::{
-    ActorId,
+    ActorId, SchemaVersion,
     cluster::{
         discovery::Nonce,
         membership::Member,
@@ -22,7 +22,7 @@ const PROTOCOL_MAGIC: u32 = 0x574C_545A;
 /// one's handshake body only by appending fields, so the body of every version decodes as the
 /// body of any older one. Every new frame and every new field is gated on the negotiated
 /// version: a peer which negotiated an older one is never sent it.
-const PROTOCOL_VERSIONS: RangeInclusive<u16> = 1..=1;
+const PROTOCOL_VERSIONS: RangeInclusive<u16> = 2..=2;
 
 const HANDSHAKE_DISCRIMINANT: u8 = 0;
 
@@ -33,6 +33,7 @@ pub(crate) enum Frame<'a> {
     Message {
         target: ActorId,
         reply_tags: Vec<ReplyTag>,
+        schema_version: SchemaVersion,
         #[serde(borrow, with = "payload_bytes")]
         payload: Cow<'a, [u8]>,
     },
@@ -55,6 +56,7 @@ pub(crate) enum Frame<'a> {
     Reply {
         nonce: Nonce,
         recipient: Option<ActorId>,
+        schema_version: SchemaVersion,
         #[serde(borrow, with = "payload_bytes")]
         payload: Cow<'a, [u8]>,
     },
@@ -92,6 +94,7 @@ pub(crate) enum Frame<'a> {
     // Every target must map to the stream of the first one, which the frame rides.
     Multicast {
         targets: Vec<ActorId>,
+        schema_version: SchemaVersion,
         #[serde(borrow, with = "payload_bytes")]
         payload: Cow<'a, [u8]>,
     },
@@ -230,11 +233,18 @@ pub(crate) enum StreamKey {
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct Handshake {
     envelope: HandshakeEnvelope,
-    body: HandshakeV1,
+    body: HandshakeV2,
 }
 
 impl Handshake {
-    pub(crate) fn new(body: HandshakeV1) -> Self {
+    /// The longest codec name and application version a handshake carries, in bytes.
+    pub(crate) const MAX_STRING_LEN: usize = 64;
+
+    /// The widest handshake this build sends, pinned by a test: an IPv6 node at the highest port,
+    /// a cluster ID and both strings at [MAX_STRING_LEN](Handshake::MAX_STRING_LEN).
+    pub(crate) const MAX_ENCODED_LEN: usize = 195;
+
+    pub(crate) fn new(body: HandshakeV2) -> Self {
         Self {
             envelope: HandshakeEnvelope::this_build(),
             body,
@@ -295,20 +305,38 @@ impl HandshakeEnvelope {
     }
 }
 
-/// The body of protocol version 1. A later version's body appends to it, so this decodes the
-/// handshake of any version.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub(crate) struct HandshakeV1 {
+/// The body of protocol version 2: version 1's node, intent and cluster ID, then the codec name
+/// and the application version. A later version's body appends to it, so this decodes the
+/// handshake of any later version.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct HandshakeV2 {
     pub(crate) node: NodeId,
     pub(crate) intent: HandshakeIntent,
     pub(crate) cluster: Option<ClusterId>,
+    pub(crate) codec: String,
+    pub(crate) app_version: Option<String>,
 }
 
-impl HandshakeV1 {
+impl HandshakeV2 {
     pub(crate) fn decode(bytes: &[u8]) -> Result<Self, postcard::Error> {
         let HandshakeFrame::Handshake(_, body) =
             postcard::from_bytes::<HandshakeFrame<Self>>(bytes)?;
         Ok(body)
+    }
+
+    /// Checked before the strings are kept, so a stranger cannot make this node hold them.
+    pub(crate) fn validate(&self) -> Result<(), HandshakeError> {
+        let longest = self
+            .codec
+            .len()
+            .max(self.app_version.as_ref().map_or(0, String::len));
+        if longest > Handshake::MAX_STRING_LEN {
+            return Err(HandshakeError::StringTooLong {
+                len: longest,
+                max: Handshake::MAX_STRING_LEN,
+            });
+        }
+        Ok(())
     }
 }
 
@@ -338,6 +366,9 @@ pub(crate) enum RefusalReason {
 
     #[display("joins held back while a member is unreachable")]
     JoinsHeld,
+
+    #[display("another payload codec")]
+    CodecMismatch,
 }
 
 #[derive(Debug, Error)]
@@ -350,6 +381,12 @@ pub(crate) enum HandshakeError {
         ours: RangeInclusive<u16>,
         theirs: RangeInclusive<u16>,
     },
+
+    #[error("handshake string of {len} bytes exceeds {max} bytes")]
+    StringTooLong { len: usize, max: usize },
+
+    #[error("application version {0:?} is not a semantic version")]
+    AppVersion(String),
 }
 
 /// The frame a handshake rides, generic over its body: `()` is the bare envelope, which is all a
@@ -364,24 +401,35 @@ enum HandshakeFrame<B> {
 #[cfg(test)]
 pub(crate) mod synthetic {
     use crate::cluster::{
-        frame::{HandshakeEnvelope, HandshakeFrame, HandshakeIntent, HandshakeV1, PROTOCOL_MAGIC},
+        frame::{HandshakeEnvelope, HandshakeFrame, HandshakeIntent, HandshakeV2, PROTOCOL_MAGIC},
         node::{ClusterId, NodeId},
     };
     use serde::{Deserialize, Serialize};
 
-    /// Version 2 appends one field to the version 1 body.
-    #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-    pub(crate) struct HandshakeV2 {
+    /// The body of version 1, which version 2 appended to.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub(crate) struct HandshakeV1 {
         pub(crate) node: NodeId,
         pub(crate) intent: HandshakeIntent,
         pub(crate) cluster: Option<ClusterId>,
+    }
+
+    /// Version 3 appends one field to the version 2 body.
+    #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+    pub(crate) struct HandshakeV3 {
+        pub(crate) node: NodeId,
+        pub(crate) intent: HandshakeIntent,
+        pub(crate) cluster: Option<ClusterId>,
+        pub(crate) codec: String,
+        pub(crate) app_version: Option<String>,
         pub(crate) appended: u64,
     }
 
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    #[derive(Debug, Clone, PartialEq, Eq)]
     pub(crate) enum Body {
         V1(HandshakeV1),
         V2(HandshakeV2),
+        V3(HandshakeV3),
     }
 
     pub(crate) fn envelope(min_version: u16, max_version: u16) -> HandshakeEnvelope {
@@ -396,19 +444,27 @@ pub(crate) mod synthetic {
         match body {
             Body::V1(body) => postcard::to_allocvec(&HandshakeFrame::Handshake(envelope, body)),
             Body::V2(body) => postcard::to_allocvec(&HandshakeFrame::Handshake(envelope, body)),
+            Body::V3(body) => postcard::to_allocvec(&HandshakeFrame::Handshake(envelope, body)),
         }
         .expect("handshake encodes")
     }
 
     pub(crate) fn decode(bytes: &[u8], version: u16) -> Body {
         match version {
-            1 => Body::V1(HandshakeV1::decode(bytes).expect("a version 1 body")),
-
-            2 => {
+            1 => {
                 let HandshakeFrame::Handshake(_, body) =
-                    postcard::from_bytes::<HandshakeFrame<HandshakeV2>>(bytes)
-                        .expect("a version 2 body");
-                Body::V2(body)
+                    postcard::from_bytes::<HandshakeFrame<HandshakeV1>>(bytes)
+                        .expect("a version 1 body");
+                Body::V1(body)
+            }
+
+            2 => Body::V2(HandshakeV2::decode(bytes).expect("a version 2 body")),
+
+            3 => {
+                let HandshakeFrame::Handshake(_, body) =
+                    postcard::from_bytes::<HandshakeFrame<HandshakeV3>>(bytes)
+                        .expect("a version 3 body");
+                Body::V3(body)
             }
 
             _ => panic!("no body schema for version {version}"),
@@ -419,13 +475,13 @@ pub(crate) mod synthetic {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId,
+        ActorId, SchemaVersion,
         cluster::{
             discovery::{KeyKind, Nonce, WireKey},
             frame::{
-                Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV1,
+                Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
                 PROTOCOL_MAGIC, RefusalReason, StreamKey,
-                synthetic::{self, Body, HandshakeV2},
+                synthetic::{self, Body, HandshakeV1, HandshakeV3},
             },
             membership::{Member, MemberState},
             node::{ClusterId, NodeId},
@@ -447,6 +503,7 @@ mod tests {
         let message = Frame::Message {
             target,
             reply_tags: Vec::new(),
+            schema_version: SchemaVersion::new(0),
             payload: Cow::Borrowed(&[]),
         };
         assert_eq!(message.stream_key(), Some(StreamKey::Actor(target)));
@@ -458,6 +515,7 @@ mod tests {
             Frame::Reply {
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .stream_key(),
@@ -501,6 +559,7 @@ mod tests {
             Frame::Reply {
                 nonce,
                 recipient: None,
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .stream_key(),
@@ -540,6 +599,7 @@ mod tests {
         assert_eq!(
             Frame::Multicast {
                 targets: vec![first, second],
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .stream_key(),
@@ -548,6 +608,7 @@ mod tests {
         assert_eq!(
             Frame::Multicast {
                 targets: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .stream_key(),
@@ -620,9 +681,10 @@ mod tests {
 
     /// The frames delivered to an actor are pinned to hardcoded wire bytes too, and these are the
     /// ones that matter. Their field layout carries the ordering guarantees across the wire, since
-    /// a terminated signal names its watcher and a reply its asker to ride the right stream.
-    /// Decoding the IDs back out of the bytes they were built from catches a transposed `target`
-    /// and `watcher`, which a round trip alone cannot see.
+    /// a terminated signal names its watcher and a reply its asker to ride the right stream, and
+    /// the schema version directly precedes the payload it describes. Decoding the IDs back out
+    /// of the bytes they were built from catches a transposed `target` and `watcher`, which a
+    /// round trip alone cannot see.
     #[test]
     fn delivered_frames_match_their_pinned_wire_bytes() {
         const TARGET: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
@@ -632,6 +694,7 @@ mod tests {
             1, // Frame::Message
             16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // target
             0,  // no reply tags
+            2,  // schema version
             3, 1, 2, 3, // payload
         ];
 
@@ -639,6 +702,7 @@ mod tests {
         let Frame::Message {
             target,
             reply_tags,
+            schema_version,
             payload,
         } = &frame
         else {
@@ -646,6 +710,7 @@ mod tests {
         };
         assert_eq!(target.to_string(), TARGET);
         assert!(reply_tags.is_empty());
+        assert_eq!(*schema_version, SchemaVersion::new(2));
         assert_eq!(payload.as_ref(), &[1, 2, 3][..]);
         assert!(matches!(payload, Cow::Borrowed(_)));
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
@@ -669,6 +734,7 @@ mod tests {
             0, // nonce
             1, // recipient: Some
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // recipient
+            1,  // schema version
             2, 4, 5, // payload
         ];
 
@@ -676,6 +742,7 @@ mod tests {
         let Frame::Reply {
             nonce,
             recipient,
+            schema_version,
             payload,
         } = &frame
         else {
@@ -686,6 +753,7 @@ mod tests {
             recipient.expect("the reply names a recipient").to_string(),
             RECIPIENT
         );
+        assert_eq!(*schema_version, SchemaVersion::new(1));
         assert_eq!(payload.as_ref(), &[4, 5][..]);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
@@ -693,6 +761,7 @@ mod tests {
             5, // Frame::Reply
             0, // nonce
             0, // recipient: None
+            0, // schema version
             2, 4, 5, // payload
         ];
 
@@ -714,6 +783,7 @@ mod tests {
             (RefusalReason::NoCluster, 2),
             (RefusalReason::ForeignCluster, 3),
             (RefusalReason::JoinsHeld, 4),
+            (RefusalReason::CodecMismatch, 5),
         ];
 
         for (reason, discriminant) in reasons {
@@ -741,10 +811,12 @@ mod tests {
         let watcher = ActorId::new();
 
         let frames = [
-            Frame::Handshake(Handshake::new(HandshakeV1 {
+            Frame::Handshake(Handshake::new(HandshakeV2 {
                 node,
                 intent: HandshakeIntent::Join,
                 cluster: Some(ClusterId::new()),
+                codec: "postcard".to_string(),
+                app_version: Some("1.4.0".to_string()),
             })),
             Frame::Message {
                 target,
@@ -752,6 +824,7 @@ mod tests {
                     nonce: Nonce::first(),
                     recipient: Some(watcher),
                 }],
+                schema_version: SchemaVersion::new(3),
                 payload: Cow::Borrowed(&[1, 2, 3]),
             },
             Frame::Watch { target, watcher },
@@ -760,6 +833,7 @@ mod tests {
             Frame::Reply {
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                schema_version: SchemaVersion::new(1),
                 payload: Cow::Borrowed(&[4, 5, 6]),
             },
             Frame::ReplyDropped {
@@ -800,6 +874,7 @@ mod tests {
             },
             Frame::Multicast {
                 targets: vec![target, watcher],
+                schema_version: SchemaVersion::new(2),
                 payload: Cow::Borrowed(&[7, 8, 9]),
             },
             Frame::Drained { data_streams: 4 },
@@ -825,6 +900,7 @@ mod tests {
             Frame::Message {
                 target,
                 reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[])
             }
             .is_counted()
@@ -833,6 +909,7 @@ mod tests {
             Frame::Reply {
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .is_counted()
@@ -840,6 +917,7 @@ mod tests {
         assert!(
             Frame::Multicast {
                 targets: vec![target, watcher],
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
             .is_counted()
@@ -978,9 +1056,9 @@ mod tests {
         }
     }
 
-    /// The multicast was appended at discriminant 12: its targets in order, then the payload.
-    /// Decoding the IDs back out of hardcoded bytes catches a transposed field, which a round trip
-    /// cannot.
+    /// The multicast was appended at discriminant 12: its targets in order, then the schema
+    /// version, then the payload. Decoding the IDs back out of hardcoded bytes catches a
+    /// transposed field, which a round trip cannot.
     #[test]
     fn a_multicast_matches_its_pinned_wire_bytes() {
         const FIRST: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
@@ -992,17 +1070,24 @@ mod tests {
             16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // first target
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
             31, // second target
+            4,  // schema version
             3, 1, 2, 3, // payload
         ];
 
         let frame = Frame::from_bytes(&bytes).expect("frame decodes");
-        let Frame::Multicast { targets, payload } = &frame else {
+        let Frame::Multicast {
+            targets,
+            schema_version,
+            payload,
+        } = &frame
+        else {
             panic!("not a multicast frame");
         };
         assert_eq!(
             targets.iter().map(ToString::to_string).collect::<Vec<_>>(),
             [FIRST, SECOND]
         );
+        assert_eq!(*schema_version, SchemaVersion::new(4));
         assert_eq!(payload.as_ref(), &[1, 2, 3][..]);
         assert!(matches!(payload, Cow::Borrowed(_)));
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
@@ -1042,8 +1127,8 @@ mod tests {
         let bytes = [
             0, // Frame::Handshake
             218, 168, 177, 186, 5, // magic
-            1, // min_version
-            1, // max_version
+            2, // min_version
+            2, // max_version
         ];
 
         assert_eq!(
@@ -1058,23 +1143,27 @@ mod tests {
         );
     }
 
-    /// The version 1 body follows the envelope: the node, the intent, the cluster ID. Decoding
-    /// the IDs back out of hardcoded bytes catches a transposed field, which a round trip cannot.
+    /// The version 2 body follows the envelope: the node, the intent, the cluster ID, the codec
+    /// name, the application version. Decoding the IDs back out of hardcoded bytes catches a
+    /// transposed field, which a round trip cannot.
     #[test]
-    fn a_v1_handshake_matches_its_pinned_wire_bytes() {
+    fn a_v2_handshake_matches_its_pinned_wire_bytes() {
         const INCARNATION: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
         const CLUSTER: &str = "10111213-1415-1617-1819-1a1b1c1d1e1f";
 
-        let mut bytes = vec![
+        let bytes = vec![
             0, // Frame::Handshake
             218, 168, 177, 186, 5, // magic
-            1, // min_version
-            1, // max_version
+            2, // min_version
+            2, // max_version
             0, 127, 0, 0, 1, 248, 19, // node address 127.0.0.1:2552
             16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // node incarnation
             1,  // intent: Join
             1,  // cluster: Some
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // cluster
+            8, 112, 111, 115, 116, 99, 97, 114, 100, // codec "postcard"
+            1,   // app_version: Some
+            5, 49, 46, 52, 46, 48, // app_version "1.4.0"
         ];
 
         let frame = Frame::from_bytes(&bytes).expect("frame decodes");
@@ -1082,7 +1171,7 @@ mod tests {
             panic!("not a handshake frame");
         };
         assert_eq!(handshake.envelope, HandshakeEnvelope::this_build());
-        let body = handshake.body;
+        let body = &handshake.body;
         assert_eq!(body.node.addr().to_string(), "127.0.0.1:2552");
         assert_eq!(body.node.incarnation().to_string(), INCARNATION);
         assert_eq!(body.intent, HandshakeIntent::Join);
@@ -1092,7 +1181,9 @@ mod tests {
                 .to_string(),
             CLUSTER
         );
-        assert_eq!(HandshakeV1::decode(&bytes).expect("body decodes"), body);
+        assert_eq!(body.codec, "postcard");
+        assert_eq!(body.app_version.as_deref(), Some("1.4.0"));
+        assert_eq!(&HandshakeV2::decode(&bytes).expect("body decodes"), body);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
         let intents = [
@@ -1100,15 +1191,55 @@ mod tests {
             (HandshakeIntent::Join, 1),
             (HandshakeIntent::Probe, 2),
         ];
-        let intent_at = bytes.len() - 19;
-        bytes.truncate(intent_at + 1);
-        bytes.push(0); // cluster: None
+        let intent_at = 8 + 7 + 17;
         for (intent, discriminant) in intents {
-            bytes[intent_at] = discriminant;
-            let body = HandshakeV1::decode(&bytes).expect("body decodes");
+            let mut bytes = bytes[..intent_at].to_vec();
+            bytes.push(discriminant);
+            bytes.push(0); // cluster: None
+            bytes.extend([8, 112, 111, 115, 116, 99, 97, 114, 100]);
+            bytes.push(0); // app_version: None
+            let body = HandshakeV2::decode(&bytes).expect("body decodes");
             assert_eq!(body.intent, intent);
             assert_eq!(body.cluster, None);
+            assert_eq!(body.app_version, None);
         }
+    }
+
+    /// The widest handshake this build sends encodes to exactly the pinned bound, which the
+    /// minimum frame size must hold; a string one byte over the cap is refused.
+    #[test]
+    fn the_widest_handshake_matches_its_pinned_bound() {
+        let mut body = HandshakeV2 {
+            node: NodeId::new(
+                "[ffff:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:65535"
+                    .parse()
+                    .expect("valid address"),
+            ),
+            intent: HandshakeIntent::Probe,
+            cluster: Some(ClusterId::new()),
+            codec: "c".repeat(Handshake::MAX_STRING_LEN),
+            app_version: Some("v".repeat(Handshake::MAX_STRING_LEN)),
+        };
+        body.validate().expect("strings at the cap are valid");
+
+        let len = Frame::Handshake(Handshake::new(body.clone()))
+            .encode_into(Vec::new())
+            .expect("frame encodes")
+            .len();
+        assert_eq!(len, Handshake::MAX_ENCODED_LEN);
+
+        body.codec.push('c');
+        assert!(matches!(
+            body.validate(),
+            Err(HandshakeError::StringTooLong { len, max })
+                if len == Handshake::MAX_STRING_LEN + 1 && max == Handshake::MAX_STRING_LEN
+        ));
+        body.codec.pop();
+        body.app_version = Some("v".repeat(Handshake::MAX_STRING_LEN + 1));
+        assert!(matches!(
+            body.validate(),
+            Err(HandshakeError::StringTooLong { .. })
+        ));
     }
 
     /// The newest version both ranges hold wins; ranges which do not overlap have none, and an
@@ -1174,17 +1305,27 @@ mod tests {
         assert_eq!(HandshakeEnvelope::decode(&[]).expect("no error"), None);
     }
 
-    /// A version 2 handshake decodes as a version 1 one, its appended field ignored, and a
-    /// version 2 build reads a version 1 handshake with the schema of the version negotiated.
+    /// A version 3 handshake decodes as a version 2 one, its appended field ignored, and a
+    /// version 2 one as a version 1 one the same way; a version 3 build reads a version 2
+    /// handshake with the schema of the version negotiated.
     #[test]
     fn a_handshake_body_extends_its_predecessor_by_appending() {
         let node = NodeId::new("127.0.0.1:1234".parse().expect("valid address"));
         let cluster = Some(ClusterId::new());
+        let v3 = HandshakeV3 {
+            node,
+            intent: HandshakeIntent::Join,
+            cluster,
+            codec: "postcard".to_string(),
+            app_version: None,
+            appended: 7,
+        };
         let v2 = HandshakeV2 {
             node,
             intent: HandshakeIntent::Join,
             cluster,
-            appended: 7,
+            codec: "postcard".to_string(),
+            app_version: None,
         };
         let v1 = HandshakeV1 {
             node,
@@ -1192,27 +1333,29 @@ mod tests {
             cluster,
         };
 
-        let bytes = synthetic::encode(synthetic::envelope(1, 2), Body::V2(v2));
+        let bytes = synthetic::encode(synthetic::envelope(2, 3), Body::V3(v3.clone()));
         let envelope = HandshakeEnvelope::decode(&bytes)
             .expect("envelope decodes")
             .expect("a handshake");
         assert_eq!(
             HandshakeEnvelope::this_build().negotiate(envelope).ok(),
-            Some(1)
+            Some(2)
         );
-        assert_eq!(HandshakeV1::decode(&bytes).expect("body decodes"), v1);
-        assert_eq!(synthetic::decode(&bytes, 2), Body::V2(v2));
+        assert_eq!(HandshakeV2::decode(&bytes).expect("body decodes"), v2);
+        assert_eq!(synthetic::decode(&bytes, 1), Body::V1(v1.clone()));
+        assert_eq!(synthetic::decode(&bytes, 3), Body::V3(v3));
 
-        let bytes = Frame::Handshake(Handshake::new(v1))
+        let bytes = Frame::Handshake(Handshake::new(v2.clone()))
             .encode_into(Vec::new())
             .expect("frame encodes");
         let envelope = HandshakeEnvelope::decode(&bytes)
             .expect("envelope decodes")
             .expect("a handshake");
-        let version = synthetic::envelope(1, 2)
+        let version = synthetic::envelope(2, 3)
             .negotiate(envelope)
             .expect("the ranges overlap");
-        assert_eq!(version, 1);
-        assert_eq!(synthetic::decode(&bytes, version), Body::V1(v1));
+        assert_eq!(version, 2);
+        assert_eq!(synthetic::decode(&bytes, version), Body::V2(v2));
+        assert_eq!(synthetic::decode(&bytes, 1), Body::V1(v1));
     }
 }

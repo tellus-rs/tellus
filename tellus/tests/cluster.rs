@@ -83,10 +83,12 @@ use std::{
 };
 use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, AskError, Control, Incoming, ReplyTo,
-    Unstashed, Untimed,
+    SchemaVersion, Unstashed, Untimed,
     cluster::{
         self, BootstrapConfig, Change, Changes, ClusterState, DownError, EndpointConfig,
-        FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Transition,
+        FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Peer, Schema,
+        Transition, UnsupportedSchemaVersion,
+        codec::{Codec, CodecError},
         downing::{Disconnected, DownAfterDeadline, Downing, DowningProvider, KeepMajority},
         failure::{Deadline, DeadlineFailureDetector},
         pubsub::{self, Topic},
@@ -114,6 +116,7 @@ const ROOTS_ENV: &str = "TELLUS_REMOTING_ROOTS";
 const CLUSTER_SIZE_ENV: &str = "TELLUS_REMOTING_CLUSTER_SIZE";
 const STREAMS_ENV: &str = "TELLUS_REMOTING_STREAMS";
 const FORCE_COLLISION_ENV: &str = "TELLUS_REMOTING_FORCE_COLLISION";
+const APP_VERSION_ENV: &str = "TELLUS_REMOTING_APP_VERSION";
 const ADDR_PREFIX: &str = "ADDR ";
 const REF_PREFIX: &str = "REF ";
 const JOIN_PREFIX: &str = "JOIN ";
@@ -131,6 +134,10 @@ const MAJORITY_AFTER: Duration = Duration::from_secs(1);
 const JOIN_HOLD_GRACE: Duration = Duration::from_secs(2);
 const PROBE_INTERVAL: Duration = Duration::from_millis(500);
 const ECHO_KEY: &str = "echo";
+const JOB_KEY: &str = "job";
+const APP_VERSION: &str = "2.0.0";
+const LEGACY_APP_VERSION: &str = "1.0.0";
+const LEGACY_LABEL: &str = "legacy";
 const TOPIC: &str = "notes";
 const PINGS: u32 = 100;
 const STREAMED: u32 = 50;
@@ -204,6 +211,7 @@ fn main() -> anyhow::Result<()> {
         Ok(role) if role == Role::Majority.as_str() => majority_node(),
         Ok(role) if role == Role::ClusterId.as_str() => cluster_id_node(),
         Ok(role) if role == Role::ForeignProbe.as_str() => foreign_probe_node(),
+        Ok(role) if role == Role::Legacy.as_str() => legacy_node(),
         Ok(role) if role == Role::Bench.as_str() => bench_client(),
         Ok(role) if role == Role::GossipBench.as_str() => gossip_bench_client(),
         Ok(role) if role == Role::GossipIdle.as_str() => gossip_idle_node(),
@@ -254,6 +262,7 @@ enum Role {
     Majority,
     ClusterId,
     ForeignProbe,
+    Legacy,
     Bench,
     GossipBench,
     GossipIdle,
@@ -273,6 +282,7 @@ impl Role {
             Role::Majority => "majority",
             Role::ClusterId => "cluster-id",
             Role::ForeignProbe => "foreign-probe",
+            Role::Legacy => "legacy",
             Role::Bench => "bench",
             Role::GossipBench => "bench-gossip",
             Role::GossipIdle => "gossip-idle",
@@ -284,6 +294,12 @@ impl Role {
 /// The echo node: replies to every ping, stops on `Stop`.
 fn echo_node() -> anyhow::Result<()> {
     serve(EchoServer, ECHO_KEY)
+}
+
+/// The legacy node: runs the older application, whose job and total have their version 0
+/// shapes, under the application version its environment names.
+fn legacy_node() -> anyhow::Result<()> {
+    serve(LegacyComputer, JOB_KEY)
 }
 
 /// The keeper node: spawns a fresh streamer child per `Spawn` and hands its reference out.
@@ -846,7 +862,9 @@ impl Actor for EchoServer {
             }
 
             Incoming::Message(Request::Notes { reply_to }) => {
-                reply_to.reply(state.notes.iter().map(|(_, note)| note.clone()).collect());
+                reply_to.reply(Notes(
+                    state.notes.iter().map(|(_, note)| note.clone()).collect(),
+                ));
                 Ok(Control::Continue(state))
             }
 
@@ -857,7 +875,7 @@ impl Actor for EchoServer {
                     .filter(|(noted_by, _)| *noted_by == recorder)
                     .map(|(_, note)| note.clone())
                     .collect();
-                reply_to.reply(notes);
+                reply_to.reply(Notes(notes));
                 Ok(Control::Continue(state))
             }
 
@@ -990,17 +1008,19 @@ enum Request {
 
     /// Every note this node received so far.
     Notes {
-        reply_to: ReplyTo<Vec<Note>>,
+        reply_to: ReplyTo<Notes>,
     },
 
     /// Every note the given recorder of this node received so far, in arrival order.
     RecorderNotes {
         recorder: ActorId,
-        reply_to: ReplyTo<Vec<Note>>,
+        reply_to: ReplyTo<Notes>,
     },
 
     Stop,
 }
+
+impl Schema for Request {}
 
 impl Manifest for Request {
     const MANIFEST: &'static str = "request";
@@ -1011,6 +1031,320 @@ impl Manifest for Request {
 struct Note {
     from: SocketAddr,
     seq: u64,
+}
+
+impl Schema for Note {}
+
+/// A reply carrying notes: a wrapper, since a `Vec` of an application type is no `Schema`.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct Notes(Vec<Note>);
+
+impl Schema for Notes {}
+
+/// The current job, version 1: version 0, which the legacy application still runs, had no label.
+/// Encoded as version 0 for a peer below application version 2, decoded from version 0 by
+/// labeling it as legacy.
+#[derive(Serialize, Deserialize)]
+enum Job {
+    Compute {
+        factor: u64,
+        label: String,
+        reply_to: ReplyTo<Total>,
+    },
+
+    Relay {
+        to: ActorRef<Job>,
+        factor: u64,
+        label: String,
+        reply_to: ReplyTo<Total>,
+    },
+
+    Stop,
+}
+
+impl Schema for Job {
+    const VERSION: SchemaVersion = SchemaVersion::new(1);
+
+    fn encode(
+        &self,
+        codec: &dyn Codec,
+        peer: &Peer,
+    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+        if peer.app_version().is_none_or(|version| version.major < 2) {
+            let view = match self {
+                Job::Compute {
+                    factor, reply_to, ..
+                } => JobV0View::Compute {
+                    factor: *factor,
+                    reply_to,
+                },
+                Job::Relay {
+                    to,
+                    factor,
+                    reply_to,
+                    ..
+                } => JobV0View::Relay {
+                    to,
+                    factor: *factor,
+                    reply_to,
+                },
+                Job::Stop => JobV0View::Stop,
+            };
+            return Ok((SchemaVersion::new(0), codec.encode(&view)?));
+        }
+        Ok((Self::VERSION, codec.encode(self)?))
+    }
+
+    fn decode(
+        codec: &dyn Codec,
+        schema_version: SchemaVersion,
+        payload: &[u8],
+    ) -> Result<Self, CodecError> {
+        if schema_version == SchemaVersion::new(0) {
+            let job = match codec.decode_to::<JobV0>(payload)? {
+                JobV0::Compute { factor, reply_to } => Job::Compute {
+                    factor,
+                    label: LEGACY_LABEL.to_string(),
+                    reply_to,
+                },
+                JobV0::Relay {
+                    to,
+                    factor,
+                    reply_to,
+                } => Job::Relay {
+                    to,
+                    factor,
+                    label: LEGACY_LABEL.to_string(),
+                    reply_to,
+                },
+                JobV0::Stop => Job::Stop,
+            };
+            return Ok(job);
+        }
+        if schema_version == Self::VERSION {
+            return codec.decode_to(payload);
+        }
+        Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
+            schema_version,
+        )))
+    }
+}
+
+impl Manifest for Job {
+    const MANIFEST: &'static str = "job";
+}
+
+/// Version 0 of the job as encoded, borrowing the fields of the current one.
+#[derive(Serialize)]
+enum JobV0View<'a> {
+    Compute {
+        factor: u64,
+        reply_to: &'a ReplyTo<Total>,
+    },
+
+    Relay {
+        to: &'a ActorRef<Job>,
+        factor: u64,
+        reply_to: &'a ReplyTo<Total>,
+    },
+
+    Stop,
+}
+
+/// Version 0 of the job as decoded.
+#[derive(Deserialize)]
+enum JobV0 {
+    Compute {
+        factor: u64,
+        reply_to: ReplyTo<Total>,
+    },
+
+    Relay {
+        to: ActorRef<Job>,
+        factor: u64,
+        reply_to: ReplyTo<Total>,
+    },
+
+    Stop,
+}
+
+/// The current total, version 1: version 0 was the bare value. Encoded as the bare value for a
+/// peer below application version 2, decoded from it with no computing node.
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+struct Total {
+    value: u64,
+    computed_by: Option<SocketAddr>,
+}
+
+impl Schema for Total {
+    const VERSION: SchemaVersion = SchemaVersion::new(1);
+
+    fn encode(
+        &self,
+        codec: &dyn Codec,
+        peer: &Peer,
+    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+        if peer.app_version().is_none_or(|version| version.major < 2) {
+            return Ok((SchemaVersion::new(0), codec.encode(&self.value)?));
+        }
+        Ok((Self::VERSION, codec.encode(self)?))
+    }
+
+    fn decode(
+        codec: &dyn Codec,
+        schema_version: SchemaVersion,
+        payload: &[u8],
+    ) -> Result<Self, CodecError> {
+        if schema_version == SchemaVersion::new(0) {
+            return Ok(Total {
+                value: codec.decode_to(payload)?,
+                computed_by: None,
+            });
+        }
+        if schema_version == Self::VERSION {
+            return codec.decode_to(payload);
+        }
+        Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
+            schema_version,
+        )))
+    }
+}
+
+/// The job of the legacy application: its only shape is the current one's version 0.
+#[derive(Serialize, Deserialize)]
+enum LegacyJob {
+    Compute {
+        factor: u64,
+        reply_to: ReplyTo<LegacyTotal>,
+    },
+
+    Relay {
+        to: ActorRef<LegacyJob>,
+        factor: u64,
+        reply_to: ReplyTo<LegacyTotal>,
+    },
+
+    Stop,
+}
+
+impl Schema for LegacyJob {}
+
+impl Manifest for LegacyJob {
+    const MANIFEST: &'static str = "job";
+}
+
+/// The total of the legacy application, the bare value.
+#[derive(Debug, Serialize, Deserialize)]
+struct LegacyTotal(u64);
+
+impl Schema for LegacyTotal {}
+
+/// Doubles a factor, naming this node, and relays a job to another computer.
+struct Computer;
+
+impl Actor for Computer {
+    type Message = Job;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(Job::Compute {
+                factor, reply_to, ..
+            }) => {
+                reply_to.reply(Total {
+                    value: factor * 2,
+                    computed_by: Some(*SELF_ADDR.get().expect("endpoint started")),
+                });
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(Job::Relay {
+                to,
+                factor,
+                label,
+                reply_to,
+            }) => {
+                tokio::spawn(async move {
+                    let computed = to
+                        .ask(TIMEOUT, |reply_to| Job::Compute {
+                            factor,
+                            label,
+                            reply_to,
+                        })
+                        .await;
+                    if let Ok(total) = computed {
+                        reply_to.reply(total);
+                    }
+                });
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(Job::Stop) => Ok(Control::Stop),
+
+            Incoming::Terminated(_) => Ok(Control::Continue(state)),
+        }
+    }
+}
+
+/// The legacy application's computer: doubles a factor and relays a job, in the old shapes.
+struct LegacyComputer;
+
+impl Actor for LegacyComputer {
+    type Message = LegacyJob;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(LegacyJob::Compute { factor, reply_to }) => {
+                reply_to.reply(LegacyTotal(factor * 2));
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(LegacyJob::Relay {
+                to,
+                factor,
+                reply_to,
+            }) => {
+                tokio::spawn(async move {
+                    let computed = to
+                        .ask(TIMEOUT, |reply_to| LegacyJob::Compute { factor, reply_to })
+                        .await;
+                    if let Ok(total) = computed {
+                        reply_to.reply(total);
+                    }
+                });
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(LegacyJob::Stop) => Ok(Control::Stop),
+
+            Incoming::Terminated(_) => Ok(Control::Continue(state)),
+        }
+    }
 }
 
 impl Manifest for Note {
@@ -1024,10 +1358,14 @@ struct Directory {
     settled: bool,
 }
 
+impl Schema for Directory {}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct Reply {
     seq: u32,
 }
+
+impl Schema for Reply {}
 
 impl Manifest for Reply {
     const MANIFEST: &'static str = "reply";
@@ -1038,6 +1376,8 @@ struct BulkReply {
     payload: Vec<u8>,
 }
 
+impl Schema for BulkReply {}
+
 /// A node's own address next to the Up members it sees, so the client can tell whose view it is
 /// asserting on.
 #[derive(Debug, Serialize, Deserialize)]
@@ -1046,16 +1386,22 @@ struct MemberAddrs {
     up: Vec<SocketAddr>,
 }
 
+impl Schema for MemberAddrs {}
+
 #[derive(Serialize, Deserialize)]
 enum AskerMessage {
     Marker,
     Answer(Reply),
 }
 
+impl Schema for AskerMessage {}
+
 #[derive(Serialize, Deserialize)]
 struct ForwardedRequest {
     reply_to: ReplyTo<Reply>,
 }
+
+impl Schema for ForwardedRequest {}
 
 struct Keeper;
 
@@ -1112,6 +1458,8 @@ enum KeeperMessage {
 
     Stop,
 }
+
+impl Schema for KeeperMessage {}
 
 impl Manifest for KeeperMessage {
     const MANIFEST: &'static str = "keeper-message";
@@ -1203,6 +1551,8 @@ enum StreamerMessage {
     },
 }
 
+impl Schema for StreamerMessage {}
+
 #[derive(Serialize, Deserialize)]
 enum ClientEvent {
     Child(ActorRef<StreamerMessage>),
@@ -1212,6 +1562,8 @@ enum ClientEvent {
     Armed,
     Probe,
 }
+
+impl Schema for ClientEvent {}
 
 enum TestEvent {
     Watching,
@@ -1230,6 +1582,7 @@ fn client() -> anyhow::Result<()> {
     retried("discovery scenario", || discovery_scenario(&runtime)).context("discovery scenario")?;
     receptionist_scenario(&runtime).context("receptionist scenario")?;
     pubsub_scenario(&runtime).context("pub-sub scenario")?;
+    schema_evolution_scenario(&runtime).context("schema evolution scenario")?;
 
     let mut keeper_process = KillOnDrop(spawn_node(Role::Keeper)?);
     let keeper = resolve_ref::<KeeperMessage>(&mut keeper_process)?;
@@ -1743,6 +2096,61 @@ struct BulkRound {
 /// resolve as the type they were serialized for and be refused as any other. Then the node is
 /// killed and told anyway, and a second node is served afterward: only that further round trip
 /// proves the dead letters left the endpoint usable, which the sends alone cannot show.
+/// A node of the newer application exchanges messages with one of the older application in both
+/// directions: a job to the legacy node is encoded in its version 0 shape, its reply is upcast
+/// from version 0, and a job the legacy node sends here is upcast while the total it gets back is
+/// encoded for it in version 0, which its reply then proves.
+fn schema_evolution_scenario(runtime: &Runtime) -> anyhow::Result<()> {
+    let mut legacy_process = KillOnDrop(spawn_legacy_node()?);
+    let legacy = resolve_ref::<Job>(&mut legacy_process)?;
+    let system = ActorSystem::new(Computer);
+    let computer = system.root().clone();
+
+    runtime.block_on(async {
+        let total = legacy
+            .ask(TIMEOUT, |reply_to| Job::Compute {
+                factor: 21,
+                label: "direct".to_string(),
+                reply_to,
+            })
+            .await
+            .context("compute ask")?;
+        let expected = Total {
+            value: 42,
+            computed_by: None,
+        };
+        if total != expected {
+            bail!("legacy total {total:?}, not {expected:?}");
+        }
+
+        let total = legacy
+            .ask(TIMEOUT, |reply_to| Job::Relay {
+                to: computer.clone(),
+                factor: 5,
+                label: "relayed".to_string(),
+                reply_to,
+            })
+            .await
+            .context("relay ask")?;
+        let expected = Total {
+            value: 10,
+            computed_by: None,
+        };
+        if total != expected {
+            bail!("relayed total {total:?}, not {expected:?}");
+        }
+        Ok::<_, anyhow::Error>(())
+    })?;
+
+    legacy.tell(Job::Stop);
+    expect_exit(&mut legacy_process, "legacy")?;
+    computer.tell(Job::Stop);
+    runtime
+        .block_on(timeout(TIMEOUT, system.terminated()))
+        .context("computer termination")??;
+    Ok(())
+}
+
 fn echo_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut echo_process = KillOnDrop(spawn_node(Role::Echo)?);
     let bytes = ref_bytes(&mut echo_process)?;
@@ -2922,6 +3330,7 @@ fn interleaved_pubsub(
                     reply_to,
                 }))
                 .context("recorder notes ask")?
+                .0
                 .into_iter()
                 .filter(|note| note.from == own() && note.seq >= FIRST_SEQ)
                 .map(|note| note.seq)
@@ -3009,7 +3418,8 @@ fn await_notes(
     loop {
         let notes = runtime
             .block_on(echo.ask(TIMEOUT, |reply_to| Request::Notes { reply_to }))
-            .context("notes ask")?;
+            .context("notes ask")?
+            .0;
         let complete = published.iter().all(|(from, seqs)| {
             let received = notes
                 .iter()
@@ -4914,6 +5324,8 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     if let Ok(streams) = env::var(STREAMS_ENV) {
         config.max_streams_per_peer = streams.parse().context("stream count")?;
     }
+    let app_version = env::var(APP_VERSION_ENV).unwrap_or_else(|_| APP_VERSION.to_string());
+    config.app_version = Some(app_version.parse().context("application version")?);
     cluster::start_endpoint(config, TimeoutTransport(transport))?;
     let _ = SELF_ADDR.set(addr);
     announce_bound(addr);
@@ -5134,6 +5546,21 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 fn spawn_node(role: Role) -> anyhow::Result<Child> {
     spawn_node_at(role, None)
+}
+
+/// A legacy node announces the older application version, so this node encodes the old shapes
+/// for it.
+fn spawn_legacy_node() -> anyhow::Result<Child> {
+    let seed = SELF_ADDR.get().context("endpoint not started")?;
+    let mut child = Command::new(env::current_exe()?)
+        .env(ROLE_ENV, Role::Legacy.as_str())
+        .env(SEEDS_ENV, seed.to_string())
+        .env(APP_VERSION_ENV, LEGACY_APP_VERSION)
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("legacy process")?;
+    await_bound(&mut child, any_port())?;
+    Ok(child)
 }
 
 fn spawn_node_at(role: Role, bind_addr: Option<SocketAddr>) -> anyhow::Result<Child> {

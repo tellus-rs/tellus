@@ -37,7 +37,9 @@ use std::{
 };
 use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, Unstashed, Untimed,
-    cluster::{self, EndpointConfig, Key, Manifest, receptionist, transport::QuicTransport},
+    cluster::{
+        self, EndpointConfig, Key, Manifest, Schema, receptionist, transport::QuicTransport,
+    },
 };
 use tokio::{
     process::{Child, Command},
@@ -138,6 +140,8 @@ enum Work {
 
     Stop,
 }
+
+impl Schema for Work {}
 
 impl Manifest for Work {
     const MANIFEST: &'static str = "work";
@@ -252,6 +256,8 @@ impl Actor for Gatherer {
 
 #[derive(Serialize, Deserialize)]
 struct Partial(u64);
+
+impl Schema for Partial {}
 
 struct Gathering {
     remaining: usize,

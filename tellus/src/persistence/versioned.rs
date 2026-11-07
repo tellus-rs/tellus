@@ -1,5 +1,5 @@
-use crate::persistence::{
-    codec::{Codec, PayloadError},
+use crate::{
+    persistence::codec::{Codec, PayloadError},
     schema_version::SchemaVersion,
 };
 use serde::{Serialize, de::DeserializeOwned};
@@ -104,9 +104,9 @@ mod tests {
         Nothing,
         persistence::{
             codec::{Cbor, Codec, Json},
-            schema_version::SchemaVersion,
             versioned::{DecodeError, Versioned, decode_versioned},
         },
+        schema_version::SchemaVersion,
     };
     use serde::{Deserialize, Serialize};
     use std::error::Error;

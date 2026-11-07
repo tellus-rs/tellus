@@ -1,5 +1,5 @@
-# The nodes list pods to find each other; the chaos agent deletes and labels them. Nothing here
-# grants more than that.
+# The nodes list pods to find each other; the chaos agent deletes and labels them and rolls the
+# StatefulSet. Nothing here grants more than that.
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -56,6 +56,12 @@ rules:
   - apiGroups: [ "" ]
     resources: [ pods/exec ]
     verbs: [ create ]
+
+  # `kubectl set env` and the partition patch the StatefulSet, `kubectl rollout status` watches
+  # it.
+  - apiGroups: [ apps ]
+    resources: [ statefulsets ]
+    verbs: [ get, list, watch, patch ]
 
 ---
 apiVersion: rbac.authorization.k8s.io/v1

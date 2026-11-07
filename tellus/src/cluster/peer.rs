@@ -4,7 +4,7 @@ use crate::{
         endpoint::{EndpointInner, InboundSlot, MemberAdmission},
         failure::PeerLiveness,
         frame::{
-            Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV1,
+            Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
             RefusalReason,
         },
         lanes::{Drain, Generation},
@@ -21,7 +21,9 @@ use crate::{
     quota::Quota,
 };
 use flume::Receiver;
+use semver::Version;
 use std::{
+    error::Error,
     future::pending,
     iter, mem,
     net::SocketAddr,
@@ -130,6 +132,9 @@ pub(crate) enum ConnectError {
 
     #[error("join answered without a cluster ID")]
     NoClusterId,
+
+    #[error("peer encodes payloads with {theirs}, this node with {ours}")]
+    CodecMismatch { ours: &'static str, theirs: String },
 }
 
 impl ConnectError {
@@ -165,7 +170,9 @@ impl ConnectError {
             | ConnectError::Handshake(_)
             | ConnectError::Refused(RefusalReason::Down)
             | ConnectError::Refused(RefusalReason::ForeignCluster)
+            | ConnectError::Refused(RefusalReason::CodecMismatch)
             | ConnectError::ForeignCluster(_)
+            | ConnectError::CodecMismatch { .. }
             | ConnectError::NoClusterId
             | ConnectError::Identity
             | ConnectError::AddressMismatch { .. }
@@ -191,7 +198,8 @@ impl ConnectError {
             | ConnectError::AddressMismatch { .. }
             | ConnectError::Dead
             | ConnectError::SnapshotTooLarge(_)
-            | ConnectError::NoClusterId => true,
+            | ConnectError::NoClusterId
+            | ConnectError::CodecMismatch { .. } => true,
 
             ConnectError::Refused(_)
             | ConnectError::ForeignCluster(_)
@@ -290,6 +298,8 @@ struct Greeting {
     node: NodeId,
     intent: HandshakeIntent,
     cluster: Option<ClusterId>,
+    codec: String,
+    app_version: Option<Version>,
 }
 
 /// Whether this node is leaving, and the peer's answer to the drain marker of its departure.
@@ -381,11 +391,23 @@ where
             node: peer,
             intent,
             cluster,
+            codec,
+            app_version,
         } = greeting;
 
-        let admission = admit_inbound(peer, intent, cluster, connection.peer_identity(), endpoint);
+        let admission = admit_inbound(
+            peer,
+            intent,
+            cluster,
+            &codec,
+            connection.peer_identity(),
+            endpoint,
+        );
         let (liveness, inbound) = match admission {
-            Admission::Admit(liveness, inbound) => (liveness, inbound),
+            Admission::Admit(liveness, inbound) => {
+                endpoint.record_peer(peer, app_version);
+                (liveness, inbound)
+            }
 
             Admission::Probe => {
                 let reply =
@@ -597,14 +619,11 @@ where
 
     loop {
         let established = match connect(transport.as_ref(), addr, streams, endpoint).await {
-            Ok(mut connected) => admit_outbound(
-                connected.greeting.node,
-                connected.greeting.cluster,
-                addr,
-                connected.identity.take(),
-                endpoint,
-            )
-            .map(|liveness| (connected, liveness)),
+            Ok(mut connected) => {
+                let identity = connected.identity.take();
+                admit_outbound(&connected.greeting, addr, identity, endpoint)
+                    .map(|liveness| (connected, liveness))
+            }
 
             Err(error) => Err(error),
         };
@@ -813,7 +832,7 @@ where
 async fn exchange_handshakes<S, R>(
     frame_sender: &mut S,
     frame_receiver: &mut R,
-    handshake: HandshakeV1,
+    handshake: HandshakeV2,
     within: Duration,
 ) -> Result<Greeting, ConnectError>
 where
@@ -1175,28 +1194,35 @@ where
             Frame::Message {
                 target,
                 reply_tags,
+                schema_version,
                 payload,
             } => {
-                if let Err(error) = endpoint
-                    .registry()
-                    .deliver(target, &payload, endpoint.codec())
+                if let Err(error) =
+                    endpoint
+                        .registry()
+                        .deliver(target, schema_version, &payload, endpoint.codec())
                 {
-                    warn!(%peer, actor_id = %target, %error, "dead letter");
+                    warn!(%peer, actor_id = %target, %error, source = error.source(), "dead letter");
                     reply::on_undeliverable(endpoint, peer, &reply_tags);
                 }
             }
 
-            Frame::Multicast { targets, payload } => {
+            Frame::Multicast {
+                targets,
+                schema_version,
+                payload,
+            } => {
                 if targets.is_empty() {
                     warn!(%peer, "skipping a multicast without targets");
                 }
                 for target in targets {
-                    if let Err(error) =
-                        endpoint
-                            .registry()
-                            .deliver(target, &payload, endpoint.codec())
-                    {
-                        warn!(%peer, actor_id = %target, %error, "dead letter");
+                    if let Err(error) = endpoint.registry().deliver(
+                        target,
+                        schema_version,
+                        &payload,
+                        endpoint.codec(),
+                    ) {
+                        warn!(%peer, actor_id = %target, %error, source = error.source(), "dead letter");
                     }
                 }
             }
@@ -1214,8 +1240,9 @@ where
             Frame::Reply {
                 nonce,
                 recipient: _,
+                schema_version,
                 payload,
-            } => reply::on_reply(endpoint, peer, nonce, &payload),
+            } => reply::on_reply(endpoint, peer, nonce, schema_version, &payload),
 
             Frame::ReplyDropped {
                 nonce,
@@ -1265,6 +1292,7 @@ fn admit_inbound(
     peer: NodeId,
     intent: HandshakeIntent,
     cluster: Option<ClusterId>,
+    codec: &str,
     identity: Option<PeerIdentity>,
     endpoint: &'static EndpointInner,
 ) -> Admission {
@@ -1274,6 +1302,10 @@ fn admit_inbound(
     if !identity_binds(peer, identity) {
         warn!(%peer, "dropping connection, certificate does not cover the advertised address");
         return Admission::Drop;
+    }
+    if codec != endpoint.codec().name() {
+        error!(%peer, codec, this_codec = endpoint.codec().name(), "refusing connection, another payload codec");
+        return Admission::Refuse(RefusalReason::CodecMismatch);
     }
     if intent == HandshakeIntent::Probe {
         debug!(%peer, "answering probe");
@@ -1384,8 +1416,7 @@ fn admit_inbound(
 /// No Up check on the dial side; whether this node may connect as a member is the responder's
 /// decision.
 fn admit_outbound(
-    peer: NodeId,
-    cluster: Option<ClusterId>,
+    greeting: &Greeting,
     dialed: SocketAddr,
     identity: Option<PeerIdentity>,
     endpoint: &EndpointInner,
@@ -1393,18 +1424,20 @@ fn admit_outbound(
     if endpoint.downed() {
         return Err(ConnectError::SelfDowned);
     }
-    check_dialed(peer, cluster, dialed, identity, endpoint)?;
+    check_dialed(greeting, dialed, identity, endpoint)?;
+    endpoint.record_peer(greeting.node, greeting.app_version.clone());
 
-    Ok(endpoint.track_liveness(peer))
+    Ok(endpoint.track_liveness(greeting.node))
 }
 
 fn check_dialed(
-    peer: NodeId,
-    cluster: Option<ClusterId>,
+    greeting: &Greeting,
     dialed: SocketAddr,
     identity: Option<PeerIdentity>,
     endpoint: &EndpointInner,
 ) -> Result<(), ConnectError> {
+    let peer = greeting.node;
+    let cluster = greeting.cluster;
     if peer.addr() != dialed {
         return Err(ConnectError::AddressMismatch {
             advertised: peer.addr(),
@@ -1413,6 +1446,13 @@ fn check_dialed(
     }
     if !identity_binds(peer, identity) {
         return Err(ConnectError::Identity);
+    }
+    if greeting.codec != endpoint.codec().name() {
+        error!(%peer, codec = greeting.codec, this_codec = endpoint.codec().name(), "refusing connection, another payload codec");
+        return Err(ConnectError::CodecMismatch {
+            ours: endpoint.codec().name(),
+            theirs: greeting.codec.clone(),
+        });
     }
     if let Some(this_cluster) = endpoint.effective_cluster()
         && let Some(cluster) = cluster
@@ -1531,26 +1571,22 @@ where
         control_rx: mut frame_receiver,
     } = connected;
 
-    let Greeting {
-        node: peer,
-        cluster,
-        ..
-    } = exchange_handshakes(
+    let greeting = exchange_handshakes(
         &mut control_tx,
         &mut frame_receiver,
         handshake(endpoint, HandshakeIntent::Join),
         endpoint.config().heartbeat_interval,
     )
     .await?;
+    let peer = greeting.node;
 
-    check_dialed(peer, cluster, addr, connection.peer_identity(), endpoint).inspect_err(
-        |error| {
-            if matches!(error, ConnectError::Identity) {
-                warn!(%peer, "refusing join, certificate does not cover the advertised address");
-            }
-        },
-    )?;
-    let cluster = cluster.ok_or(ConnectError::NoClusterId)?;
+    check_dialed(&greeting, addr, connection.peer_identity(), endpoint).inspect_err(|error| {
+        if matches!(error, ConnectError::Identity) {
+            warn!(%peer, "refusing join, certificate does not cover the advertised address");
+        }
+    })?;
+    let cluster = greeting.cluster.ok_or(ConnectError::NoClusterId)?;
+    endpoint.record_peer(peer, greeting.app_version);
 
     // The answer proves a cluster admitted this node, whether or not its snapshot arrives.
     endpoint.pin_cluster(addr, cluster);
@@ -1653,17 +1689,23 @@ where
 }
 
 /// Carries the effective cluster ID, so a pinned joiner is refused by any other cluster.
-fn handshake(endpoint: &EndpointInner, intent: HandshakeIntent) -> HandshakeV1 {
-    HandshakeV1 {
+fn handshake(endpoint: &EndpointInner, intent: HandshakeIntent) -> HandshakeV2 {
+    HandshakeV2 {
         node: endpoint.node(),
         intent,
         cluster: endpoint.effective_cluster(),
+        codec: endpoint.codec().name().to_string(),
+        app_version: endpoint
+            .config()
+            .app_version
+            .as_ref()
+            .map(ToString::to_string),
     }
 }
 
 async fn send_handshake<S>(
     frame_sender: &mut S,
-    handshake: HandshakeV1,
+    handshake: HandshakeV2,
 ) -> Result<(), TransportError>
 where
     S: FrameSender,
@@ -1720,16 +1762,27 @@ where
         };
     };
     let version = HandshakeEnvelope::this_build().negotiate(envelope)?;
-    let HandshakeV1 {
+    let body = HandshakeV2::decode(bytes)?;
+    body.validate()?;
+    let HandshakeV2 {
         node,
         intent,
         cluster,
-    } = HandshakeV1::decode(bytes)?;
+        codec,
+        app_version,
+    } = body;
+    let app_version = app_version
+        .map(|app_version| {
+            Version::parse(&app_version).map_err(|_| HandshakeError::AppVersion(app_version))
+        })
+        .transpose()?;
     Ok(Greeting {
         version,
         node,
         intent,
         cluster,
+        codec,
+        app_version,
     })
 }
 
@@ -1824,23 +1877,24 @@ impl Drop for InFlightFrame {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, Backoff, Incoming, MailboxCapacity,
+        ActorId, Backoff, Incoming, MailboxCapacity, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
             discovery::{KeyKind, WireKey},
             endpoint::{EndpointConfig, EndpointInner, FormError, MemberAdmission},
             frame::{
-                Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV1,
+                Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
                 RefusalReason,
-                synthetic::{self, Body, HandshakeV2},
+                synthetic::{self, Body, HandshakeV3},
             },
             membership::{self, JoinRound, Member, MemberState, Membership},
             node::{ClusterId, NodeId},
             peer::{
-                Admission, ConnectError, DialRequest, JoinRequest, LeaveSignals,
-                MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound, check_dialed, dead_letter,
-                dial_loop, exchange_handshakes, identity_binds, join_loop, probe_loop, read_frames,
-                recv_handshake, run_accepted, write_frames, write_streams,
+                Admission, ConnectError, DialRequest, Greeting, JoinRequest, LeaveSignals,
+                MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound, admit_outbound,
+                check_dialed, dead_letter, dial_loop, exchange_handshakes, identity_binds,
+                join_loop, probe_loop, read_frames, recv_handshake, run_accepted, write_frames,
+                write_streams,
             },
             receptionist::{self, WireGroup},
             state::ForeignCluster,
@@ -1854,6 +1908,7 @@ mod tests {
         sync::lock,
         watch::WatcherRegistration,
     };
+    use semver::Version;
     use std::{
         borrow::Cow,
         collections::{BTreeSet, HashSet, VecDeque},
@@ -1950,14 +2005,17 @@ mod tests {
                     ActorId::new(),
                     second.actor_ref().actor_id(),
                 ],
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&payload),
             },
             Frame::Multicast {
                 targets: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&payload),
             },
             Frame::Multicast {
                 targets: vec![second.actor_ref().actor_id()],
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&payload),
             },
         ]
@@ -1995,6 +2053,7 @@ mod tests {
         dead_letter(
             Frame::Multicast {
                 targets: targets.to_vec(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             },
             "127.0.0.1:1234".parse().expect("valid address"),
@@ -2120,12 +2179,29 @@ mod tests {
         )
     }
 
-    fn member_handshake(node: NodeId) -> HandshakeV1 {
-        HandshakeV1 {
+    fn greeting(node: NodeId, cluster: Option<ClusterId>) -> Greeting {
+        Greeting {
+            version: 2,
             node,
             intent: HandshakeIntent::Member,
-            cluster: None,
+            cluster,
+            codec: "postcard".to_string(),
+            app_version: None,
         }
+    }
+
+    fn v2(node: NodeId, intent: HandshakeIntent, cluster: Option<ClusterId>) -> HandshakeV2 {
+        HandshakeV2 {
+            node,
+            intent,
+            cluster,
+            codec: "postcard".to_string(),
+            app_version: None,
+        }
+    }
+
+    fn member_handshake(node: NodeId) -> HandshakeV2 {
+        v2(node, HandshakeIntent::Member, None)
     }
 
     fn identity(ip_addresses: impl IntoIterator<Item = IpAddr>) -> PeerIdentity {
@@ -2355,7 +2431,7 @@ mod tests {
         .await
         .expect("handshakes are exchanged");
 
-        assert_eq!(greeting.version, 1);
+        assert_eq!(greeting.version, 2);
         assert_eq!(greeting.node, announced);
         assert_eq!(greeting.intent, HandshakeIntent::Member);
         assert_eq!(greeting.cluster, None);
@@ -2372,6 +2448,7 @@ mod tests {
             .send(Frame::Message {
                 target: ActorId::new(),
                 reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Owned(vec![0; 64]),
             })
             .expect("the queue is open");
@@ -2491,6 +2568,7 @@ mod tests {
             .send(Frame::Message {
                 target,
                 reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             })
             .expect("blocked queue is open");
@@ -2807,7 +2885,7 @@ mod tests {
                 .expect("the joiner sends a handshake")
         }
 
-        async fn joiner_handshake(&mut self) -> HandshakeV1 {
+        async fn joiner_handshake(&mut self) -> HandshakeV2 {
             let bytes = self.joiner_bytes().await;
             let envelope = HandshakeEnvelope::decode(&bytes)
                 .expect("an envelope")
@@ -2815,15 +2893,15 @@ mod tests {
             HandshakeEnvelope::this_build()
                 .negotiate(envelope)
                 .expect("a version in common");
-            HandshakeV1::decode(&bytes).expect("a version 1 body")
+            HandshakeV2::decode(&bytes).expect("a version 2 body")
         }
 
         fn admit(&self, addr: SocketAddr) {
-            self.send(&Frame::Handshake(Handshake::new(HandshakeV1 {
-                node: NodeId::new(addr),
-                intent: HandshakeIntent::Member,
-                cluster: Some(self.cluster),
-            })));
+            self.send(&Frame::Handshake(Handshake::new(v2(
+                NodeId::new(addr),
+                HandshakeIntent::Member,
+                Some(self.cluster),
+            ))));
         }
 
         fn send_bytes(&self, bytes: Vec<u8>) {
@@ -2894,13 +2972,27 @@ mod tests {
         let joiner = NodeId::new(addr(2));
 
         assert!(matches!(
-            admit_inbound(joiner, HandshakeIntent::Join, None, None, endpoint),
+            admit_inbound(
+                joiner,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
             Admission::Refuse(RefusalReason::NoCluster)
         ));
 
         endpoint.form_cluster().expect("an unformed endpoint forms");
         assert!(matches!(
-            admit_inbound(joiner, HandshakeIntent::Join, None, None, endpoint),
+            admit_inbound(
+                joiner,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
             Admission::Admit(..)
         ));
     }
@@ -2916,7 +3008,14 @@ mod tests {
         endpoint.refuse(joiner.addr());
 
         assert!(matches!(
-            admit_inbound(joiner, HandshakeIntent::Join, None, None, endpoint),
+            admit_inbound(
+                joiner,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
             Admission::Admit(..)
         ));
 
@@ -2964,7 +3063,14 @@ mod tests {
         let republished = endpoint.receptionist().republished().len();
 
         assert!(matches!(
-            admit_inbound(successor, HandshakeIntent::Join, None, None, endpoint),
+            admit_inbound(
+                successor,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
             Admission::Admit(..)
         ));
 
@@ -3421,7 +3527,7 @@ mod tests {
             self.to_acceptor.send(bytes).expect("the acceptor reads");
         }
 
-        fn send_handshake(&self, handshake: HandshakeV1) {
+        fn send_handshake(&self, handshake: HandshakeV2) {
             self.send(
                 Frame::Handshake(Handshake::new(handshake))
                     .encode_into(Vec::new())
@@ -3436,13 +3542,13 @@ mod tests {
                 .expect("the acceptor answers")
         }
 
-        async fn reply_handshake(&mut self) -> HandshakeV1 {
+        async fn reply_handshake(&mut self) -> HandshakeV2 {
             let bytes = self.recv().await;
             let envelope = HandshakeEnvelope::decode(&bytes)
                 .expect("an envelope")
                 .expect("a handshake");
             assert_eq!(envelope, HandshakeEnvelope::this_build());
-            HandshakeV1::decode(&bytes).expect("a version 1 body")
+            HandshakeV2::decode(&bytes).expect("a version 2 body")
         }
 
         async fn refusal(&mut self) -> RefusalReason {
@@ -3469,7 +3575,7 @@ mod tests {
         endpoint
     }
 
-    /// A version 2 dialer sends its newest body; this build reads its version 1 prefix, admits
+    /// A version 3 dialer sends its newest body; this build reads its version 2 prefix, admits
     /// the joiner and answers with the body of the version negotiated, which the dialer decodes
     /// with that version's schema.
     #[tokio::test]
@@ -3479,11 +3585,13 @@ mod tests {
         let mut dialer = Dialer::accepted_by(endpoint);
 
         dialer.send(synthetic::encode(
-            synthetic::envelope(1, 2),
-            Body::V2(HandshakeV2 {
+            synthetic::envelope(2, 3),
+            Body::V3(HandshakeV3 {
                 node: joiner,
                 intent: HandshakeIntent::Join,
                 cluster: None,
+                codec: "postcard".to_string(),
+                app_version: None,
                 appended: 7,
             }),
         ));
@@ -3493,22 +3601,22 @@ mod tests {
             .expect("an envelope")
             .expect("a handshake");
         assert_eq!(envelope, HandshakeEnvelope::this_build());
-        let version = synthetic::envelope(1, 2)
+        let version = synthetic::envelope(2, 3)
             .negotiate(envelope)
             .expect("a version in common");
-        assert_eq!(version, 1);
-        let Body::V1(body) = synthetic::decode(&reply, version) else {
-            panic!("not a version 1 body");
+        assert_eq!(version, 2);
+        let Body::V2(body) = synthetic::decode(&reply, version) else {
+            panic!("not a version 2 body");
         };
         assert_eq!(body.node, endpoint.node());
         assert_eq!(body.cluster, endpoint.committed_cluster());
         assert!(endpoint.membership().is_up(joiner));
     }
 
-    /// This build sends its newest body to a version 2 acceptor, which reads it as version 1
-    /// and answers in version 1, so the join completes and adopts the acceptor's cluster.
+    /// This build sends its newest body to a version 3 acceptor, which reads it as version 2
+    /// and answers in version 2, so the join completes and adopts the acceptor's cluster.
     #[tokio::test]
-    async fn an_older_dialer_is_answered_in_the_negotiated_version() {
+    async fn a_newer_acceptor_answers_in_the_negotiated_version() {
         let mut joining = joining(1);
         let endpoint = joining.endpoint;
         let seed = addr(2);
@@ -3522,23 +3630,24 @@ mod tests {
         let envelope = HandshakeEnvelope::decode(&bytes)
             .expect("an envelope")
             .expect("a handshake");
-        let version = synthetic::envelope(1, 2)
+        let version = synthetic::envelope(2, 3)
             .negotiate(envelope)
             .expect("a version in common");
-        assert_eq!(version, 1);
-        let Body::V1(handshake) = synthetic::decode(&bytes, version) else {
-            panic!("not a version 1 body");
+        assert_eq!(version, 2);
+        let Body::V2(handshake) = synthetic::decode(&bytes, version) else {
+            panic!("not a version 2 body");
         };
         assert_eq!(handshake.node, endpoint.node());
         assert_eq!(handshake.intent, HandshakeIntent::Join);
+        assert_eq!(handshake.codec, "postcard");
 
         acceptor.send_bytes(synthetic::encode(
-            synthetic::envelope(1, 2),
-            Body::V1(HandshakeV1 {
-                node: NodeId::new(seed),
-                intent: HandshakeIntent::Member,
-                cluster: Some(acceptor.cluster),
-            }),
+            synthetic::envelope(2, 3),
+            Body::V2(v2(
+                NodeId::new(seed),
+                HandshakeIntent::Member,
+                Some(acceptor.cluster),
+            )),
         ));
         acceptor.gossip(vec![Member::new(NodeId::new(seed), MemberState::Up)], false);
 
@@ -3557,11 +3666,13 @@ mod tests {
         let joiner = NodeId::new(addr(2));
         let mut dialer = Dialer::accepted_by(endpoint);
         dialer.send(synthetic::encode(
-            synthetic::envelope(2, 3),
-            Body::V2(HandshakeV2 {
+            synthetic::envelope(3, 4),
+            Body::V3(HandshakeV3 {
                 node: joiner,
                 intent: HandshakeIntent::Join,
                 cluster: None,
+                codec: "postcard".to_string(),
+                app_version: None,
                 appended: 7,
             }),
         ));
@@ -3577,7 +3688,7 @@ mod tests {
             .expect("an envelope")
             .expect("a handshake");
         assert!(matches!(
-            synthetic::envelope(2, 3).negotiate(envelope),
+            synthetic::envelope(3, 4).negotiate(envelope),
             Err(HandshakeError::Incompatible { .. })
         ));
         dialer.close().await;
@@ -3595,7 +3706,7 @@ mod tests {
         assert!(dial.answer.send(connected).is_ok());
         acceptor.joiner_bytes().await;
         acceptor.send_bytes(
-            synthetic::envelope(2, 3)
+            synthetic::envelope(3, 4)
                 .encode()
                 .expect("envelope encodes"),
         );
@@ -3607,7 +3718,7 @@ mod tests {
         assert!(matches!(
             result,
             Err(ConnectError::Handshake(HandshakeError::Incompatible { ours, theirs }))
-                if ours == (1..=1) && theirs == (2..=3)
+                if ours == (2..=2) && theirs == (3..=4)
         ));
         assert_eq!(joining.endpoint.pinned_cluster(), None);
     }
@@ -3623,11 +3734,7 @@ mod tests {
         let other = ClusterId::new();
 
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: member,
-            intent: HandshakeIntent::Member,
-            cluster: Some(other),
-        });
+        dialer.send_handshake(v2(member, HandshakeIntent::Member, Some(other)));
         assert_eq!(dialer.refusal().await, RefusalReason::ForeignCluster);
         dialer.close().await;
 
@@ -3636,22 +3743,30 @@ mod tests {
                 member,
                 HandshakeIntent::Member,
                 this_cluster,
+                "postcard",
                 None,
                 endpoint
             ),
             Admission::Admit(..)
         ));
         assert!(matches!(
-            admit_inbound(member, HandshakeIntent::Member, None, None, endpoint),
+            admit_inbound(
+                member,
+                HandshakeIntent::Member,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
             Admission::Admit(..)
         ));
 
         assert!(matches!(
-            check_dialed(member, Some(other), addr(2), None, endpoint),
+            check_dialed(&greeting(member, Some(other)), addr(2), None, endpoint),
             Err(ConnectError::ForeignCluster(cluster)) if cluster == other
         ));
-        assert!(check_dialed(member, this_cluster, addr(2), None, endpoint).is_ok());
-        assert!(check_dialed(member, None, addr(2), None, endpoint).is_ok());
+        assert!(check_dialed(&greeting(member, this_cluster), addr(2), None, endpoint).is_ok());
+        assert!(check_dialed(&greeting(member, None), addr(2), None, endpoint).is_ok());
     }
 
     /// A join naming another cluster is refused as foreign and admits nothing. A formed node's
@@ -3664,11 +3779,7 @@ mod tests {
         let joiner = NodeId::new(addr(2));
         let joiner_cluster = ClusterId::new();
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: joiner,
-            intent: HandshakeIntent::Join,
-            cluster: Some(joiner_cluster),
-        });
+        dialer.send_handshake(v2(joiner, HandshakeIntent::Join, Some(joiner_cluster)));
         assert_eq!(dialer.refusal().await, RefusalReason::ForeignCluster);
         dialer.close().await;
         assert!(!endpoint.membership().is_up(joiner));
@@ -3728,6 +3839,7 @@ mod tests {
                 peer,
                 intent,
                 new_cluster.effective_cluster(),
+                "postcard",
                 None,
                 old_cluster,
             ) {
@@ -3737,7 +3849,7 @@ mod tests {
             }
             for cluster in [old_cluster.effective_cluster(), None] {
                 assert!(matches!(
-                    admit_inbound(peer, intent, cluster, None, old_cluster),
+                    admit_inbound(peer, intent, cluster, "postcard", None, old_cluster),
                     Admission::Refuse(RefusalReason::Down)
                 ));
             }
@@ -3756,12 +3868,12 @@ mod tests {
         let foreign = new_cluster.effective_cluster();
 
         assert!(matches!(
-            check_dialed(peer, foreign, addr(2), None, old_cluster),
+            check_dialed(&greeting(peer, foreign), addr(2), None, old_cluster),
             Err(ConnectError::ForeignCluster(cluster)) if Some(cluster) == foreign
         ));
         for cluster in [old_cluster.effective_cluster(), None] {
             assert!(matches!(
-                check_dialed(peer, cluster, addr(2), None, old_cluster),
+                check_dialed(&greeting(peer, cluster), addr(2), None, old_cluster),
                 Err(ConnectError::Dead)
             ));
         }
@@ -3810,32 +3922,20 @@ mod tests {
         let joiner = NodeId::new(addr(3));
 
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: joiner,
-            intent: HandshakeIntent::Join,
-            cluster: None,
-        });
+        dialer.send_handshake(v2(joiner, HandshakeIntent::Join, None));
         assert_eq!(dialer.refusal().await, RefusalReason::JoinsHeld);
         dialer.close().await;
         assert!(!endpoint.membership().is_up(joiner));
 
         let successor = NodeId::new(addr(2));
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: successor,
-            intent: HandshakeIntent::Join,
-            cluster: None,
-        });
+        dialer.send_handshake(v2(successor, HandshakeIntent::Join, None));
         assert_eq!(dialer.reply_handshake().await.node, endpoint.node());
         assert!(endpoint.membership().is_up(successor));
         assert!(endpoint.membership().is_down(unreachable));
 
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: joiner,
-            intent: HandshakeIntent::Join,
-            cluster: None,
-        });
+        dialer.send_handshake(v2(joiner, HandshakeIntent::Join, None));
         assert_eq!(dialer.reply_handshake().await.node, endpoint.node());
         assert!(endpoint.membership().is_up(joiner));
     }
@@ -3877,11 +3977,7 @@ mod tests {
         let endpoint = formed(1);
         let prober = NodeId::new(addr(2));
         let mut dialer = Dialer::accepted_by(endpoint);
-        dialer.send_handshake(HandshakeV1 {
-            node: prober,
-            intent: HandshakeIntent::Probe,
-            cluster: Some(ClusterId::new()),
-        });
+        dialer.send_handshake(v2(prober, HandshakeIntent::Probe, Some(ClusterId::new())));
 
         let reply = dialer.reply_handshake().await;
         assert_eq!(reply.node, endpoint.node());
@@ -3898,11 +3994,7 @@ mod tests {
         let (unformed, _lane_dials, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(3)));
         let mut dialer = Dialer::accepted_by(unformed);
-        dialer.send_handshake(HandshakeV1 {
-            node: prober,
-            intent: HandshakeIntent::Probe,
-            cluster: None,
-        });
+        dialer.send_handshake(v2(prober, HandshakeIntent::Probe, None));
         assert_eq!(dialer.reply_handshake().await.cluster, None);
         dialer.close().await;
     }
@@ -3951,11 +4043,7 @@ mod tests {
                 assert!(dial.answer.send(connected).is_ok());
                 acceptor.joiner_handshake().await;
                 let reply = |node, cluster| {
-                    Frame::Handshake(Handshake::new(HandshakeV1 {
-                        node,
-                        intent: HandshakeIntent::Member,
-                        cluster,
-                    }))
+                    Frame::Handshake(Handshake::new(v2(node, HandshakeIntent::Member, cluster)))
                 };
                 match failure {
                     PostSendFailure::Closed => drop(acceptor),
@@ -4200,6 +4288,7 @@ mod tests {
             handshake.node,
             handshake.intent,
             handshake.cluster,
+            "postcard",
             None,
             seed_b,
         ) else {
@@ -4294,13 +4383,9 @@ mod tests {
 
             to_acceptor
                 .send(
-                    Frame::Handshake(Handshake::new(HandshakeV1 {
-                        node,
-                        intent,
-                        cluster: None,
-                    }))
-                    .encode_into(Vec::new())
-                    .expect("handshake encodes"),
+                    Frame::Handshake(Handshake::new(v2(node, intent, None)))
+                        .encode_into(Vec::new())
+                        .expect("handshake encodes"),
                 )
                 .expect("the acceptor reads");
             let answer = timeout(Duration::from_secs(5), from_acceptor.recv())
@@ -4475,6 +4560,7 @@ mod tests {
         Frame::Message {
             target,
             reply_tags: Vec::new(),
+            schema_version: SchemaVersion::new(0),
             payload: Cow::Owned(endpoint.codec().encode(&value).expect("encodes")),
         }
     }
@@ -5021,11 +5107,11 @@ mod tests {
             "the lane awaits the dial"
         );
         acceptor.joiner_handshake().await;
-        acceptor.send(&Frame::Handshake(Handshake::new(HandshakeV1 {
-            node: member,
-            intent: HandshakeIntent::Member,
-            cluster: Some(acceptor.cluster),
-        })));
+        acceptor.send(&Frame::Handshake(Handshake::new(v2(
+            member,
+            HandshakeIntent::Member,
+            Some(acceptor.cluster),
+        ))));
         while next_gossip(&mut acceptor).await.is_empty() {}
         acceptor
     }
@@ -5089,11 +5175,11 @@ mod tests {
                 "the lane awaits the dial"
             );
             acceptor.joiner_handshake().await;
-            acceptor.send(&Frame::Handshake(Handshake::new(HandshakeV1 {
-                node: member,
-                intent: HandshakeIntent::Member,
-                cluster: Some(acceptor.cluster),
-            })));
+            acceptor.send(&Frame::Handshake(Handshake::new(v2(
+                member,
+                HandshakeIntent::Member,
+                Some(acceptor.cluster),
+            ))));
 
             let mut opened = Vec::new();
             for _ in 0..data_streams {
@@ -5223,11 +5309,11 @@ mod tests {
             "the lane awaits the dial"
         );
         acceptor.joiner_handshake().await;
-        acceptor.send(&Frame::Handshake(Handshake::new(HandshakeV1 {
-            node: member,
-            intent: HandshakeIntent::Member,
-            cluster: Some(acceptor.cluster),
-        })));
+        acceptor.send(&Frame::Handshake(Handshake::new(v2(
+            member,
+            HandshakeIntent::Member,
+            Some(acceptor.cluster),
+        ))));
         timeout(Duration::from_secs(5), async {
             loop {
                 let bytes = acceptor.joiner_bytes().await;
@@ -5249,5 +5335,127 @@ mod tests {
             .expect("the departure does not panic")
             .expect("a departure");
         assert_eq!(departure.acknowledged(), [addr(2)]);
+    }
+
+    /// A peer naming another payload codec is refused as such, in both directions, and the
+    /// refusal is terminal: retrying cannot change a node's codec.
+    #[tokio::test]
+    async fn a_peer_of_another_codec_is_refused() {
+        let endpoint = formed(1);
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+
+        let mut dialer = Dialer::accepted_by(endpoint);
+        dialer.send_handshake(HandshakeV2 {
+            codec: "cbor".to_string(),
+            ..v2(member, HandshakeIntent::Member, None)
+        });
+        assert_eq!(dialer.refusal().await, RefusalReason::CodecMismatch);
+        dialer.close().await;
+        assert!(!ConnectError::Refused(RefusalReason::CodecMismatch).is_retryable());
+
+        let reply = Greeting {
+            codec: "cbor".to_string(),
+            ..greeting(member, None)
+        };
+        let error =
+            check_dialed(&reply, addr(2), None, endpoint).expect_err("another codec is refused");
+        assert!(matches!(
+            &error,
+            ConnectError::CodecMismatch { ours: "postcard", theirs } if theirs == "cbor"
+        ));
+        assert!(!error.is_retryable());
+    }
+
+    /// An application version which is no semantic version, and a string beyond the cap, fail
+    /// the handshake before anything of it is kept.
+    #[tokio::test]
+    async fn an_invalid_handshake_string_fails_the_exchange() {
+        let invalid = HandshakeV2 {
+            app_version: Some("latest".to_string()),
+            ..member_handshake(peer())
+        };
+        let oversize = HandshakeV2 {
+            codec: "c".repeat(Handshake::MAX_STRING_LEN + 1),
+            ..member_handshake(peer())
+        };
+
+        for (handshake, expected) in [
+            (invalid, HandshakeError::AppVersion("latest".to_string())),
+            (
+                oversize,
+                HandshakeError::StringTooLong {
+                    len: Handshake::MAX_STRING_LEN + 1,
+                    max: Handshake::MAX_STRING_LEN,
+                },
+            ),
+        ] {
+            let bytes = Frame::Handshake(Handshake::new(handshake))
+                .encode_into(Vec::new())
+                .expect("handshake encodes");
+            let (sent_tx, _sent_rx) = mpsc::channel();
+            let mut sender = RecordingSender(sent_tx);
+            let mut receiver = FakeReceiver::new([bytes]);
+
+            let exchanged = exchange_handshakes(
+                &mut sender,
+                &mut receiver,
+                member_handshake(peer()),
+                Duration::from_secs(1),
+            )
+            .await;
+
+            let Err(ConnectError::Handshake(error)) = exchanged else {
+                panic!("not a handshake error");
+            };
+            assert_eq!(error.to_string(), expected.to_string());
+        }
+    }
+
+    /// The application version a peer announces is recorded at the handshake, on the dialing and
+    /// on the accepting side, and forgotten with the node's death; a record arriving after the
+    /// death, from a handshake which raced it, is not kept.
+    #[tokio::test]
+    async fn the_app_version_is_recorded_at_the_handshake_and_evicted_at_death() {
+        let endpoint = formed(1);
+        let dialed = NodeId::new(addr(2));
+        let accepted = NodeId::new(addr(3));
+        endpoint.update(|membership, _| {
+            membership.add_up(dialed);
+            membership.add_up(accepted);
+        });
+        assert_eq!(endpoint.peer(dialed).app_version(), None);
+
+        let reply = Greeting {
+            app_version: Some(Version::new(1, 4, 0)),
+            ..greeting(dialed, None)
+        };
+        let _liveness = admit_outbound(&reply, addr(2), None, endpoint).expect("admitted");
+        assert_eq!(
+            endpoint.peer(dialed).app_version(),
+            Some(&Version::new(1, 4, 0))
+        );
+
+        let mut dialer = Dialer::accepted_by(endpoint);
+        dialer.send_handshake(HandshakeV2 {
+            app_version: Some("2.0.0".to_string()),
+            ..v2(accepted, HandshakeIntent::Member, None)
+        });
+        dialer.reply_handshake().await;
+        assert_eq!(
+            endpoint.peer(accepted).app_version(),
+            Some(&Version::new(2, 0, 0))
+        );
+        dialer.close().await;
+
+        endpoint.node_death(dialed);
+        assert_eq!(endpoint.peer(dialed).app_version(), None);
+        assert_eq!(
+            endpoint.peer(accepted).app_version(),
+            Some(&Version::new(2, 0, 0))
+        );
+
+        endpoint.record_peer(dialed, Some(Version::new(1, 4, 0)));
+        assert_eq!(endpoint.peer(dialed).app_version(), None);
     }
 }
