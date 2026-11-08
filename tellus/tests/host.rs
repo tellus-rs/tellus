@@ -9,7 +9,8 @@ use std::{
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Host, HostConfig,
-    HostEnvelope, Incoming, InvalidHostConfig, MailboxCapacity, ReplyTo, Unstashed, Untimed,
+    HostEnvelope, Hosted, Incoming, InvalidHostConfig, MailboxCapacity, ReplyTo, Unstashed,
+    Untimed,
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
@@ -63,7 +64,7 @@ async fn an_entity_which_stopped_is_spawned_afresh() {
 
     host.tell(HostEnvelope {
         key: 1,
-        message: Message::Stop,
+        message: Message::Die,
     });
     entities.stopped().await;
 
@@ -355,11 +356,9 @@ fn a_zero_idle_timeout_is_refused() {
 }
 
 fn host(config: HostConfig, entities: Entities) -> ActorRef<HostEnvelope<u8, Message>> {
-    let system = ActorSystem::new(Host::new(
-        config,
-        move |key, context| entities.spawn(*key, context),
-        || Message::Stop,
-    ));
+    let system = ActorSystem::new(Host::new(config, move |key, context| {
+        entities.spawn(*key, context)
+    }));
     let host = system.root().clone();
     // Dropping the system stops no actor, and a root host has no message which would stop it.
     drop(system);
@@ -395,11 +394,9 @@ impl Actor for Root {
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let entities = self.entities.clone();
 
-        Ok(context.spawn(Host::new(
-            self.config,
-            move |key, context| entities.spawn(*key, context),
-            || Message::Stop,
-        )))
+        Ok(context.spawn(Host::new(self.config, move |key, context| {
+            entities.spawn(*key, context)
+        })))
     }
 
     fn receive(
@@ -429,7 +426,6 @@ enum RootMessage {
 enum Message {
     Note(&'static str),
     Ping(ReplyTo<ActorId>),
-    Stop,
     Die,
 }
 
@@ -440,7 +436,7 @@ struct Entity {
 }
 
 impl Actor for Entity {
-    type Message = Message;
+    type Message = Hosted<Message>;
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
@@ -459,7 +455,7 @@ impl Actor for Entity {
         let actor_id = context.self_ref().actor_id();
 
         match incoming {
-            Incoming::Message(Message::Note(note)) => {
+            Incoming::Message(Hosted::Message(Message::Note(note))) => {
                 let _ = self.entities.notes.send((actor_id, note));
 
                 // Blocking after the note, so a test knows the entity is about to stop draining!
@@ -468,9 +464,9 @@ impl Actor for Entity {
                 }
             }
 
-            Incoming::Message(Message::Ping(reply_to)) => reply_to.reply(actor_id),
+            Incoming::Message(Hosted::Message(Message::Ping(reply_to))) => reply_to.reply(actor_id),
 
-            Incoming::Message(Message::Stop) => {
+            Incoming::Message(Hosted::Passivate) => {
                 // Must be created before the report, which a release may follow at once!
                 let released = self.entities.hold.clone().map(Notify::notified_owned);
                 let _ = self.entities.passivating.send(actor_id);
@@ -480,7 +476,7 @@ impl Actor for Entity {
                         let entity = context.self_ref().clone();
                         tokio::spawn(async move {
                             released.await;
-                            entity.tell(Message::Die);
+                            entity.tell(Message::Die.into());
                         });
                     }
 
@@ -488,7 +484,7 @@ impl Actor for Entity {
                 }
             }
 
-            Incoming::Message(Message::Die) => return Ok(Control::Stop),
+            Incoming::Message(Hosted::Message(Message::Die)) => return Ok(Control::Stop),
 
             Incoming::Terminated(_) => {}
         }
@@ -577,7 +573,7 @@ impl Entities {
         &self,
         key: u8,
         context: &ActorContext<HostEnvelope<u8, Message>>,
-    ) -> ActorRef<Message> {
+    ) -> ActorRef<Hosted<Message>> {
         let spawned = self.spawns.fetch_add(1, Ordering::SeqCst);
         let gate = self
             .gate

@@ -22,30 +22,30 @@ use tracing::{debug, warn};
 ///
 /// A host is an ordinary actor whose messages are [HostEnvelope]s, so it is spawned like any other
 /// and its entities are addressed through [ActorRef::tell] and [ActorRef::ask]. Its entities are
-/// its children, hence stopping it stops them first.
+/// its children, hence stopping it stops them first. An entity's messages are [Hosted]: the host
+/// wraps every message routed to it in [Hosted::Message] and passivates it with
+/// [Hosted::Passivate].
 ///
 /// Passivation frees the memory of entities nobody talks to, which is only safe where their state
 /// is recoverable or disposable, e.g. for event-sourced entities. A message routed through the
 /// host while it passivates an entity is buffered, up to the configured buffer, and delivered to
 /// the entity's next incarnation. A message routed to an entity which stopped on its own is a dead
 /// letter until the host sees it terminate.
-pub struct Host<K, M, S, P> {
+pub struct Host<K, M, S> {
     idle_timeout: Option<Duration>,
     buffer: NonZeroUsize,
     spawn: S,
-    passivate: P,
     key: PhantomData<fn() -> K>,
     message: PhantomData<fn() -> M>,
 }
 
-impl<K, M, S, P> Host<K, M, S, P>
+impl<K, M, S> Host<K, M, S>
 where
     K: Clone + Eq + Hash + Send + 'static,
     M: Send + 'static,
-    S: Fn(&K, &ActorContext<HostEnvelope<K, M>>) -> ActorRef<M> + Send + 'static,
-    P: Fn() -> M + Send + 'static,
+    S: Fn(&K, &ActorContext<HostEnvelope<K, M>>) -> ActorRef<Hosted<M>> + Send + 'static,
 {
-    /// A host spawning its entities with `spawn` and passivating them with `passivate`.
+    /// A host spawning its entities with `spawn`.
     ///
     /// `spawn` must spawn a fresh child through the given context on every call, e.g. via
     /// [ActorContext::spawn] or [ActorContext::spawn_event_sourced]; it must not return an actor
@@ -53,12 +53,11 @@ where
     /// stopping the entities with the host and the delivery of buffered messages all rest on
     /// that, and the signature cannot enforce it.
     ///
-    /// `passivate` builds the message asking an entity to stop, since an actor is stopped by
-    /// itself or by its parent alone; an entity which does not stop on that message is never
-    /// passivated.
+    /// An entity which does not stop on [Hosted::Passivate] keeps the messages routed to it
+    /// buffered, up to the configured buffer, until it stops.
     ///
     /// [ActorContext::spawn_event_sourced]: crate::ActorContext::spawn_event_sourced
-    pub fn new(config: HostConfig, spawn: S, passivate: P) -> Self {
+    pub fn new(config: HostConfig, spawn: S) -> Self {
         let HostConfig {
             idle_timeout,
             buffer,
@@ -68,7 +67,6 @@ where
             idle_timeout,
             buffer,
             spawn,
-            passivate,
             key: PhantomData,
             message: PhantomData,
         }
@@ -89,7 +87,7 @@ where
                     actor,
                     last_message,
                 } => {
-                    actor.tell(message);
+                    actor.tell(Hosted::Message(message));
                     *last_message = Instant::now();
                 }
 
@@ -104,7 +102,7 @@ where
 
             MapEntry::Vacant(vacant) => {
                 let actor = self.spawn_entity(context, vacant.key());
-                actor.tell(message);
+                actor.tell(Hosted::Message(message));
                 remember(keys, &actor, vacant.key());
                 vacant.insert(Entry::live(actor));
             }
@@ -135,7 +133,7 @@ where
 
         let actor = self.spawn_entity(context, &key);
         for message in buffered {
-            if actor.try_tell_forced(message).is_err() {
+            if actor.try_tell_forced(Hosted::Message(message)).is_err() {
                 dead_letter::<M>(actor.actor_id(), "entity terminated");
             }
         }
@@ -157,7 +155,7 @@ where
                     last_message,
                 } => {
                     if last_message.elapsed() < idle_timeout
-                        || actor.try_tell((self.passivate)()).is_err()
+                        || actor.try_tell(Hosted::Passivate).is_err()
                     {
                         continue;
                     }
@@ -180,19 +178,22 @@ where
         });
     }
 
-    fn spawn_entity(&self, context: &ActorContext<HostEnvelope<K, M>>, key: &K) -> ActorRef<M> {
+    fn spawn_entity(
+        &self,
+        context: &ActorContext<HostEnvelope<K, M>>,
+        key: &K,
+    ) -> ActorRef<Hosted<M>> {
         let entity = (self.spawn)(key, context);
         context.watch(&entity);
         entity
     }
 }
 
-impl<K, M, S, P> Actor for Host<K, M, S, P>
+impl<K, M, S> Actor for Host<K, M, S>
 where
     K: Clone + Eq + Hash + Send + 'static,
     M: Send + 'static,
-    S: Fn(&K, &ActorContext<HostEnvelope<K, M>>) -> ActorRef<M> + Send + 'static,
-    P: Fn() -> M + Send + 'static,
+    S: Fn(&K, &ActorContext<HostEnvelope<K, M>>) -> ActorRef<Hosted<M>> + Send + 'static,
 {
     type Message = HostEnvelope<K, M>;
     type Timers = Untimed;
@@ -235,6 +236,25 @@ pub struct HostEnvelope<K, M> {
     pub message: M,
 }
 
+/// The message type of a hosted entity: a message for the entity, or its [Host] asking it to
+/// stop.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Hosted<M> {
+    /// A message for the entity.
+    Message(M),
+
+    /// The host asks the entity to stop, since no message has been routed to it for the idle
+    /// timeout. When the host sent it, an entity which does not stop on it keeps the messages
+    /// routed through the host buffered until it stops.
+    Passivate,
+}
+
+impl<M> From<M> for Hosted<M> {
+    fn from(message: M) -> Self {
+        Self::Message(message)
+    }
+}
+
 /// Configuration for a [Host]. The default keeps every entity alive and buffers at most 64
 /// messages per entity while the host passivates it.
 #[derive(Debug, Clone, Copy)]
@@ -255,10 +275,11 @@ impl HostConfig {
 
     /// This configuration, passivating entities to which no message has been routed through the
     /// host for a while. The host checks for idle entities once per `idle_timeout` and passivates
-    /// each entity found idle for at least that long. If an entity's mailbox refuses the passivate
-    /// message, the host retries at the next check, which can repeat indefinitely. Scheduling and
-    /// messages queued for the host can delay a check, too. A zero duration would have the host
-    /// checking without pause; leave the idle timeout unset to keep every entity alive instead.
+    /// each entity found idle for at least that long. If an entity's mailbox refuses
+    /// [Hosted::Passivate], the host retries at the next check, which can repeat indefinitely.
+    /// Scheduling and messages queued for the host can delay a check, too. A zero duration would
+    /// have the host checking without pause; leave the idle timeout unset to keep every entity
+    /// alive instead.
     ///
     /// # Errors
     /// Fails if `idle_timeout` is zero.
@@ -308,7 +329,7 @@ impl<K, M> Default for State<K, M> {
 
 enum Entry<M> {
     Live {
-        actor: ActorRef<M>,
+        actor: ActorRef<Hosted<M>>,
         last_message: Instant,
     },
 
@@ -319,7 +340,7 @@ enum Entry<M> {
 }
 
 impl<M> Entry<M> {
-    fn live(actor: ActorRef<M>) -> Self {
+    fn live(actor: ActorRef<Hosted<M>>) -> Self {
         Self::Live {
             actor,
             last_message: Instant::now(),

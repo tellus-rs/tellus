@@ -10,9 +10,9 @@ use std::{
     time::Duration,
 };
 use tellus::{
-    ActorContext, ActorSystem, Effect, EventSourced, Host, HostConfig, HostEnvelope, InMemoryStore,
-    Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, Unstashed, Untimed,
-    Versioned,
+    ActorContext, ActorSystem, Effect, EventSourced, Host, HostConfig, HostEnvelope, Hosted,
+    InMemoryStore, Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion,
+    Unstashed, Untimed, Versioned,
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -38,7 +38,6 @@ async fn an_event_sourced_entity_recovers_after_passivation() {
                 spawns.fetch_add(1, Ordering::SeqCst);
                 context.spawn_event_sourced(Counter { key: *key }, persistence.clone())
             },
-            || Command::Stop,
         ));
         let host = system.root().clone();
         // Dropping the system stops no actor, and a root host has no message which would stop it.
@@ -83,7 +82,7 @@ struct Counter {
 }
 
 impl EventSourced for Counter {
-    type Command = Command;
+    type Command = Hosted<Command>;
     type Timers = Untimed;
     type Stash = Unstashed;
     type Event = Increased;
@@ -110,13 +109,13 @@ impl EventSourced for Counter {
         _state: &Self::State,
     ) -> Result<Effect<Self>, Self::Error> {
         let effect = match incoming {
-            Incoming::Message(Command::Increase) => Effect::persist(Increased),
+            Incoming::Message(Hosted::Message(Command::Increase)) => Effect::persist(Increased),
 
-            Incoming::Message(Command::Count(reply_to)) => {
+            Incoming::Message(Hosted::Message(Command::Count(reply_to))) => {
                 Effect::<Self>::none().then(move |count| reply_to.reply(*count))
             }
 
-            Incoming::Message(Command::Stop) => Effect::stop(),
+            Incoming::Message(Hosted::Passivate) => Effect::stop(),
 
             Incoming::Terminated(_) => Effect::none(),
         };
@@ -132,7 +131,6 @@ impl EventSourced for Counter {
 enum Command {
     Increase,
     Count(ReplyTo<u64>),
-    Stop,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
