@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794068368236,
+  "lastUpdate": 1794124685935,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10379,6 +10379,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 33400689,
             "range": "± 1055093",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fd57c354e87918549d198eda02a92951f08f2481",
+          "message": "Merge pull request #265 from tellus-rs/feat/hosted\n\nfeat!: replace the passivate function of Host with Hosted<M>",
+          "timestamp": "2026-11-08T08:49:57+01:00",
+          "tree_id": "a662722269989236c9d31bb997197bb085739940",
+          "url": "https://github.com/tellus-rs/tellus/commit/fd57c354e87918549d198eda02a92951f08f2481"
+        },
+        "date": 1794124685471,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13990587,
+            "range": "± 949901",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13357295,
+            "range": "± 711819",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 896911,
+            "range": "± 47043",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 814042,
+            "range": "± 38109",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5841355,
+            "range": "± 91476",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4305935,
+            "range": "± 34329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19987079,
+            "range": "± 412112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20520941,
+            "range": "± 544862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19818606,
+            "range": "± 455992",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20393077,
+            "range": "± 459363",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20059741,
+            "range": "± 464886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21682752,
+            "range": "± 765906",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27615787,
+            "range": "± 1017236",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20075856,
+            "range": "± 406809",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21412957,
+            "range": "± 829341",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27481365,
+            "range": "± 654011",
             "unit": "ns/iter"
           }
         ]
