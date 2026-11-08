@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794124687400,
+  "lastUpdate": 1794124688764,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16845,6 +16845,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4351305,
             "range": "± 374351",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fd57c354e87918549d198eda02a92951f08f2481",
+          "message": "Merge pull request #265 from tellus-rs/feat/hosted\n\nfeat!: replace the passivate function of Host with Hosted<M>",
+          "timestamp": "2026-11-08T08:49:57+01:00",
+          "tree_id": "a662722269989236c9d31bb997197bb085739940",
+          "url": "https://github.com/tellus-rs/tellus/commit/fd57c354e87918549d198eda02a92951f08f2481"
+        },
+        "date": 1794124688521,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29899121,
+            "range": "± 1590629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28894215,
+            "range": "± 1991648",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4789181,
+            "range": "± 273374",
             "unit": "ns/iter"
           }
         ]
