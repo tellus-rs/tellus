@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794155784930,
+  "lastUpdate": 1794155786646,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16669,6 +16669,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 163298,
             "range": "± 3880",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "77a9341297c0ea6d145d6a33d5b526ece3942774",
+          "message": "Merge pull request #269 from tellus-rs/docs/defer-messages-retry\n\ndocs: retry the fourth lookup of the stash how-to instead of sleeping",
+          "timestamp": "2026-11-08T17:28:37+01:00",
+          "tree_id": "637166052e6daa5742d3d9e9dbfe274608f17568",
+          "url": "https://github.com/tellus-rs/tellus/commit/77a9341297c0ea6d145d6a33d5b526ece3942774"
+        },
+        "date": 1794155786278,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2129993,
+            "range": "± 89226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2119305,
+            "range": "± 62836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 930989,
+            "range": "± 12725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 112862,
+            "range": "± 2645",
             "unit": "ns/iter"
           }
         ]
