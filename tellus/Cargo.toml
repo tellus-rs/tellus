@@ -141,6 +141,10 @@ name = "how_to_batch_writes"
 path = "examples/how_to/batch_writes.rs"
 
 [[example]]
+name = "how_to_retry_writes"
+path = "examples/how_to/retry_writes.rs"
+
+[[example]]
 name = "explanation_state_machine"
 path = "examples/explanation/state_machine.rs"
 
