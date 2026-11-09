@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794241652616,
+  "lastUpdate": 1794241655911,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16837,6 +16837,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 112862,
             "range": "± 2645",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "42eb92a28c48ce6984f29892773e1d6635ea803f",
+          "message": "Merge pull request #270 from tellus-rs/docs/retry-writes-example\n\ndocs: add a how-to example for retrying failed writes",
+          "timestamp": "2026-11-09T17:19:16+01:00",
+          "tree_id": "d168111ba540d97c016dc8a9e4e3c76b1001fda3",
+          "url": "https://github.com/tellus-rs/tellus/commit/42eb92a28c48ce6984f29892773e1d6635ea803f"
+        },
+        "date": 1794241655340,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2958806,
+            "range": "± 147017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2896165,
+            "range": "± 148625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1120657,
+            "range": "± 7768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 138738,
+            "range": "± 4384",
             "unit": "ns/iter"
           }
         ]
