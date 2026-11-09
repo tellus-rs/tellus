@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.1.4...tellus-cluster-inspect-v0.1.5) - 2026-11-09
+
+### Other
+
+- updated the following local packages: tellus
+
 ## [0.1.4](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.1.3...tellus-cluster-inspect-v0.1.4) - 2026-11-01
 
 ### Other

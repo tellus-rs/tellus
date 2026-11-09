@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.3...tellus-v0.6.0) - 2026-11-09
+
+### Added
+
+- [**breaking**] replace the passivate function of Host with Hosted<M>
+- *(cluster)* [**breaking**] version message payloads for rolling upgrades
+- add stashing, opt-in per actor via Actor::Stash
+
+### Other
+
+- add a how-to example for retrying failed writes
+- Merge pull request #269 from tellus-rs/docs/defer-messages-retry
+- retry the fourth lookup of the stash how-to instead of sleeping
+- add a how-to example for stashing
+- state the stash exception to the unwatch contract
+- Merge pull request #252 from tellus-rs/bench/stash
+- add the stash bench as a binary of its own
+- run the doctests on the derived nightly
+- mention clustering in the crate description
+- show the build badge for main only
+- encode events in a plain loop
+- rename docker-compose.yaml to compose.yaml
+
 ## [0.5.3](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.2...tellus-v0.5.3) - 2026-11-01
 
 ### Other
