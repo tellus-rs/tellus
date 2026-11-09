@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794241658256,
+  "lastUpdate": 1794242144450,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10739,6 +10739,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27372009,
             "range": "± 914310",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21ab6409d3b7da8ecf35e5f2148dc222c325210c",
+          "message": "Merge pull request #271 from tellus-rs/ci/ignore-rustsec-2026-0459\n\nci: ignore RUSTSEC-2026-0459, the sqlx sqlite driver is never built",
+          "timestamp": "2026-11-09T17:19:21+01:00",
+          "tree_id": "ae6c8a1b652cb7595a31aeb569a3864d2d8b0334",
+          "url": "https://github.com/tellus-rs/tellus/commit/21ab6409d3b7da8ecf35e5f2148dc222c325210c"
+        },
+        "date": 1794242143796,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14719660,
+            "range": "± 999182",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14836844,
+            "range": "± 760087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 865901,
+            "range": "± 88089",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 770603,
+            "range": "± 4635",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5775176,
+            "range": "± 118884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4255496,
+            "range": "± 28475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 20011887,
+            "range": "± 666312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20588156,
+            "range": "± 646517",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 20082707,
+            "range": "± 477778",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20566798,
+            "range": "± 737193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20095661,
+            "range": "± 459381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21769958,
+            "range": "± 1007509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27597945,
+            "range": "± 1638852",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19867341,
+            "range": "± 597040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21833838,
+            "range": "± 892464",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27713157,
+            "range": "± 938162",
             "unit": "ns/iter"
           }
         ]
