@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794242146079,
+  "lastUpdate": 1794242147619,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -17475,6 +17475,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4267268,
             "range": "± 202055",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "21ab6409d3b7da8ecf35e5f2148dc222c325210c",
+          "message": "Merge pull request #271 from tellus-rs/ci/ignore-rustsec-2026-0459\n\nci: ignore RUSTSEC-2026-0459, the sqlx sqlite driver is never built",
+          "timestamp": "2026-11-09T17:19:21+01:00",
+          "tree_id": "ae6c8a1b652cb7595a31aeb569a3864d2d8b0334",
+          "url": "https://github.com/tellus-rs/tellus/commit/21ab6409d3b7da8ecf35e5f2148dc222c325210c"
+        },
+        "date": 1794242147353,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29780695,
+            "range": "± 1814404",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30827983,
+            "range": "± 2066005",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4296111,
+            "range": "± 316991",
             "unit": "ns/iter"
           }
         ]
