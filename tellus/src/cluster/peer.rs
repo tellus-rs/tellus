@@ -618,6 +618,10 @@ where
     let mut attempts = 0u32;
 
     loop {
+        if endpoint.downed() {
+            break;
+        }
+
         let established = match connect(transport.as_ref(), addr, streams, endpoint).await {
             Ok(mut connected) => {
                 let identity = connected.identity.take();
@@ -5335,6 +5339,71 @@ mod tests {
             .expect("the departure does not panic")
             .expect("a departure");
         assert_eq!(departure.acknowledged(), [addr(2)]);
+    }
+
+    /// Downed is final for the process, so a lane whose connection the self-down severed ends
+    /// instead of dialing a member it still lists Up.
+    #[tokio::test(start_paused = true)]
+    async fn a_lane_dials_no_more_once_its_endpoint_is_downed() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let _acceptor = accepted_lane(endpoint, &mut dials, member).await;
+
+        endpoint.self_down();
+
+        let dial = timeout(Duration::from_secs(60), dials.recv()).await;
+        assert!(!matches!(dial, Ok(Some(_))), "the lane dialed again");
+    }
+
+    /// A lane keeps dialing until the departure has ended, not beyond it: once a leave has timed
+    /// out on a member and severed its connection, the lane does not dial that member again.
+    #[tokio::test(start_paused = true)]
+    async fn a_lane_dials_no_more_once_its_endpoint_has_left() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let _acceptor = accepted_lane(endpoint, &mut dials, member).await;
+
+        let departure = endpoint.leave().await.expect("a departure");
+        assert_eq!(departure.timed_out(), [addr(2)]);
+
+        let dial = timeout(Duration::from_secs(60), dials.recv()).await;
+        assert!(!matches!(dial, Ok(Some(_))), "the lane dialed again");
     }
 
     /// A peer naming another payload codec is refused as such, in both directions, and the
