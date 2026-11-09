@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794155788233,
+  "lastUpdate": 1794241652616,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10619,6 +10619,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20768668,
             "range": "± 734530",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "42eb92a28c48ce6984f29892773e1d6635ea803f",
+          "message": "Merge pull request #270 from tellus-rs/docs/retry-writes-example\n\ndocs: add a how-to example for retrying failed writes",
+          "timestamp": "2026-11-09T17:19:16+01:00",
+          "tree_id": "d168111ba540d97c016dc8a9e4e3c76b1001fda3",
+          "url": "https://github.com/tellus-rs/tellus/commit/42eb92a28c48ce6984f29892773e1d6635ea803f"
+        },
+        "date": 1794241651597,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14249860,
+            "range": "± 1204617",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13533272,
+            "range": "± 1309158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1134144,
+            "range": "± 27330",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 764674,
+            "range": "± 5441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5807691,
+            "range": "± 271811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4253819,
+            "range": "± 23875",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19899139,
+            "range": "± 381444",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20184261,
+            "range": "± 555774",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19803543,
+            "range": "± 446185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20244660,
+            "range": "± 488732",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20095547,
+            "range": "± 594113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21431688,
+            "range": "± 761925",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27226177,
+            "range": "± 669996",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20090799,
+            "range": "± 674081",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21578404,
+            "range": "± 592904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27372009,
+            "range": "± 914310",
             "unit": "ns/iter"
           }
         ]
