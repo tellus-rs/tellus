@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794298692987,
+  "lastUpdate": 1794298695009,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -17895,6 +17895,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4331468,
             "range": "± 268202",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "dd3af72745f4c1a97ea11785d1ed983130be1b83",
+          "message": "Merge pull request #274 from tellus-rs/fix/reply-entries-dropped-outside-lock\n\nfix(cluster): drop removed reply entries outside the pending lock",
+          "timestamp": "2026-11-10T09:09:48+01:00",
+          "tree_id": "86fddcea776c84f9a9f04feef3d58d227c78f52d",
+          "url": "https://github.com/tellus-rs/tellus/commit/dd3af72745f4c1a97ea11785d1ed983130be1b83"
+        },
+        "date": 1794298694484,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29114024,
+            "range": "± 1916785",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28849001,
+            "range": "± 2001265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4443271,
+            "range": "± 376603",
             "unit": "ns/iter"
           }
         ]
