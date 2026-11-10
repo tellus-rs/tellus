@@ -71,7 +71,7 @@ spec:
         - name: chaos
           # Pinned by its multi-arch index digest: amd64 and arm64, Alpine so /bin/sh is there,
           # a kubectl client matching the node image, and uid 0 so it can write the state file.
-          image: alpine/k8s:1.37.1@sha256:712dc5385d1c1a3f83b747fa9e40f64d433a97f72ff42f9755ff7dd1f62846e4
+          image: alpine/k8s:1.37.2@sha256:dcb7185e112a453aa72f426754849a97357727ef8f40168fb208c8cf59952042
           command: [ /bin/sh, /chaos-script/chaos.sh ]
           env:
             - name: STARTUP_SECS
