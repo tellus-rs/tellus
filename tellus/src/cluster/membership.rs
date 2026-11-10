@@ -175,7 +175,8 @@ pub enum DownError {
 /// member refreshes the member snapshot, but the seed replaces its inbound connection from this
 /// node with the join's, so this node's lane to that seed reconnects. A seed of another cluster
 /// refuses a member. A seed holds back joins from new addresses while one of its members is
-/// unreachable, and the round is retried until that member is reachable again or downed.
+/// unreachable, and the round is retried until that member is reachable again or downed. A seed
+/// which is leaving holds back joins as well, and the round is retried until that seed is gone.
 ///
 /// Only a restarted process recovers from [JoinError::Downed].
 ///
@@ -211,8 +212,8 @@ pub(crate) enum JoinRound {
     /// nothing may be formed until the attempt resolves.
     ClusterSeen(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
 
-    /// The cluster at this address holds back joins while one of its members is unreachable, so
-    /// it exists and nothing may be formed beside it.
+    /// The cluster at this address holds back joins: one of its members is unreachable, or the
+    /// member at this address is leaving. It exists, so nothing may be formed beside it.
     Held(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
 
     NoAdmission(Vec<(SocketAddr, JoinOutcome)>),
@@ -258,7 +259,10 @@ pub(crate) async fn join_round(
             }
 
             Err(ConnectError::Refused(RefusalReason::JoinsHeld)) => {
-                info!(seed_addr = %seed, "join held back, a member of the cluster is unreachable");
+                info!(
+                    seed_addr = %seed,
+                    "join held back, a member of the cluster is unreachable or the seed is leaving"
+                );
                 outcomes.push((seed, JoinOutcome::Held));
                 return JoinRound::Held(seed, outcomes);
             }
@@ -433,7 +437,8 @@ impl Membership {
     }
 
     /// Holds back a join from a new address while an Up member is outside this node's component,
-    /// see [Reachability::outside_component].
+    /// see [Reachability::outside_component], and every join which would add a member once this
+    /// node's own entry is no longer Up.
     pub(crate) fn admit_join(&self, node: NodeId, reachability: &Reachability) -> JoinAdmission {
         let now = Instant::now();
         let mut entries = write(&self.entries);
@@ -581,6 +586,7 @@ pub(crate) enum JoinAdmission {
     Held {
         unreachable: NodeId,
     },
+    Leaving,
     Stale {
         outcome: DownOutcome,
     },
@@ -705,6 +711,8 @@ impl Entries {
                     outcome: self.down(node, now),
                 };
             }
+
+            _ if self.is_down(this_node) => return JoinAdmission::Leaving,
 
             Some(previous) => Some((previous, self.down(previous, now))),
 
@@ -1273,6 +1281,49 @@ mod tests {
             JoinAdmission::Admitted { superseded: None }
         ));
         assert!(membership.is_up(joiner));
+    }
+
+    /// Once this node's own entry is Left, a join which would add a member is refused: one from a
+    /// new address, one superseding a member and one from a successor at this node's own address.
+    /// A member joining again and a stale incarnation add nothing and are answered as before. A
+    /// Down told back to this node while it leaves changes none of that.
+    #[test]
+    fn a_join_adds_no_member_once_this_node_has_left() {
+        let node = NodeId::new(addr(1));
+        let membership = Membership::new(node, NonZeroUsize::MAX, RETENTION);
+        let stale = NodeId::new(addr(2));
+        let member = NodeId::new(addr(2));
+        assert!(membership.add_up(member));
+        membership.leave(node, Instant::now());
+
+        for joiner in [
+            NodeId::new(addr(3)),
+            NodeId::new(addr(2)),
+            NodeId::new(addr(1)),
+        ] {
+            assert!(matches!(
+                admit_join(&membership, joiner),
+                JoinAdmission::Leaving
+            ));
+            assert!(!membership.is_up(joiner));
+        }
+        assert!(membership.is_up(member));
+        assert!(matches!(
+            admit_join(&membership, member),
+            JoinAdmission::AlreadyUp
+        ));
+        assert!(matches!(
+            admit_join(&membership, stale),
+            JoinAdmission::Stale { .. }
+        ));
+
+        membership.down(node, Instant::now());
+        let joiner = NodeId::new(addr(3));
+        assert!(matches!(
+            admit_join(&membership, joiner),
+            JoinAdmission::Leaving
+        ));
+        assert!(!membership.is_up(joiner));
     }
 
     #[test]

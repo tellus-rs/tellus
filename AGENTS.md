@@ -489,7 +489,8 @@ cross-file invariants:
   snapshot is complete, provisional with the pin until then); every handshake carries it and a peer
   of another cluster is refused as `ForeignCluster`. A member holds back joins from new addresses
   (`RefusalReason::JoinsHeld`, retryable) while an Up member is outside its reachability component;
-  a join superseding an Up incarnation at its own address is still admitted. An address no Up member
+  a join superseding an Up incarnation at its own address is still admitted. A leaving member holds
+  back every join which would add a member. An address no Up member
   advertises which fails a check retrying cannot change is refused for a backoff from 10 s doubling
   to 10 min, lifted by an inbound handshake, an admitted join or a gossiped Up member there. Failure
   detection (`failure.rs`, default phi accrual) marks members locally unreachable per tick of

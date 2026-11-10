@@ -163,8 +163,9 @@ inside the component does not count. A held join is answered `JoinsHeld`, which 
 back? A side of a partition which admitted new nodes could grow into a majority of its own, while
 the other side still counts itself the majority too. A join from a younger incarnation at the
 address of an Up member is admitted all the same, since it supersedes that member (see
-supersession below), and so is a member joining again. Bootstrap retries a held seed and never asks
-the formation provider about that round, since the refusal proves that a cluster exists there.
+supersession below), and so is a member joining again. A member which is leaving holds back every
+join which would add a member, see Leaving. Bootstrap retries a held seed and never asks the
+formation provider about that round, since the refusal proves that a cluster exists there.
 
 Joining is exclusive and, once a cluster has answered, pinned. At most one join attempt runs per
 endpoint, because two overlapping ones could be admitted by two different clusters before either is
@@ -372,6 +373,14 @@ then latches this node Downed and severs every connection. Only after that does 
 failure, so every caller, concurrent or later, gets `LeaveError::Incomplete` and never a report
 claiming an acknowledgment. Leaving is terminal per incarnation exactly as being downed is, so the
 process is expected to exit, and only a restart rejoins.
+
+A leaving node admits no new member. From the moment its own entry is Left, this node answers a join
+from a new address, and one which would supersede a member, with `JoinsHeld`. The announcement of
+its departure is the last thing it enqueues, so no other member would learn of a later admission,
+and the joiner would be a member in this node's list alone. The joiner retries as after any held
+join. Such a join ends the joiner's round, so the seeds behind this node are asked only once it is
+gone, at the latest after `leave_timeout`. A member joining again is still admitted, since that adds
+nothing to announce.
 
 The departure is part of the gossiped state, so a member recognizes it however it arrives: from the
 leaver itself, or relayed by a third member, which can reach it before the leaver's own announcement

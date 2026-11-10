@@ -364,7 +364,7 @@ pub(crate) enum RefusalReason {
     #[display("a member of another cluster")]
     ForeignCluster,
 
-    #[display("joins held back while a member is unreachable")]
+    #[display("joins held back while a member is unreachable or the node is leaving")]
     JoinsHeld,
 
     #[display("another payload codec")]
