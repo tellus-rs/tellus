@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794349920757,
+  "lastUpdate": 1794349922548,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18945,6 +18945,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5385248,
             "range": "± 409282",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e2530302f54522233a65de4093a8c63899365fc5",
+          "message": "Merge pull request #287 from tellus-rs/fix/overdue-departure-warning\n\nfix(cluster): warn of an overdue departure only if it was awaited",
+          "timestamp": "2026-11-10T23:24:01+01:00",
+          "tree_id": "cbeece6dc790e2a5d6bd6174a3451d47d0c527df",
+          "url": "https://github.com/tellus-rs/tellus/commit/e2530302f54522233a65de4093a8c63899365fc5"
+        },
+        "date": 1794349922213,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24872761,
+            "range": "± 912966",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24025221,
+            "range": "± 1080877",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3641064,
+            "range": "± 250550",
             "unit": "ns/iter"
           }
         ]
