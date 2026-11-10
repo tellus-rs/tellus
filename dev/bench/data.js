@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794242147619,
+  "lastUpdate": 1794298102663,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -10859,6 +10859,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27713157,
             "range": "± 938162",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "344314b4205093310cf002019c533e381d25d2d6",
+          "message": "Merge pull request #273 from tellus-rs/fix/lane-stops-dialing-once-downed\n\nfix(cluster): stop a lane from dialing once its endpoint is downed",
+          "timestamp": "2026-11-10T09:00:14+01:00",
+          "tree_id": "b45fac603fe2c72d1b798abcd99fd2cade19fd27",
+          "url": "https://github.com/tellus-rs/tellus/commit/344314b4205093310cf002019c533e381d25d2d6"
+        },
+        "date": 1794298101398,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14238121,
+            "range": "± 1085664",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13343389,
+            "range": "± 561239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1108839,
+            "range": "± 33226",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 776443,
+            "range": "± 6259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5885761,
+            "range": "± 278759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4240628,
+            "range": "± 29261",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19635308,
+            "range": "± 601722",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20236261,
+            "range": "± 695095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19785525,
+            "range": "± 360585",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20426552,
+            "range": "± 563150",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20030561,
+            "range": "± 385919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21376179,
+            "range": "± 661339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27250464,
+            "range": "± 785445",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19807597,
+            "range": "± 484033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21380248,
+            "range": "± 588096",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 28180849,
+            "range": "± 899722",
             "unit": "ns/iter"
           }
         ]
