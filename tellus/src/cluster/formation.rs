@@ -177,9 +177,9 @@ pub enum JoinOutcome {
     /// It answered that it is a member of no cluster, so it counts toward forming one.
     NoCluster,
 
-    /// It answered that it is a member of a cluster which holds back joins while one of its
-    /// members is unreachable. A cluster exists there. The round ends with this answer and does
-    /// not form.
+    /// It answered that it is a member of a cluster which holds back joins: one of its members is
+    /// unreachable, or the answering member is leaving. A cluster exists there. The round ends
+    /// with this answer and does not form.
     Held,
 
     /// It did not answer, or answered something which is not an admission: unreachable, but also

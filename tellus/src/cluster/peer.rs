@@ -149,8 +149,8 @@ impl ConnectError {
     /// A refusal as an unknown member is retryable: gossip may not have reached it yet. A refusal
     /// from a node which is no cluster yet is retryable until it has formed one or joined one. A
     /// refusal holding back joins is retryable until the unreachable member is reachable again or
-    /// downed. A refusal of a dead incarnation is retryable, since its successor may come up at
-    /// the same address.
+    /// downed, or until the leaving node is gone. A refusal of a dead incarnation is retryable,
+    /// since its successor may come up at the same address.
     fn is_retryable(&self) -> bool {
         match self {
             ConnectError::Transport(TransportError::FrameTooLarge { .. }) => false,
@@ -1396,6 +1396,11 @@ fn admit_inbound(
 
                 (JoinAdmission::Held { unreachable }, _) => {
                     info!(%peer, %unreachable, "holding back join, a member is unreachable");
+                    Admission::Refuse(RefusalReason::JoinsHeld)
+                }
+
+                (JoinAdmission::Leaving, _) => {
+                    info!(%peer, "holding back join, this node is leaving");
                     Admission::Refuse(RefusalReason::JoinsHeld)
                 }
 
@@ -3942,6 +3947,39 @@ mod tests {
         dialer.send_handshake(v2(joiner, HandshakeIntent::Join, None));
         assert_eq!(dialer.reply_handshake().await.node, endpoint.node());
         assert!(endpoint.membership().is_up(joiner));
+    }
+
+    /// A leaving node gossips nothing anymore, so no other member would learn of a joiner it
+    /// admitted: a join is answered `JoinsHeld` and admits nothing.
+    #[tokio::test(start_paused = true)]
+    async fn joins_are_held_while_this_node_leaves() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let _unanswered = lane_dials.try_recv().expect("the lane is dialed");
+        let departure = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let joiner = NodeId::new(addr(3));
+
+        let mut dialer = Dialer::accepted_by(endpoint);
+        dialer.send_handshake(v2(joiner, HandshakeIntent::Join, None));
+        assert_eq!(dialer.refusal().await, RefusalReason::JoinsHeld);
+        dialer.close().await;
+        assert!(!endpoint.membership().is_up(joiner));
+        departure.abort();
     }
 
     /// A held join ends the round at once as `Held`, without trying further seeds, and pins
