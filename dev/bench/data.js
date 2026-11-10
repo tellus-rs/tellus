@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794304996311,
+  "lastUpdate": 1794329297886,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11339,6 +11339,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22196569,
             "range": "± 673864",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "078e701a9e2128f898902aab6f2f30c723cba4c9",
+          "message": "Merge pull request #278 from tellus-rs/build/demo-pin-pumba\n\nbuild(demo): pin pumba images and drop unneeded iproute2",
+          "timestamp": "2026-11-10T17:39:57+01:00",
+          "tree_id": "4635cf6555c13873f184081e44fdf3eea41319dc",
+          "url": "https://github.com/tellus-rs/tellus/commit/078e701a9e2128f898902aab6f2f30c723cba4c9"
+        },
+        "date": 1794329296721,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 13990577,
+            "range": "± 1144454",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14446811,
+            "range": "± 998140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1078495,
+            "range": "± 97601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 776190,
+            "range": "± 5033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5784131,
+            "range": "± 179760",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4257065,
+            "range": "± 25695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19263004,
+            "range": "± 656513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20577623,
+            "range": "± 961259",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19226526,
+            "range": "± 753620",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19890173,
+            "range": "± 886158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19499634,
+            "range": "± 845587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21460331,
+            "range": "± 934102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 26991029,
+            "range": "± 909894",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 19908979,
+            "range": "± 785403",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21615656,
+            "range": "± 561509",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 26814494,
+            "range": "± 1026580",
             "unit": "ns/iter"
           }
         ]
