@@ -10,10 +10,6 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     && cp tellus-cluster-demo/config/*.yaml /out/config/
 
 FROM debian:trixie-slim@sha256:d7e12182ce18b85b93007c1dedf31f2d29e01ccf3182cc4017c709b6259bc132
-# iproute2 is what pumba's netem runs inside this container to cut the cluster network.
-RUN apt-get update \
-    && apt-get install --no-install-recommends --yes iproute2 \
-    && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /out/node /usr/local/bin/node
 COPY --from=builder /out/verifier /usr/local/bin/verifier
 COPY --from=builder /out/config /opt/tellus-cluster-demo/config

@@ -10,7 +10,8 @@ NODE_COUNT=${NODE_COUNT:-5}
 CONTAINER_PREFIX=${CONTAINER_PREFIX:-tellus-demo-node}
 IP_PREFIX=${IP_PREFIX:-172.28.0.1}
 INTERFACES=${INTERFACES:-eth0 eth1}
-PUMBA_IMAGE=${PUMBA_IMAGE:-gaiaadm/pumba:1.2.1}
+PUMBA_IMAGE=${PUMBA_IMAGE:-gaiaadm/pumba:1.2.1@sha256:82357db4c022562436fb3bcd6ccc7e54bf427c8acb4a2810082a3d02196c76c1}
+PUMBA_TC_IMAGE=${PUMBA_TC_IMAGE:-ghcr.io/alexei-led/pumba-alpine-nettools@sha256:02a82ce2d64796dbf08fd1277c223eae5b9c9610337ddcb8417da01038cb43a6}
 STATE_FILE=${STATE_FILE:-/chaos/state}
 VERSION_FILE=${VERSION_FILE:-/chaos/version}
 OLD_VERSION=${OLD_VERSION:-1.0.0}
@@ -170,8 +171,8 @@ netem_side() {
         done
 
         # shellcheck disable=SC2086
-        pumba netem --duration "${PARTITION_SECS}s" --interface "$interface" $args \
-            loss --percent 100 $side &
+        pumba netem --duration "${PARTITION_SECS}s" --interface "$interface" \
+            --tc-image "$PUMBA_TC_IMAGE" $args loss --percent 100 $side &
     done
 }
 
