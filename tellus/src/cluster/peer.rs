@@ -4868,6 +4868,35 @@ mod tests {
         assert_eq!(recipient.received(), [None]);
     }
 
+    /// A deferred death awaits a connection of the leaver only where one is to be expected: the
+    /// leaver was Up here, or it has connected to drain. A departure this node merely learned of,
+    /// as a joiner does from its seed's snapshot, awaits none.
+    #[tokio::test]
+    async fn a_departure_is_awaited_only_from_a_known_or_connected_leaver() {
+        let endpoint = formed(1);
+        let (member, visitor, stranger) = (
+            NodeId::new(addr(2)),
+            NodeId::new(addr(3)),
+            NodeId::new(addr(4)),
+        );
+        endpoint.update(|membership, _| membership.add_up(member));
+
+        membership::on_gossip(
+            endpoint,
+            &[member, visitor, stranger].map(|node| Member::new(node, MemberState::Left)),
+        );
+        assert!(endpoint.departure_awaited(member));
+        assert!(!endpoint.departure_awaited(visitor));
+        assert!(!endpoint.departure_awaited(stranger));
+
+        let _draining = InboundPeer::handshaking(endpoint, visitor, HandshakeIntent::Member)
+            .await
+            .expect("the leaver is admitted to drain");
+        assert!(endpoint.departure_awaited(visitor));
+        assert!(!endpoint.departure_awaited(stranger));
+        assert!(endpoint.departure_deferred(stranger));
+    }
+
     /// A downing learned while a departure waits for its connection ends the wait.
     #[tokio::test]
     async fn a_downing_while_a_departure_waits_for_its_connection_ends_it() {

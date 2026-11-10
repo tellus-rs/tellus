@@ -1326,10 +1326,19 @@ impl EndpointInner {
 
     /// Defers the death of a departed node until every inbound connection from it has drained,
     /// including one it is yet to open to drain, for at most `leave_timeout`; `true` if one is
-    /// open.
-    pub(crate) fn defer_departure(&self, departures: &mut Departures, node: NodeId) -> bool {
+    /// open. A connection is awaited from a node which was Up here.
+    pub(crate) fn defer_departure(
+        &self,
+        departures: &mut Departures,
+        node: NodeId,
+        was_up: bool,
+    ) -> bool {
         let deadline = tokio_time::Instant::now() + self.config.leave_timeout;
-        departures.deferred.entry(node).or_insert(deadline);
+        let deferral = departures.deferred.entry(node).or_insert(Deferral {
+            deadline,
+            awaited: false,
+        });
+        deferral.awaited |= was_up;
         departures.inbound.contains_key(&node)
     }
 
@@ -1348,9 +1357,10 @@ impl EndpointInner {
         if self.membership.is_up(peer) {
             return MemberAdmission::Member(self.count_inbound(&mut departures, peer));
         }
-        if departures.deferred.contains_key(&peer)
+        if let Some(deferral) = departures.deferred.get_mut(&peer)
             && self.membership.state(peer) == Some(MemberState::Left)
         {
+            deferral.awaited = true;
             return MemberAdmission::Draining(self.count_inbound(&mut departures, peer));
         }
         if self.membership.is_down(peer) {
@@ -1407,15 +1417,28 @@ impl EndpointInner {
         lock(&self.departures).inbound.contains_key(&peer)
     }
 
-    /// Runs the deferred deaths whose connections have not drained within `leave_timeout`.
+    #[cfg(test)]
+    pub(crate) fn departure_awaited(&self, peer: NodeId) -> bool {
+        lock(&self.departures)
+            .deferred
+            .get(&peer)
+            .is_some_and(|deferral| deferral.awaited)
+    }
+
+    /// Runs the deferred deaths whose deadline has passed. Where a connection was awaited, the
+    /// departure has not drained within `leave_timeout`.
     pub(crate) fn end_overdue_departures(&self, now: tokio_time::Instant) {
         let overdue = lock(&self.departures)
             .deferred
-            .extract_if(|_, deadline| *deadline <= now)
-            .map(|(peer, _)| peer)
+            .extract_if(|_, deferral| deferral.deadline <= now)
+            .map(|(peer, deferral)| (peer, deferral.awaited))
             .collect::<Vec<_>>();
-        for peer in overdue {
-            warn!(%peer, "node death, its departure has not drained within leave_timeout");
+        for (peer, awaited) in overdue {
+            if awaited {
+                warn!(%peer, "node death, its departure has not drained within leave_timeout");
+            } else {
+                debug!(%peer, "node death, its departure was learned without a connection");
+            }
             self.flush_fenced(peer);
         }
     }
@@ -1740,11 +1763,12 @@ pub(crate) struct Updated<R> {
 }
 
 /// The admitted inbound connections per peer, and the departed peers whose death waits for theirs
-/// to drain, until a deadline.
+/// to drain, until a deadline. A connection is awaited from a peer which was Up here or has
+/// connected to drain: only then is a death at the deadline a departure which has not drained.
 #[derive(Default)]
 pub(crate) struct Departures {
     inbound: HashMap<NodeId, usize>,
-    deferred: HashMap<NodeId, tokio_time::Instant>,
+    deferred: HashMap<NodeId, Deferral>,
 }
 
 /// An admitted inbound connection, counted in [Departures] from its admission until it is
@@ -2128,6 +2152,11 @@ struct InboundReader {
 enum Departed {
     Reported(Departure),
     Incomplete,
+}
+
+struct Deferral {
+    deadline: tokio_time::Instant,
+    awaited: bool,
 }
 
 struct Refusal {

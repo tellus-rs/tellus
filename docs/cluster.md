@@ -403,12 +403,16 @@ once, after the last connection's readers have finished: pending asks fail, the 
 registrations are evicted, the remaining watchers get synthesized signals. A reconnect which
 supersedes a reader takes over its drain, since the superseded reader is no longer the last
 connection. One abandoned before its reader started has drained nothing and does not end the wait.
-Without any connection from the leaver, the death waits for one, up to the same deadline. A downing
-of the leaver learned meanwhile ends the wait immediately, and the member is Down from then on.
-Completing the drain changes only local state; the replicated state stays Left. A drain frame
-outside a deferred departure breaks the protocol and closes its connection, like an undecodable
-frame. That is a `Drained` marker on a data stream or from a member whose departure this node does
-not defer, and a `DrainAck` on an accepted connection or toward a node which is not leaving.
+Without any connection from the leaver, the death waits for one, up to the same deadline. A death
+which runs at that deadline is logged as a warning only where a connection of the leaver was
+awaited, since the leaver was Up here or has connected to drain. The death of a leaver whose
+departure this member merely learned of, as a joiner does from its seed's snapshot, is logged at
+debug level. A downing of the leaver learned meanwhile ends the wait immediately, and the member is
+Down from then on. Completing the drain changes only local state; the replicated state stays Left. A
+drain frame outside a deferred departure breaks the protocol and closes its connection, like an
+undecodable frame. That is a `Drained` marker on a data stream or from a member whose departure this
+node does not defer, and a `DrainAck` on an accepted connection or toward a node which is not
+leaving.
 
 *Self-down*: a Down watermark at a node's own address can cover its incarnation. When gossip or a
 final refusal tells the node so, it honors the verdict: it logs at error level, severs every

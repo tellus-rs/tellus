@@ -615,15 +615,18 @@ pub(crate) fn on_gossip(endpoint: &'static EndpointInner, members: &[Member]) {
             let deferred = merge
                 .downed
                 .iter()
-                .map(|(node, outcome)| (*node, Some(outcome.state)))
+                .map(|(node, outcome)| (*node, Some(outcome.state), true))
                 .chain(
                     merge
                         .to_flush
                         .iter()
-                        .map(|node| (*node, membership.state(*node))),
+                        .map(|node| (*node, membership.state(*node), false)),
                 )
-                .filter(|(_, state)| *state == Some(MemberState::Left))
-                .map(|(node, _)| (node, endpoint.defer_departure(&mut departures, node)))
+                .filter(|(_, state, _)| *state == Some(MemberState::Left))
+                .map(|(node, _, was_up)| {
+                    let open = endpoint.defer_departure(&mut departures, node, was_up);
+                    (node, open)
+                })
                 .collect::<HashMap<_, _>>();
             (merge, deferred)
         })
