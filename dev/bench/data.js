@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794299153232,
+  "lastUpdate": 1794299154946,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18105,6 +18105,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4443271,
             "range": "± 376603",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a72cb5c4bd2f22ab6d87971be7e27cc9db509014",
+          "message": "Merge pull request #275 from tellus-rs/fix/demo-caddy-dial-timeout\n\nfix(demo): bound caddy dial timeout below lb_try_duration",
+          "timestamp": "2026-11-10T09:11:26+01:00",
+          "tree_id": "e3b9fcc568471caf14f0a68bea9eb42188106f8b",
+          "url": "https://github.com/tellus-rs/tellus/commit/a72cb5c4bd2f22ab6d87971be7e27cc9db509014"
+        },
+        "date": 1794299154520,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24814573,
+            "range": "± 1191184",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24672730,
+            "range": "± 1296544",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3847553,
+            "range": "± 246939",
             "unit": "ns/iter"
           }
         ]
