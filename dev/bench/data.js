@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794298104863,
+  "lastUpdate": 1794298106929,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -17685,6 +17685,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4296111,
             "range": "± 316991",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "344314b4205093310cf002019c533e381d25d2d6",
+          "message": "Merge pull request #273 from tellus-rs/fix/lane-stops-dialing-once-downed\n\nfix(cluster): stop a lane from dialing once its endpoint is downed",
+          "timestamp": "2026-11-10T09:00:14+01:00",
+          "tree_id": "b45fac603fe2c72d1b798abcd99fd2cade19fd27",
+          "url": "https://github.com/tellus-rs/tellus/commit/344314b4205093310cf002019c533e381d25d2d6"
+        },
+        "date": 1794298106295,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29742428,
+            "range": "± 1639826",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28783076,
+            "range": "± 1904554",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4331468,
+            "range": "± 268202",
             "unit": "ns/iter"
           }
         ]
