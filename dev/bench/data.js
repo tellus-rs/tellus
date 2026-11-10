@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794304992020,
+  "lastUpdate": 1794304994219,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -17677,6 +17677,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 109408,
             "range": "± 2740",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bf63942cd6101a49b8ed1c4540363c534e2946ee",
+          "message": "Merge pull request #277 from tellus-rs/build/demo-docker-29.9.3\n\nbuild(demo): bump docker CLI to 29.9.3",
+          "timestamp": "2026-11-10T10:55:20+01:00",
+          "tree_id": "4a40231f5bc6238076457d6ac14be72819bf21e8",
+          "url": "https://github.com/tellus-rs/tellus/commit/bf63942cd6101a49b8ed1c4540363c534e2946ee"
+        },
+        "date": 1794304993611,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2513264,
+            "range": "± 167808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2379518,
+            "range": "± 73431",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 891909,
+            "range": "± 8369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109919,
+            "range": "± 3459",
             "unit": "ns/iter"
           }
         ]
