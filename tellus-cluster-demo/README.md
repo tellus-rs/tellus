@@ -82,7 +82,10 @@ Under Docker Compose:
   demo's own facts, phase and receptionist counts, as a small stream of its own at `/events`.
 - **The load balancer** (`Caddyfile`), health checking all five nodes every two seconds, so a
   self-downed or leaving node leaves the rotation before it stops answering. It retries a failed
-  request on another node for up to two seconds, so a crashed node costs no request.
+  request on another node for up to two seconds and gives up a dial after half a second, so a
+  crashed node costs no request. Docker removes a killed container's interface before its DNS
+  name, and a dial in between hangs. Caddy's default dial timeout of three seconds would outlast
+  the retry window.
 - **The chaos agent** (`chaos.sh`), rotating through four faults, one per cycle: `pumba kill` for a
   crash, `pumba netem loss --percent 100` in both directions between the two sides for a partition,
   a SIGTERM for a clean departure, and a roll of all five nodes to the other version of the
