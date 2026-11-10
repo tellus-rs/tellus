@@ -218,8 +218,6 @@ The relevant settings are:
   only peers whose certificates verify against the cluster's certificate authority. A peer's
   advertised address is then bound to its certificate's `tellus://<ip:port>` URI SAN, or without
   one to its IP SANs.
-- Both the nodes and the containers pumba touches need `NET_ADMIN` and `iproute2`, since pumba
-  installs its tc rules inside the target container. Compose only.
 - A node which downs itself mid-partition exits, so its container restarts without pumba's rules,
   which ends that node's side of the partition early. The fault is a container level one, and the
   demo's timings are sized so the interesting part has happened by then. Compose only: on Kubernetes
