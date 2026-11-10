@@ -175,7 +175,10 @@ count this node from that moment. Once a seed's handshake, address and identity 
 that address is *pinned*: it is the only one tried afterward, and nothing may be formed beside it,
 because no other seed can be proven to be that same cluster. The pin is released by a completed
 join, by that address answering `NoCluster`, by this node being downed, or by bootstrap seeing the
-address leave a newly settled discovery view.
+address leave a newly settled discovery view. A round in which the pinned address answers
+`NoCluster` goes on to the other seeds. The process at that address has restarted since, but the
+cluster which admitted this node may live on in the other seeds. Formation is hence decided on a
+round over every seed, not on that answer alone.
 
 *Ambiguous joins*: an attempt can also fail after its `Join` handshake was sent but before a
 validated answer pins anything. That covers a timeout, while exchanging handshakes or while opening

@@ -485,7 +485,7 @@ mod tests {
         );
     }
 
-    /// A round which asked only the pinned address cannot reach a majority of the universe.
+    /// A round with one `NoCluster` answer cannot reach a majority of a universe of five.
     #[test]
     fn majority_refuses_a_round_which_asked_one_address() {
         let formation = formation(1, &[1, 2, 3, 4, 5], &[(2, JoinOutcome::NoCluster)]);

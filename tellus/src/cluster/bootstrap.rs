@@ -889,6 +889,47 @@ mod tests {
         assert!(start.elapsed() >= bound);
     }
 
+    /// A pinned address answering `NoCluster` releases the pin, but its answer alone decides no
+    /// formation: the other seeds are asked in the same round, and one of them admits this node.
+    #[tokio::test(start_paused = true)]
+    async fn formation_waits_for_the_other_seeds_once_a_pin_is_released() {
+        let (endpoint, _lane_dials, join_requests) = endpoint(addr(1), EndpointConfig::new);
+        assert!(endpoint.enter_join());
+        endpoint.pin_cluster(addr(2), ClusterId::new());
+        assert!(
+            endpoint
+                .finish_join(addr(2), Err(ConnectError::Closed))
+                .is_err()
+        );
+        let mut config = config();
+        config.settle = Duration::ZERO;
+        let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3)], config);
+
+        // A view settles on its second resolution at the earliest: the first round cannot decide.
+        for answer in [
+            ConnectError::Closed,
+            ConnectError::Refused(RefusalReason::NoCluster),
+        ] {
+            let request = next_join(&join_requests).await;
+            assert_eq!(request.addr, addr(2));
+            assert!(endpoint.enter_join());
+            let result = endpoint.finish_join(addr(2), Err(answer));
+            assert!(request.result_tx.send(result).is_ok());
+        }
+        let released_at = tokio_time::Instant::now();
+
+        let asked = timeout(SETTLE, join_requests.recv_async()).await;
+        assert!(!endpoint.formed(), "formed without asking addr(3)");
+        let request = asked
+            .expect("a join request within the timeout")
+            .expect("bootstrap requests joins");
+        assert_eq!(request.addr, addr(3));
+        assert!(released_at.elapsed() < RESOLVE_INTERVAL);
+        assert!(request.result_tx.send(Ok(())).is_ok());
+
+        finished(bootstrap).await;
+    }
+
     /// The probe asks every resolved address which is neither this node nor an Up member, and
     /// one answering with another cluster is published as a foreign cluster.
     #[tokio::test(start_paused = true)]
