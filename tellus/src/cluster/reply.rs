@@ -231,9 +231,12 @@ impl PendingReplies {
         }
 
         let mut pending = lock(&self.pending);
-        for tag in tags {
-            pending.remove(&tag.nonce);
-        }
+        let released = tags
+            .iter()
+            .filter_map(|tag| pending.remove(&tag.nonce))
+            .collect::<Vec<_>>();
+        drop(pending);
+        drop(released);
     }
 
     pub(crate) fn discard_ask(&self, tags: &[ReplyTag]) -> Vec<Cancellation> {
@@ -323,7 +326,8 @@ impl PendingReplies {
                 .add(Watcher::new(self.evictor_id, Arc::new(RecipientEvictor)))
                 .is_err()
         {
-            lock(&self.pending).remove(&nonce);
+            let reverted = lock(&self.pending).remove(&nonce);
+            drop(reverted);
         }
 
         nonce
@@ -854,7 +858,10 @@ mod tests {
     };
     use std::{
         any::Any,
-        sync::{Arc, atomic::AtomicU64},
+        sync::{
+            Arc,
+            atomic::{AtomicBool, AtomicU64, Ordering},
+        },
     };
 
     fn add_entry(pending: &PendingReplies, recipient: Option<ActorId>) -> Nonce {
@@ -1302,6 +1309,53 @@ mod tests {
         assert!(pending.take(kept).is_some());
     }
 
+    /// An entry's sink is the application's, so its destructor may reach the table again. Hence a
+    /// discarded entry is dropped only once the pending lock is released.
+    #[test]
+    fn a_discarded_entry_is_dropped_outside_the_pending_lock() {
+        let pending = Arc::new(PendingReplies::new());
+        let unlocked = Arc::new(AtomicBool::new(false));
+        let nonce = pending.add(
+            Box::new(LockProbe {
+                pending: pending.clone(),
+                unlocked: unlocked.clone(),
+            }),
+            deliver_nothing,
+            None,
+            None,
+            None,
+            None,
+        );
+
+        pending.discard(&[tag(nonce)]);
+
+        assert!(unlocked.load(Ordering::Relaxed));
+    }
+
+    /// The same holds for an entry reverted because its recipient has terminated.
+    #[test]
+    fn a_reverted_entry_is_dropped_outside_the_pending_lock() {
+        let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
+        let (_incoming_rx, watchers) = mailbox.split();
+        watchers.close();
+        let pending = Arc::new(PendingReplies::new());
+        let unlocked = Arc::new(AtomicBool::new(false));
+
+        pending.add(
+            Box::new(LockProbe {
+                pending: pending.clone(),
+                unlocked: unlocked.clone(),
+            }),
+            deliver_nothing,
+            Some(ActorId::new()),
+            Some(mailbox_handle.watcher_registry()),
+            None,
+            None,
+        );
+
+        assert!(unlocked.load(Ordering::Relaxed));
+    }
+
     /// Dropping the guard is what releases an ask's own destination, so a canceled ask costs
     /// its entry no longer than a timed out one.
     #[test]
@@ -1373,5 +1427,17 @@ mod tests {
         _codec: &dyn Codec,
     ) -> Result<(), CodecError> {
         Ok(())
+    }
+
+    struct LockProbe {
+        pending: Arc<PendingReplies>,
+        unlocked: Arc<AtomicBool>,
+    }
+
+    impl Drop for LockProbe {
+        fn drop(&mut self) {
+            let unlocked = self.pending.pending.try_lock().is_ok();
+            self.unlocked.store(unlocked, Ordering::Relaxed);
+        }
     }
 }
