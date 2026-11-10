@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794349473106,
+  "lastUpdate": 1794349474967,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18735,6 +18735,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4443185,
             "range": "± 312813",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5d20ee02ef2763572adaf791ac88d6da848e8f7",
+          "message": "Merge pull request #289 from tellus-rs/dependabot/docker/tellus-cluster-demo/k8s/docker-patch-49eb029c0e\n\nbuild(deps): bump alpine/k8s from 1.37.1 to 1.37.2 in /tellus-cluster-demo/k8s in the docker-patch group across 1 directory",
+          "timestamp": "2026-11-10T23:16:40+01:00",
+          "tree_id": "8dc05fa7642e1f7fae5af354fcc4f68069c5ba8c",
+          "url": "https://github.com/tellus-rs/tellus/commit/b5d20ee02ef2763572adaf791ac88d6da848e8f7"
+        },
+        "date": 1794349474443,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 32795481,
+            "range": "± 1306318",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30345572,
+            "range": "± 1183500",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5385248,
+            "range": "± 409282",
             "unit": "ns/iter"
           }
         ]
