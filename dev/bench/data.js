@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794329300013,
+  "lastUpdate": 1794329302204,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18525,6 +18525,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3704436,
             "range": "± 185938",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "078e701a9e2128f898902aab6f2f30c723cba4c9",
+          "message": "Merge pull request #278 from tellus-rs/build/demo-pin-pumba\n\nbuild(demo): pin pumba images and drop unneeded iproute2",
+          "timestamp": "2026-11-10T17:39:57+01:00",
+          "tree_id": "4635cf6555c13873f184081e44fdf3eea41319dc",
+          "url": "https://github.com/tellus-rs/tellus/commit/078e701a9e2128f898902aab6f2f30c723cba4c9"
+        },
+        "date": 1794329301579,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31099032,
+            "range": "± 2517513",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30720613,
+            "range": "± 1539040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4443185,
+            "range": "± 312813",
             "unit": "ns/iter"
           }
         ]
