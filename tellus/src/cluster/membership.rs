@@ -225,20 +225,22 @@ pub(crate) enum JoinRound {
 }
 
 /// One pass over the seeds, this node's own address skipped in every position: a formed node
-/// dialing itself would admit itself and never reach the real seeds.
+/// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
+/// first, and the other seeds only once its answer has released the pin.
 pub(crate) async fn join_round(
     endpoint: &'static EndpointInner,
     seeds: &[SocketAddr],
 ) -> JoinRound {
-    let seeds = match endpoint.pinned_cluster() {
-        Some(pinned) => vec![pinned],
-
-        None => seeds
-            .iter()
-            .copied()
-            .filter(|seed| *seed != endpoint.node().addr())
-            .collect(),
-    };
+    let pinned = endpoint.pinned_cluster();
+    let seeds = pinned
+        .into_iter()
+        .chain(
+            seeds
+                .iter()
+                .copied()
+                .filter(|seed| *seed != endpoint.node().addr() && Some(*seed) != pinned),
+        )
+        .collect::<Vec<_>>();
 
     let mut outcomes = Vec::with_capacity(seeds.len());
     let mut foreign = 0;

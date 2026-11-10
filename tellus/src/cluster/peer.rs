@@ -1891,6 +1891,7 @@ mod tests {
         cluster::{
             discovery::{KeyKind, WireKey},
             endpoint::{EndpointConfig, EndpointInner, FormError, MemberAdmission},
+            formation::JoinOutcome,
             frame::{
                 Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
                 RefusalReason,
@@ -3125,6 +3126,50 @@ mod tests {
             endpoint.form_cluster(),
             Err(FormError::ClusterPinned(pinned)) if pinned == seed
         ));
+    }
+
+    /// A round under a pin asks the pinned address first. Once that address answers `NoCluster`,
+    /// the pin is released and the round goes on to the other seeds: the cluster which admitted
+    /// this node may live on in them, so the round must not end on that one answer.
+    #[tokio::test]
+    async fn a_round_goes_on_to_the_other_seeds_once_its_pin_is_released() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (seed, other) = (addr(2), addr(3));
+
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed, other]).await });
+        let dial = joining.dials.recv().await.expect("a dial");
+        let (connected, mut acceptor) = Acceptor::connected();
+        assert!(dial.answer.send(connected).is_ok());
+        acceptor.joiner_handshake().await;
+        acceptor.admit(seed);
+        drop(acceptor);
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::ClusterSeen(pinned, _) if pinned == seed
+        ));
+
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed, other]).await });
+        for asked in [seed, other] {
+            let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+                .await
+                .expect("every seed is dialed")
+                .expect("a dial");
+            assert_eq!(dial.addr, asked);
+            let (connected, mut acceptor) = Acceptor::connected();
+            assert!(dial.answer.send(connected).is_ok());
+            acceptor.joiner_handshake().await;
+            acceptor.refuse(RefusalReason::NoCluster);
+        }
+
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::NoAdmission(outcomes)
+                if outcomes == [(seed, JoinOutcome::NoCluster), (other, JoinOutcome::NoCluster)]
+        ));
+        assert_eq!(endpoint.pinned_cluster(), None);
     }
 
     /// The caller going away after the cluster answered cannot discard what the endpoint learned:
