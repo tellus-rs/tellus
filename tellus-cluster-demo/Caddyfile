@@ -10,5 +10,8 @@
         health_interval 2s
         health_timeout 1s
         fail_duration 5s
+        transport http {
+            dial_timeout 500ms
+        }
     }
 }
