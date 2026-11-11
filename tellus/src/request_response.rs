@@ -1,6 +1,9 @@
 #[cfg(feature = "cluster")]
 use crate::cluster;
-use crate::{ActorContext, ActorRef, StashMode, TimerMode, actor_ref::Sink, mailbox::SendError};
+use crate::{
+    ActorContext, ActorRef, StashMode, TimerMode, actor_context::catch_panic_and_log,
+    actor_ref::Sink, mailbox::SendError,
+};
 use derive_more::Debug;
 use std::{any::type_name, cell::Cell, time::Duration};
 use thiserror::Error;
@@ -96,7 +99,8 @@ where
     /// Nothing limits how many are open. The reply still counts against the capacity, so ordinary
     /// senders are refused until the mailbox has drained back under it. On this node, the reply is
     /// dropped and logged as a dead letter only if this actor has terminated. A reply from another
-    /// node can also be lost before it arrives, like a remote tell; see docs/cluster.md.
+    /// node can also be lost before it arrives, like a remote tell; see docs/cluster.md. A panic in
+    /// the conversion is logged at error level, and no message is delivered.
     ///
     /// Unlike [ActorRef::ask], this side has no `NoReply`: a reply the responder never sends, or
     /// one lost on its way, is never reported. An actor which must detect a missing reply declares
@@ -112,7 +116,14 @@ where
         #[cfg(feature = "cluster")]
         let wire = cluster::ReplyToWire::for_recipient(&actor_ref);
 
-        let reply_to = ReplyTo::new(move |reply| actor_ref.tell_forced(into_message(reply)));
+        let reply_to = ReplyTo::new(move |reply| {
+            let actor_id = actor_ref.actor_id();
+            if let Some(message) =
+                catch_panic_and_log(actor_id, "reply conversion failed", || into_message(reply))
+            {
+                actor_ref.tell_forced(message);
+            }
+        });
         #[cfg(feature = "cluster")]
         let reply_to = reply_to.with_wire(wire);
 
@@ -140,6 +151,7 @@ pub struct ReplyTo<R> {
 impl<R> ReplyTo<R> {
     /// Send the reply without blocking. If it cannot be delivered, e.g. because the asker has
     /// terminated or is no longer awaiting it, the reply is dropped and logged as a dead letter.
+    /// A panic in a conversion given to [ActorContext::reply_to] does not reach the caller.
     pub fn reply(self, reply: R) {
         match self.send_reply.take() {
             Some(send_reply) => send_reply(reply),
@@ -246,6 +258,8 @@ impl From<SendError> for AskError {
 mod tests {
     use crate::ReplyTo;
     #[cfg(feature = "cluster")]
+    use crate::{ActorContext, ActorId, MailboxCapacity, Untimed, actor_ref::SelfRef};
+    #[cfg(feature = "cluster")]
     use std::sync::mpsc;
 
     /// The sink is skipped in the `Debug` output and adds no `Debug` bound on the reply type, so
@@ -274,5 +288,20 @@ mod tests {
         reply_to.reply(42);
 
         assert!(reply_rx.try_recv().is_err());
+    }
+
+    /// A sink taken from a `reply_to`, as remote serialization does, contains a panic in the
+    /// conversion: it returns, and no message is delivered.
+    #[cfg(feature = "cluster")]
+    #[test]
+    fn a_taken_sink_catches_a_panicking_conversion() {
+        let (self_ref, _mailbox) = SelfRef::<u64>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        let context = ActorContext::<u64, Untimed>::new(self_ref);
+        let reply_to = context.reply_to::<u64, _>(|_| panic!("the conversion panics"));
+
+        let send_reply = reply_to.take_send_reply().expect("the sink is there");
+        send_reply(42);
+
+        assert_eq!(context.queued(), 0);
     }
 }

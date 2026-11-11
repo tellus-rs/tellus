@@ -190,6 +190,23 @@ async fn a_reply_after_the_asker_terminated_is_a_dead_letter() {
     assert_terminates(system, "actor system did not terminate").await;
 }
 
+/// A panic in the conversion of a `reply_to` is contained where the reply is sent: the responder
+/// neither fails nor stops, proven by it answering the asker's next request.
+#[tokio::test]
+async fn a_panicking_reply_conversion_does_not_fail_the_responder() {
+    let (answered_tx, mut answered_rx) = mpsc::channel(1);
+    let system = ActorSystem::new(PanickingAsker(answered_tx));
+
+    let answered = recv(&mut answered_rx, "asker did not observe the keeper").await;
+    assert_eq!(
+        answered,
+        Some(99),
+        "the responder terminated instead of answering the next request"
+    );
+
+    assert_terminates(system, "actor system did not terminate").await;
+}
+
 /// A `ReplyTo` moved into a spawned task can reply after `receive` has returned, and the reply
 /// still resolves the ask.
 #[tokio::test]
@@ -556,6 +573,43 @@ impl Actor for ShortAsker {
         _: Incoming<Self::Message>,
         _: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Stop)
+    }
+}
+
+/// Probe a keeper child twice via `reply_to`, the first time with a conversion which panics, and
+/// report what arrives first: the second probe's answer, or `None` for the keeper's terminated
+/// signal.
+struct PanickingAsker(mpsc::Sender<Option<u64>>);
+
+impl Actor for PanickingAsker {
+    type Message = u64;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        let keeper = context.spawn(Keeper);
+        context.watch(&keeper);
+        keeper.tell(KeeperMessage::Probe(
+            context.reply_to(|_| panic!("the conversion panics")),
+        ));
+        keeper.tell(KeeperMessage::Probe(context.reply_to(|probed| probed)));
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        _: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        let answered = match incoming {
+            Incoming::Message(probed) => Some(probed),
+            Incoming::Terminated(_) => None,
+        };
+        let _ = self.0.try_send(answered);
         Ok(Control::Stop)
     }
 }
