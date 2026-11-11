@@ -16,7 +16,7 @@ anyhow                 = { version = "1.0" }
 crossterm              = { version = "0.29" }
 ratatui                = { version = "0.30" }
 axum                   = { version = "0.8", default-features = false }
-ciborium               = { version = "0.2" }
+ciborium               = { version = "0.2.2" }
 composed               = { version = "0.1" }
 config                 = { version = "0.15", default-features = false }
 configured             = { version = "0.10" }
@@ -42,7 +42,7 @@ reqwest                = { version = "0.13", default-features = false }
 rustls                 = { version = "0.23", default-features = false }
 semver                 = { version = "1.0" }
 serde                  = { version = "1.0" }
-serde_json             = { version = "1.0" }
+serde_json             = { version = "1.0.54" }
 sqlx                   = { version = "0.9", default-features = false }
 tempfile               = { version = "3" }
 testcontainers-modules = { version = "0.15" }

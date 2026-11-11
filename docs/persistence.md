@@ -193,14 +193,15 @@ and a schema version, both outside the payload
 ([`Versioned`](../tellus/src/persistence/versioned.rs)); the payload itself is encoded
 self-describingly by a [`Codec`](../tellus/src/persistence/codec.rs), CBOR by default.
 `Persistence::with_codec` selects another codec, such as the provided `Json`, whose payloads are
-readable in the store. Stored records do not name their codec, so it must not change once events are
-written. A custom codec wraps its serializer's errors via `EncodeError::new` and
-`PayloadError::new`. Old versions can be upcast on read by overriding `Versioned::decode`: the
-current code declares which versions it still decodes and converts them while replaying. A version
-which is neither current nor upcast is rejected on read, and the store is never rewritten. A stored
-manifest other than the type's `Versioned::MANIFEST` is rejected as well, before `Versioned::decode`
-is called. A rejected event fails recovery; a snapshot that can no longer be decoded is discarded
-and recovery falls back to full replay, so snapshots never need migration code.
+readable in the store. `Json` fails to encode a NaN or an infinity, which JSON cannot represent.
+Stored records do not name their codec, so it must not change once events are written. A custom
+codec wraps its serializer's errors via `EncodeError::new` and `PayloadError::new`. Old versions can
+be upcast on read by overriding `Versioned::decode`: the current code declares which versions it
+still decodes and converts them while replaying. A version which is neither current nor upcast is
+rejected on read, and the store is never rewritten. A stored manifest other than the type's
+`Versioned::MANIFEST` is rejected as well, before `Versioned::decode` is called. A rejected event
+fails recovery; a snapshot that can no longer be decoded is discarded and recovery falls back to
+full replay, so snapshots never need migration code.
 
 `EncodedEvent::manifest` and `EncodedSnapshot::manifest` are `Cow<'static, str>`: framework-created
 values borrow `Versioned::MANIFEST` without allocating per event, while stores use the owned form

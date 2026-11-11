@@ -53,7 +53,7 @@ rcgen           = { workspace = true, features = [ "crypto", "ring" ], optional 
 rustls          = { workspace = true, features = [ "ring", "std" ], optional = true }
 semver          = { workspace = true, features = [ "serde" ], optional = true }
 serde           = { workspace = true, features = [ "derive" ], optional = true }
-serde_json      = { workspace = true, optional = true }
+serde_json      = { workspace = true, features = [ "float_roundtrip" ], optional = true }
 thiserror       = { workspace = true }
 tokio           = { workspace = true, features = [ "macros", "rt", "sync", "time" ] }
 tracing         = { workspace = true }
