@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794382057722,
+  "lastUpdate": 1794411106832,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11819,6 +11819,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 32666112,
             "range": "± 832303",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "69217fceec22dfcb05c65f2fe9db7a46d2aa25de",
+          "message": "Merge pull request #302 from tellus-rs/fix/rustsec-2026-0486-rustix\n\nfix(deps): bump rustix to 1.1.6 for RUSTSEC-2026-0486",
+          "timestamp": "2026-11-11T16:23:21+01:00",
+          "tree_id": "9c62ee8d2f0b113cf77f8d1f32d616ed4c34b8c7",
+          "url": "https://github.com/tellus-rs/tellus/commit/69217fceec22dfcb05c65f2fe9db7a46d2aa25de"
+        },
+        "date": 1794411105523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11004182,
+            "range": "± 707292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 10895085,
+            "range": "± 359112",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 633729,
+            "range": "± 18265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 590681,
+            "range": "± 4728",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5067485,
+            "range": "± 71583",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3404424,
+            "range": "± 16446",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16471177,
+            "range": "± 416853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16917795,
+            "range": "± 352149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16340280,
+            "range": "± 431533",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16671954,
+            "range": "± 423111",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 16453486,
+            "range": "± 326122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18059312,
+            "range": "± 460460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 22764790,
+            "range": "± 789725",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 16467000,
+            "range": "± 329809",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 17749847,
+            "range": "± 452917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 22417510,
+            "range": "± 737668",
             "unit": "ns/iter"
           }
         ]
