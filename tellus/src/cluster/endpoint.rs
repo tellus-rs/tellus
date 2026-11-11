@@ -658,7 +658,7 @@ pub(crate) struct EndpointInner {
     inbound_readers: tokio::sync::Mutex<HashMap<SocketAddr, InboundReader>>,
     membership: Membership,
     update_lock: Mutex<()>,
-    state_tx: watch::Sender<ClusterState>,
+    state_tx: watch::Sender<Arc<ClusterState>>,
     changes_tx: broadcast::Sender<PublishedChange>,
     refusals: Mutex<HashMap<SocketAddr, Refusal>>,
     lifecycle: CoordinatedLifecycle,
@@ -764,7 +764,7 @@ impl EndpointInner {
         &self.membership
     }
 
-    pub(crate) fn state_rx(&self) -> watch::Receiver<ClusterState> {
+    pub(crate) fn state_rx(&self) -> watch::Receiver<Arc<ClusterState>> {
         self.state_tx.subscribe()
     }
 
@@ -779,9 +779,9 @@ impl EndpointInner {
     }
 
     /// Lock order: `update_lock`, then `Membership::entries`, then `Reachability::state`, then
-    /// `foreign_clusters`, then the watch write, then, with all of those released, the
-    /// receptionist's replicas for the channel send; the closure must not call back into
-    /// `update`.
+    /// `foreign_clusters`, then the watch write, then, with all of those but `update_lock`
+    /// released, the receptionist's replicas for the channel send. The closure must not call back
+    /// into `update`, and a caller must not hold a borrow of the watch.
     pub(crate) fn update<R>(
         &self,
         mutate: impl FnOnce(&Membership, &Reachability) -> R,
@@ -818,7 +818,7 @@ impl EndpointInner {
             {
                 return false;
             }
-            *state = ClusterState::new(
+            *state = Arc::new(ClusterState::new(
                 self.node(),
                 cluster,
                 state.version() + 1,
@@ -826,12 +826,13 @@ impl EndpointInner {
                 unreachable,
                 broken_links,
                 foreign_clusters,
-            );
+            ));
             true
         });
         if changed {
             // The watch first, then the channel, so the stream never leads the current value.
-            self.receptionist.publish(self.state_tx.borrow().clone());
+            let state = self.state_tx.borrow().clone();
+            self.receptionist.publish(ClusterState::clone(&state));
         }
 
         Updated {
@@ -1535,7 +1536,7 @@ impl EndpointInner {
     ) -> Self {
         let node = NodeId::new(config.advertised_addr);
         let membership = Membership::new(node, config.down_watermarks, config.down_retention);
-        let (state_tx, _) = watch::channel(ClusterState::new(
+        let state = ClusterState::new(
             node,
             None,
             0,
@@ -1543,9 +1544,10 @@ impl EndpointInner {
             Vec::new(),
             Vec::new(),
             Vec::new(),
-        ));
+        );
         let (changes_tx, _) = broadcast::channel(config.change_capacity.get());
-        let receptionist = Receptionist::new(node, state_tx.borrow().clone(), changes_tx.clone());
+        let receptionist = Receptionist::new(node, state.clone(), changes_tx.clone());
+        let (state_tx, _) = watch::channel(Arc::new(state));
 
         let lanes = Lanes::new(data_streams, config.outbound_capacity, dial_request_tx);
 
@@ -3395,7 +3397,7 @@ mod tests {
         let (endpoint, _dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let mut changes = endpoint.changes();
-        let initial = endpoint.state_rx().borrow().clone();
+        let initial = ClusterState::clone(&endpoint.state_rx().borrow());
         assert_eq!(changes.next().await, Change::State(initial));
         assert_eq!(
             changes.next().await,
@@ -3429,7 +3431,7 @@ mod tests {
         );
     }
 
-    /// A consumer may hold a borrowed cluster state while asking the receptionist, and updates
+    /// A borrow of the cluster state watch may be held while asking the receptionist, and updates
     /// keep coming: the receptionist must never wait on the watch while holding its lock, or the
     /// writer-preferring watch lock deadlocks the three of them.
     #[test]

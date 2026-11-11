@@ -144,8 +144,8 @@ pub use crate::cluster::{
     node::{ClusterId, Incarnation},
     schema::{AppVersion, Peer, Schema, UnsupportedSchemaVersion},
     state::{
-        BrokenLink, Change, Changes, ClusterState, ClusterStateError, ForeignCluster, Transition,
-        changes, cluster_state, lifecycle,
+        BrokenLink, Change, Changes, ClusterState, ClusterStateError, ClusterStateSubscription,
+        ForeignCluster, Transition, changes, cluster_state, lifecycle,
     },
     wire::{RefError, deserialize_ref, serialize_ref},
 };

@@ -170,8 +170,7 @@ async fn await_left(addr: SocketAddr) -> anyhow::Result<()> {
     };
     timeout(LEAVE_TIMEOUT, state.wait_for(left))
         .await
-        .context("the node did not leave within the timeout")?
-        .context("the cluster state stopped")?;
+        .context("the node did not leave within the timeout")?;
     Ok(())
 }
 // ANCHOR_END: await-left
@@ -184,8 +183,7 @@ async fn await_all_up() -> anyhow::Result<()> {
         state.wait_for(|state| state.up().count() == NODES),
     )
     .await
-    .context("not all nodes up within the timeout")?
-    .context("the cluster state stopped")?;
+    .context("not all nodes up within the timeout")?;
     Ok(())
 }
 // ANCHOR_END: await-all-up

@@ -92,11 +92,11 @@ and hand-off are the singleton's, applied to many keys.
 
 Shipped; [cluster.md](cluster.md#cluster-state) is the authority from here on.
 
-**Mechanism.** `cluster::cluster_state()` returns a `tokio::sync::watch::Receiver<ClusterState>`
-once the endpoint is started and fails before. A `ClusterState` is a versioned snapshot holding the
-cluster ID, the member list, the members this node currently derives as unreachable, the broken
-links and the foreign clusters, next to this node's own address and incarnation. It is published
-by the mutation, not by a loop: every path which changes the
+**Mechanism.** `cluster::cluster_state()` returns a `ClusterStateSubscription` over a
+`tokio::sync::watch` channel once the endpoint is started and fails before. A `ClusterState` is a
+versioned snapshot holding the cluster ID, the member list, the members this node currently derives
+as unreachable, the broken links and the foreign clusters, next to this node's own address and
+incarnation. It is published by the mutation, not by a loop: every path which changes the
 [`Membership`](../tellus/src/cluster/membership.rs) or the [reachability
 graph](../tellus/src/cluster/reachability.rs) goes through one state-update operation which applies
 the change and publishes the resulting value under the same lock. The
@@ -111,7 +111,7 @@ needs them together, and because the reachability set is derived from the member
 version.
 
 **Guarantee.** Every value a subscriber observes was this node's cluster state after some change;
-versions increase strictly. The watch receiver holds the current value only, so a subscriber which
+versions increase strictly. The subscription holds the current value only, so a subscriber which
 reads less often than the state changes skips intermediate values, which a renderer deriving from
 the current value never notices. A consumer which needs every version takes `cluster::changes`: one
 whole value per version and one settled verdict per change of it, in publication order from a

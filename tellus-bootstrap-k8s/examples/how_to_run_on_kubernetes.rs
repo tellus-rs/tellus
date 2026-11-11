@@ -150,8 +150,7 @@ async fn await_downed() -> anyhow::Result<()> {
                 .this_member()
                 .is_none_or(|member| member.state() == MemberState::Down)
         })
-        .await
-        .context("the cluster state stopped")?;
+        .await;
     Ok(())
 }
 // ANCHOR_END: await-downed

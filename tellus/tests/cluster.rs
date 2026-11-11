@@ -85,9 +85,9 @@ use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, AskError, Control, Incoming, ReplyTo,
     SchemaVersion, Unstashed, Untimed,
     cluster::{
-        self, BootstrapConfig, Change, Changes, ClusterState, DownError, EndpointConfig,
-        FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Peer, Schema,
-        Transition, UnsupportedSchemaVersion,
+        self, BootstrapConfig, Change, Changes, ClusterState, ClusterStateSubscription, DownError,
+        EndpointConfig, FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Peer,
+        Schema, Transition, UnsupportedSchemaVersion,
         codec::{Codec, CodecError},
         downing::{Disconnected, DownAfterDeadline, Downing, DowningProvider, KeepMajority},
         failure::{Deadline, DeadlineFailureDetector},
@@ -101,7 +101,6 @@ use tellus::{
 };
 use tokio::{
     runtime::Runtime,
-    sync::watch,
     task::JoinSet,
     time::{sleep, timeout},
 };
@@ -450,13 +449,13 @@ fn quick_leave_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
         start_endpoint().await?;
-        let mut state_rx = cluster::cluster_state()?;
+        let mut subscription = cluster::cluster_state()?;
         timeout(
             TIMEOUT,
-            state_rx.wait_for(|state| state.up().count() == QUICK_LEAVE_CLUSTER),
+            subscription.wait_for(|state| state.up().count() == QUICK_LEAVE_CLUSTER),
         )
         .await
-        .context("the whole cluster Up within the timeout")??;
+        .context("the whole cluster Up within the timeout")?;
 
         let departure = timeout(TIMEOUT, cluster::leave())
             .await
@@ -483,14 +482,14 @@ fn leave_node() -> anyhow::Result<()> {
         println!("{REF_PREFIX}{}", hex_encode(&bytes));
         std::io::stdout().flush()?;
 
-        let mut state_rx = cluster::cluster_state()?;
+        let mut subscription = cluster::cluster_state()?;
         let departure = timeout(TIMEOUT, cluster::leave_on_terminated(system))
             .await
             .context("leaving the cluster")??;
 
         // The membership loop has ended by now, so the last value must show the departure.
         let own = *SELF_ADDR.get().context("endpoint not started")?;
-        let state = state_rx.borrow_and_update().clone();
+        let state = subscription.current();
         if !is_left(&state, own) {
             bail!("the last cluster state does not show this node Left: {state:?}");
         }
@@ -569,13 +568,13 @@ fn majority_node() -> anyhow::Result<()> {
             Err(_) => cluster::form().context("forming the cluster")?,
         }
 
-        let mut state_rx = cluster::cluster_state()?;
+        let mut subscription = cluster::cluster_state()?;
         timeout(
             TIMEOUT,
-            state_rx.wait_for(|state| state.up().count() == size),
+            subscription.wait_for(|state| state.up().count() == size),
         )
         .await
-        .context("every member Up within the timeout")??;
+        .context("every member Up within the timeout")?;
         println!("{JOIN_PREFIX}up");
         std::io::stdout().flush()?;
 
@@ -584,8 +583,8 @@ fn majority_node() -> anyhow::Result<()> {
                 if cluster::lifecycle()? == Lifecycle::Downed {
                     return anyhow::Ok("downed");
                 }
-                let other_down = state_rx
-                    .borrow_and_update()
+                let other_down = subscription
+                    .current()
                     .members()
                     .iter()
                     .any(|member| member.addr() != addr && member.state() == MemberState::Down);
@@ -630,7 +629,7 @@ fn cluster_id_node() -> anyhow::Result<()> {
         };
 
         let cluster_id = cluster::cluster_state()?
-            .borrow()
+            .current()
             .cluster()
             .context("a member names its cluster")?;
         println!("{CLUSTER_PREFIX}{cluster_id}");
@@ -667,9 +666,9 @@ fn foreign_probe_node() -> anyhow::Result<()> {
             .await
             .context("bootstrapping a formed node")??;
 
-        let mut state_rx = cluster::cluster_state()?;
-        let cluster_id = state_rx
-            .borrow()
+        let mut subscription = cluster::cluster_state()?;
+        let cluster_id = subscription
+            .current()
             .cluster()
             .context("a formed node names its cluster")?;
         println!("{CLUSTER_PREFIX}{cluster_id}");
@@ -677,14 +676,14 @@ fn foreign_probe_node() -> anyhow::Result<()> {
 
         let foreign = timeout(TIMEOUT, async {
             loop {
-                if let Some(foreign) = state_rx.borrow_and_update().foreign_clusters().first() {
-                    return anyhow::Ok(*foreign);
+                if let Some(foreign) = subscription.current().foreign_clusters().first() {
+                    return *foreign;
                 }
-                state_rx.changed().await.context("the cluster state ends")?;
+                subscription.changed().await;
             }
         })
         .await
-        .context("a foreign cluster within the timeout")??;
+        .context("a foreign cluster within the timeout")?;
         println!("{FOREIGN_PREFIX}{} {}", foreign.addr(), foreign.cluster());
         std::io::stdout().flush()?;
 
@@ -820,7 +819,7 @@ impl Actor for EchoServer {
                     .len();
                 let version = cluster::cluster_state()
                     .expect("endpoint started")
-                    .borrow()
+                    .current()
                     .version();
                 let settled = receptionist::settled(version).expect("endpoint started");
                 reply_to.reply(Directory {
@@ -1813,13 +1812,13 @@ fn gossip_bench_client() -> anyhow::Result<()> {
         expect_line(lines, &format!("{JOIN_PREFIX}up"))?;
     }
     runtime.block_on(async {
-        let mut state_rx = cluster::cluster_state()?;
+        let mut subscription = cluster::cluster_state()?;
         timeout(
             TIMEOUT,
-            state_rx.wait_for(|state| state.up().count() == size),
+            subscription.wait_for(|state| state.up().count() == size),
         )
         .await
-        .context("every member Up within the timeout")??;
+        .context("every member Up within the timeout")?;
         anyhow::Ok(())
     })?;
 
@@ -1874,13 +1873,13 @@ fn gossip_idle_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
         start_endpoint().await?;
-        let mut state_rx = cluster::cluster_state()?;
+        let mut subscription = cluster::cluster_state()?;
         timeout(
             TIMEOUT,
-            state_rx.wait_for(|state| state.up().count() == size),
+            subscription.wait_for(|state| state.up().count() == size),
         )
         .await
-        .context("every member Up within the timeout")??;
+        .context("every member Up within the timeout")?;
         println!("{JOIN_PREFIX}up");
         std::io::stdout().flush()?;
         anyhow::Ok(())
@@ -2798,7 +2797,7 @@ fn restart_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 /// ends where the watch stands.
 fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut changes = cluster::changes()?;
-    let state_rx = cluster::cluster_state()?;
+    let mut subscription = cluster::cluster_state()?;
     let mut observed = Vec::new();
 
     let mut echo_process = KillOnDrop(spawn_node(Role::Echo)?);
@@ -2829,7 +2828,7 @@ fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         is_left(state, leaver_addr)
     })?;
     expect_exit(&mut leave_process, "leaving echo")?;
-    let current = state_rx.borrow().version();
+    let current = subscription.current().version();
     await_change(runtime, &mut changes, &mut observed, |state| {
         state.version() >= current
     })?;
@@ -2928,11 +2927,12 @@ fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         }
     }
     let last = states.last().context("no state was streamed")?;
-    if **last != *state_rx.borrow() {
+    let current = subscription.current();
+    if **last != *current {
         bail!(
             "the stream ends at version {}, the watch at {}",
             last.version(),
-            state_rx.borrow().version()
+            current.version()
         );
     }
     Ok(())
@@ -2986,29 +2986,26 @@ fn await_settled(runtime: &Runtime, changes: &mut Changes, version: u64) -> anyh
 /// Awaits the first published value satisfying the predicate, collecting every value seen.
 fn await_state(
     runtime: &Runtime,
-    state_rx: &mut watch::Receiver<ClusterState>,
-    observed: &mut Vec<ClusterState>,
+    subscription: &mut ClusterStateSubscription,
+    observed: &mut Vec<Arc<ClusterState>>,
     satisfied: impl Fn(&ClusterState) -> bool,
 ) -> anyhow::Result<()> {
-    if observed.last().is_some_and(&satisfied) {
+    if observed.last().is_some_and(|state| satisfied(state)) {
         return Ok(());
     }
 
     runtime
         .block_on(timeout(TIMEOUT, async {
             loop {
-                state_rx
-                    .changed()
-                    .await
-                    .context("cluster state channel closed")?;
-                let state = state_rx.borrow_and_update().clone();
+                subscription.changed().await;
+                let state = subscription.current();
                 observed.push(state.clone());
                 if satisfied(&state) {
-                    return Ok::<_, anyhow::Error>(());
+                    return;
                 }
             }
         }))
-        .context("awaiting a cluster state")?
+        .context("awaiting a cluster state")
 }
 
 fn is_up(state: &ClusterState, addr: SocketAddr) -> bool {
@@ -3042,8 +3039,8 @@ fn is_unreachable(state: &ClusterState, addr: SocketAddr) -> bool {
 /// node's actor is gone the moment its Down is published, and a wrong message type is refused.
 fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let key = Key::<Request>::new(ECHO_KEY);
-    let mut state_rx = cluster::cluster_state()?;
-    let mut observed = vec![state_rx.borrow_and_update().clone()];
+    let mut state_subscription = cluster::cluster_state()?;
+    let mut observed = vec![state_subscription.current()];
     let mut subscription = receptionist::subscribe(&key)?;
     let mut changes = cluster::changes()?;
 
@@ -3075,7 +3072,7 @@ fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     if receptionist::lookup(&key)?.len() != 3 {
         bail!("the local lookup does not resolve three echoes");
     }
-    let version = state_rx.borrow().version();
+    let version = cluster::cluster_state()?.current().version();
     await_settled(runtime, &mut changes, version)
         .context("the receptionist is not settled with every member delivered")?;
     if !receptionist::settled(version)? {
@@ -3092,26 +3089,26 @@ fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     await_listing(runtime, &mut subscription, |refs| refs.len() == 4)?;
     child.tell(Request::Stop);
     await_listing(runtime, &mut subscription, |refs| refs.len() == 3)?;
-    if !is_up(&state_rx.borrow(), a_addr) {
+    if !is_up(&cluster::cluster_state()?.current(), a_addr) {
         bail!("the child's node is not Up while its termination was replicated");
     }
 
     b_process.0.kill().context("killing echo b")?;
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut state_subscription, &mut observed, |state| {
         is_down(state, b_addr)
     })?;
     let refs = receptionist::lookup(&key)?;
     if refs.len() != 2 || refs.contains(&b) {
         bail!("a downed member's echo is still resolved: {refs:?}");
     }
-    if !receptionist::settled(state_rx.borrow().version())? {
+    if !receptionist::settled(cluster::cluster_state()?.current().version())? {
         bail!("the receptionist is not settled after a downing");
     }
     await_listing(runtime, &mut subscription, |refs| refs.len() == 2)?;
 
     a.tell(Request::Stop);
     expect_exit(&mut a_process, "echo a")?;
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut state_subscription, &mut observed, |state| {
         is_down(state, a_addr)
     })?;
     await_listing(runtime, &mut subscription, |refs| refs.len() == 1)?;
@@ -3174,8 +3171,8 @@ fn await_directory(
 /// order, interleaved with the messages told to them directly.
 fn pubsub_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let topic = Topic::<Note>::new(TOPIC);
-    let mut state_rx = cluster::cluster_state()?;
-    let mut observed = vec![state_rx.borrow_and_update().clone()];
+    let mut subscription = cluster::cluster_state()?;
+    let mut observed = vec![subscription.current()];
     let mut subscribers = receptionist::subscribe(topic.key())?;
 
     let system = ActorSystem::new(EchoServer);
@@ -3224,7 +3221,7 @@ fn pubsub_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     }
 
     b_process.0.kill().context("killing echo b")?;
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         is_down(state, b_addr)
     })?;
     let told = pubsub::publish(
@@ -3611,9 +3608,9 @@ fn down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 fn zombie_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut zombie = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
     let addr = bound_addr(&zombie)?;
-    let mut state_rx = cluster::cluster_state()?;
+    let mut subscription = cluster::cluster_state()?;
     let mut observed = Vec::new();
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         is_up(state, addr)
     })
     .context("the zombie joins")?;
@@ -3652,9 +3649,9 @@ fn zombie_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 /// left Up by an earlier scenario would hold the joins as well, so the scenario waits for their
 /// downing first.
 fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
-    let mut state_rx = cluster::cluster_state()?;
+    let mut subscription = cluster::cluster_state()?;
     let mut observed = Vec::new();
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         state.up().count() == 1
     })
     .context("the nodes of earlier scenarios are downed")?;
@@ -3663,13 +3660,13 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut witness = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
     let mut frozen = KillOnDrop(spawn_node_at(Role::Zombie, None)?);
     let (witness_addr, frozen_addr) = (bound_addr(&witness)?, bound_addr(&frozen)?);
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         is_up(state, witness_addr) && is_up(state, frozen_addr)
     })
     .context("the zombies join")?;
 
     signal(&frozen, "STOP")?;
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         is_unreachable(state, frozen_addr)
     })
     .context("the frozen zombie becomes unreachable")?;
@@ -3677,13 +3674,13 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut joiner = KillOnDrop(spawn_node_at(Role::Echo, None)?);
     let joiner_addr = bound_addr(&joiner)?;
     thread::sleep(JOIN_HOLD_GRACE);
-    if is_up(&state_rx.borrow(), joiner_addr) {
+    if is_up(&cluster::cluster_state()?.current(), joiner_addr) {
         bail!("the join at {joiner_addr} was admitted while a member is unreachable");
     }
 
     cluster::down(frozen_addr).context("downing the frozen zombie")?;
     let echo = resolve_ref::<Request>(&mut joiner).context("the held join is admitted")?;
-    if !is_up(&state_rx.borrow(), joiner_addr) {
+    if !is_up(&cluster::cluster_state()?.current(), joiner_addr) {
         bail!("the admitted joiner at {joiner_addr} is not Up");
     }
     drop(hold);
@@ -3777,9 +3774,9 @@ fn majority_pair() -> anyhow::Result<[MajorityNode; 2]> {
 /// be connecting, is acknowledged by every member. A member which learns the departure by gossip
 /// first waits for the leaver's connection instead of running its death at once.
 fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
-    let mut state_rx = cluster::cluster_state()?;
+    let mut subscription = cluster::cluster_state()?;
     let mut observed = Vec::new();
-    await_state(runtime, &mut state_rx, &mut observed, |state| {
+    await_state(runtime, &mut subscription, &mut observed, |state| {
         state.up().count() == 1
     })
     .context("the nodes of earlier scenarios are gone")?;
@@ -3792,7 +3789,7 @@ fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
         witness_ref.tell(Request::Stop);
         expect_exit(&mut witness, "witness").with_context(|| format!("round {round}"))?;
-        await_state(runtime, &mut state_rx, &mut observed, |state| {
+        await_state(runtime, &mut subscription, &mut observed, |state| {
             state.up().count() == 1
         })
         .with_context(|| format!("round {round} ends with the client alone"))?;
@@ -3966,7 +3963,7 @@ fn identity_binding_scenario() -> anyhow::Result<()> {
 /// ID, so every member of one cluster names the same one.
 fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let this_cluster = cluster::cluster_state()?
-        .borrow()
+        .current()
         .cluster()
         .context("the client names its cluster")?;
     let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
@@ -4005,7 +4002,7 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         "the join toward the foreign cluster ended as {joined:?}"
     );
     anyhow::ensure!(
-        cluster::cluster_state()?.borrow().cluster() == Some(this_cluster),
+        cluster::cluster_state()?.current().cluster() == Some(this_cluster),
         "the refused join changed the client's cluster"
     );
     Ok(())

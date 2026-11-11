@@ -1011,9 +1011,12 @@ that never comes back.
 
 ## Cluster state
 
-`cluster::cluster_state` subscribes to this node's view of the cluster: a `tokio::sync::watch`
-receiver holding a versioned `ClusterState`. Its value is the member list plus the Up members this
-node derives as unreachable, both of the same version. A value also names this node, address and
+`cluster::cluster_state` subscribes to this node's view of the cluster. It returns a
+`ClusterStateSubscription` whose `current` answers the versioned `ClusterState` as of now, whose
+`changed` resolves once a newer version has been published and whose `wait_for` resolves with the
+first state it reads which satisfies a predicate. Underneath is a `tokio::sync::watch` channel which
+holds the current value in an `Arc`. A value is the member list plus the Up members this node
+derives as unreachable, both of the same version. A value also names this node, address and
 incarnation, so a consumer tells its own entry from a predecessor's at the same address.
 `Member::incarnation` exposes the same identity per member, opaque and ordered. A value also names
 its cluster as a `ClusterId` once this node has committed one, `None` before. A `ClusterId` is
@@ -1060,23 +1063,24 @@ merge changes nothing publishes nothing, so versions count observable changes ex
 The guarantee: every value a subscriber observes was this node's cluster state after some change,
 derived under the same guard as the change. Versions increase strictly, one per observable change. A
 value's members are what `cluster::members` answered at that version, since `members` reads the
-current published value. Its unreachable set is derived from that member list. Separate calls or
-borrows may straddle an update. The watch receiver holds the current value only: a subscriber which
-reads less often than the state changes skips intermediate values, which a renderer deriving from
-the current value never notices. A consumer which needs every version takes `cluster::changes`
-instead: one whole value per version and one settled verdict per change of it, in publication order.
-They come from a single bounded channel of `change_capacity` entries (see
-[Configuration](#configuration)). Where the consumer fell behind it gets an explicit gap naming how
-many changes the channel overwrote. The current value and verdict follow and supersede whatever the
-channel still held. A lag is hence always announced and ends on the current value, and the order of
-publication is kept throughout. The channel buffers for a subscriber that exists; a new one starts
-from the current value and verdict. Both are fed by the same update: the watch first, then the
-channel under the receptionist's lock. That lock keeps its own copy of the published state and never
-touches the watch. So the stream never shows a version the watch has not, nor a verdict before the
-state it judges. And a consumer may hold a borrowed state while asking the receptionist without
-deadlocking an update. The value deliberately omits the instant since which a member has been
-unreachable: that feeds the downing provider's deadline, and a consumer deriving from the Up set has
-no use for it.
+current published value. Its unreachable set is derived from that member list. Separate calls may
+straddle an update. The subscription holds the current value only: a subscriber which reads less
+often than the state changes skips intermediate values, which a renderer deriving from the current
+value never notices. A consumer which needs every version takes `cluster::changes` instead: one
+whole value per version and one settled verdict per change of it, in publication order. They come
+from a single bounded channel of `change_capacity` entries (see [Configuration](#configuration)).
+Where the consumer fell behind it gets an explicit gap naming how many changes the channel
+overwrote. The current value and verdict follow and supersede whatever the channel still held. A lag
+is hence always announced and ends on the current value, and the order of publication is kept
+throughout. The channel buffers for a subscriber that exists; a new one starts from the current
+value and verdict. Both are fed by the same update: the watch first, then the channel under the
+receptionist's lock. That lock keeps its own copy of the published state and never touches the
+watch. So the stream never shows a version the watch has not, nor a verdict before the state it
+judges. A consumer holds no lock of the endpoint: the subscription hands every state out as an
+`Arc`. So a consumer may keep a state for as long as it likes, ask the receptionist with it in hand
+and call `cluster::down` or `cluster::form`, which publish on the caller's thread. The value
+deliberately omits the instant since which a member has been unreachable: that feeds the downing
+provider's deadline, and a consumer deriving from the Up set has no use for it.
 
 ## Trust
 

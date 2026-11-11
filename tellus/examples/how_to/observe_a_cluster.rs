@@ -10,6 +10,7 @@ use std::{
     convert::Infallible,
     env, io,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
+    sync::Arc,
     time::Duration,
 };
 use tellus::{
@@ -54,10 +55,11 @@ async fn first_node() -> anyhow::Result<()> {
     let addrs = reserved_addrs(2)?;
     start_endpoint(addrs[0])?;
     let mut changes = cluster::changes().context("subscribing to the changes")?;
-    let mut previous = cluster::cluster_state()
-        .context("reading the cluster state")?
-        .borrow()
-        .clone();
+    let mut previous = Arc::unwrap_or_clone(
+        cluster::cluster_state()
+            .context("reading the cluster state")?
+            .current(),
+    );
     cluster::form().context("forming the cluster")?;
     let mut second_node = spawn_second_node(addrs[1], addrs[0])?;
 
