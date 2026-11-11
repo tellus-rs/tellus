@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794411106832,
+  "lastUpdate": 1794411108962,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18517,6 +18517,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 123702,
             "range": "± 3804",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "69217fceec22dfcb05c65f2fe9db7a46d2aa25de",
+          "message": "Merge pull request #302 from tellus-rs/fix/rustsec-2026-0486-rustix\n\nfix(deps): bump rustix to 1.1.6 for RUSTSEC-2026-0486",
+          "timestamp": "2026-11-11T16:23:21+01:00",
+          "tree_id": "9c62ee8d2f0b113cf77f8d1f32d616ed4c34b8c7",
+          "url": "https://github.com/tellus-rs/tellus/commit/69217fceec22dfcb05c65f2fe9db7a46d2aa25de"
+        },
+        "date": 1794411108341,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2413411,
+            "range": "± 58821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2473155,
+            "range": "± 136241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 891835,
+            "range": "± 12252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 112129,
+            "range": "± 3681",
             "unit": "ns/iter"
           }
         ]
