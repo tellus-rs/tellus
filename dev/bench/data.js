@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794411111072,
+  "lastUpdate": 1794411619036,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -11939,6 +11939,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22417510,
             "range": "± 737668",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2afe298fba520e2dd6723f02c48f892ed20f1756",
+          "message": "Merge pull request #301 from tellus-rs/ci/ignore-rustsec-2026-0440\n\nci: ignore RUSTSEC-2026-0440, astral-tokio-tar is test-only",
+          "timestamp": "2026-11-11T16:23:27+01:00",
+          "tree_id": "83942bd0b7560cbf549a42d00347fa3d84b420e0",
+          "url": "https://github.com/tellus-rs/tellus/commit/2afe298fba520e2dd6723f02c48f892ed20f1756"
+        },
+        "date": 1794411618250,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14410210,
+            "range": "± 871231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15180722,
+            "range": "± 1063177",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1166383,
+            "range": "± 69630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 811377,
+            "range": "± 32265",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 6025192,
+            "range": "± 145488",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4412476,
+            "range": "± 606968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19386568,
+            "range": "± 822097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20325582,
+            "range": "± 674731",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 20189689,
+            "range": "± 525073",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20583604,
+            "range": "± 780889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 19442704,
+            "range": "± 531995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 20998176,
+            "range": "± 665354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 26994579,
+            "range": "± 909174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20144183,
+            "range": "± 308822",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21677146,
+            "range": "± 645098",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27164103,
+            "range": "± 1169845",
             "unit": "ns/iter"
           }
         ]
