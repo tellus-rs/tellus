@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794382056213,
+  "lastUpdate": 1794382057722,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -19155,6 +19155,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3641064,
             "range": "± 250550",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "65200f47c8ad0c545fc1d298284a0859eb5ded9a",
+          "message": "Merge pull request #288 from tellus-rs/test/store-contract-checks\n\nfeat: check more fencing, isolation and extremes in the store contract",
+          "timestamp": "2026-11-11T08:20:04+01:00",
+          "tree_id": "83e852288be1d6304466628f1f9937c41ba2bec4",
+          "url": "https://github.com/tellus-rs/tellus/commit/65200f47c8ad0c545fc1d298284a0859eb5ded9a"
+        },
+        "date": 1794382057403,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31987113,
+            "range": "± 1967873",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31171551,
+            "range": "± 876222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4336919,
+            "range": "± 332696",
             "unit": "ns/iter"
           }
         ]
