@@ -4,7 +4,10 @@
 
 use composed::{Compose, compose};
 use serde::{Deserialize, Serialize};
-use sqlx::PgPool;
+use sqlx::{
+    PgPool, SqlSafeStr,
+    migrate::{MigrateError, Migration, MigrationType, Migrator},
+};
 use std::{
     convert::Infallible,
     sync::LazyLock,
@@ -22,6 +25,7 @@ use testcontainers_modules::{
 use tokio::time::timeout;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+const APPLICATION_VERSION: i64 = 20_260_101_000_000;
 
 /// Image tag and credentials come from the repository's compose.yaml, so the tests always
 /// run against the version and settings developers run locally, never against the testcontainers
@@ -55,6 +59,128 @@ async fn migrations_are_idempotent() {
         .migrate()
         .await
         .expect("repeated migration must succeed");
+}
+
+/// The store's migrations and an application's own sqlx migrations share a database, whichever
+/// runs first.
+#[tokio::test]
+async fn migrations_coexist_with_an_applications_own() {
+    let migrator = application_migrator();
+
+    let (pool, _container) = database().await;
+    PostgresStore::new(pool.clone())
+        .migrate()
+        .await
+        .expect("the store's migrations run");
+    migrator
+        .run(&pool)
+        .await
+        .expect("the application's migrations run after the store's");
+
+    let (pool, _container) = database().await;
+    migrator
+        .run(&pool)
+        .await
+        .expect("the application's migrations run");
+    PostgresStore::new(pool)
+        .migrate()
+        .await
+        .expect("the store's migrations run after the application's");
+}
+
+/// A database which an earlier release has migrated, recording that in sqlx's shared table:
+/// `migrate` succeeds, records in the store's own table, keeps the events and leaves the old row
+/// alone. That row still stops an application's own migrations, unless they ignore missing
+/// versions. The statement of the README removes that row and no other, and then they run.
+#[tokio::test]
+async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
+    let (pool, _container) = database().await;
+    sqlx::migrate!()
+        .run_to(1, &pool)
+        .await
+        .expect("the first migration runs as an earlier release ran it");
+    sqlx::query("INSERT INTO events VALUES ('counter', 'kept', 0, 'increased', 1, ''::bytea)")
+        .execute(&pool)
+        .await
+        .expect("an event is stored");
+
+    let store = PostgresStore::new(pool.clone());
+    store
+        .migrate()
+        .await
+        .expect("the store's migrations run on the migrated database");
+    let recorded_versions =
+        sqlx::query_scalar::<_, i64>("SELECT version FROM _tellus_persistence_migrations")
+            .fetch_all(&pool)
+            .await
+            .expect("the store's own table is read");
+    assert_eq!(recorded_versions, [1]);
+    let event_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
+        .fetch_one(&pool)
+        .await
+        .expect("the events are counted");
+    assert_eq!(event_count, 1);
+
+    let migrator = application_migrator();
+    // sqlx keeps its advisory lock on a connection whose migrator has failed!
+    let mut connection = pool.acquire().await.expect("a connection is acquired");
+    let migrated = migrator.run(&mut *connection).await;
+    connection
+        .close()
+        .await
+        .expect("the connection which holds the lock closes");
+    assert!(
+        matches!(migrated, Err(MigrateError::VersionMissing(1))),
+        "the old row did not stop the application's migrations: {migrated:?}"
+    );
+    let mut tolerant_migrator = application_migrator();
+    tolerant_migrator.set_ignore_missing(true);
+    tolerant_migrator
+        .run(&pool)
+        .await
+        .expect("migrations which ignore missing versions run beside the old row");
+
+    let (_, statement) = include_str!("../README.md")
+        .split_once("```sql\n")
+        .expect("the README opens a statement");
+    let (statement, _) = statement
+        .split_once("```")
+        .expect("the README closes the statement");
+    let checksum = sqlx::migrate!()
+        .iter()
+        .next()
+        .expect("the first migration is embedded")
+        .checksum
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    assert!(
+        statement.contains(&checksum),
+        "the statement of the README does not name the checksum of the first migration, which \
+         must never change"
+    );
+    let removed = sqlx::query(statement)
+        .execute(&pool)
+        .await
+        .expect("the statement of the README runs");
+    assert_eq!(removed.rows_affected(), 1);
+    let remaining_versions = sqlx::query_scalar::<_, i64>("SELECT version FROM _sqlx_migrations")
+        .fetch_all(&pool)
+        .await
+        .expect("the shared table is read");
+    assert_eq!(
+        remaining_versions,
+        [APPLICATION_VERSION],
+        "the statement of the README removed another row"
+    );
+    migrator
+        .run(&pool)
+        .await
+        .expect("the application's migrations run once the old row is gone");
+    store
+        .migrate()
+        .await
+        .expect("the store's migrations still run");
 }
 
 /// End to end through tellus: a counter increments against PostgreSQL, terminates, and a second
@@ -160,7 +286,26 @@ impl Versioned for Increased {
     const VERSION: SchemaVersion = SchemaVersion::new(1);
 }
 
+fn application_migrator() -> Migrator {
+    Migrator::with_migrations(vec![Migration::new(
+        APPLICATION_VERSION,
+        "read model".into(),
+        MigrationType::Simple,
+        "CREATE TABLE read_model (id BIGINT PRIMARY KEY)".into_sql_str(),
+        false,
+    )])
+}
+
 async fn store() -> (PostgresStore, ContainerAsync<Postgres>) {
+    let (pool, container) = database().await;
+
+    let store = PostgresStore::new(pool);
+    store.migrate().await.expect("the migrations run");
+
+    (store, container)
+}
+
+async fn database() -> (PgPool, ContainerAsync<Postgres>) {
     let postgres = COMPOSE.service("postgres");
 
     let (user, password, dbname) = (
@@ -186,10 +331,7 @@ async fn store() -> (PostgresStore, ContainerAsync<Postgres>) {
     let url = format!("postgres://{user}:{password}@{host}:{port}/{dbname}");
     let pool = PgPool::connect(&url).await.expect("the pool connects");
 
-    let store = PostgresStore::new(pool);
-    store.migrate().await.expect("the migrations run");
-
-    (store, container)
+    (pool, container)
 }
 
 fn unique_entity_id() -> String {
