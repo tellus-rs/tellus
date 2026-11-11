@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794411619036,
+  "lastUpdate": 1794411623286,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -18685,6 +18685,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 112129,
             "range": "± 3681",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2afe298fba520e2dd6723f02c48f892ed20f1756",
+          "message": "Merge pull request #301 from tellus-rs/ci/ignore-rustsec-2026-0440\n\nci: ignore RUSTSEC-2026-0440, astral-tokio-tar is test-only",
+          "timestamp": "2026-11-11T16:23:27+01:00",
+          "tree_id": "83942bd0b7560cbf549a42d00347fa3d84b420e0",
+          "url": "https://github.com/tellus-rs/tellus/commit/2afe298fba520e2dd6723f02c48f892ed20f1756"
+        },
+        "date": 1794411622870,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3123125,
+            "range": "± 147585",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3143443,
+            "range": "± 166153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1128090,
+            "range": "± 17321",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 148977,
+            "range": "± 5045",
             "unit": "ns/iter"
           }
         ]
