@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794509361790,
+  "lastUpdate": 1794509363716,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20415,6 +20415,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4414846,
             "range": "± 304623",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "47c1fab54f733e7e4b1c53b2f2528dedc04fd920",
+          "message": "Merge pull request #307 from tellus-rs/fix/inspect-shutdown-signal\n\nfix(inspect)!: end event streams and the recorder on a shutdown future",
+          "timestamp": "2026-11-12T19:40:50+01:00",
+          "tree_id": "2beeb53fe9e92992e7d22a62b9c39d4abed2c538",
+          "url": "https://github.com/tellus-rs/tellus/commit/47c1fab54f733e7e4b1c53b2f2528dedc04fd920"
+        },
+        "date": 1794509363146,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31665247,
+            "range": "± 2983997",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31324068,
+            "range": "± 1382670",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4645423,
+            "range": "± 409671",
             "unit": "ns/iter"
           }
         ]
