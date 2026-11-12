@@ -36,6 +36,26 @@ let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
 The re-export also gives access to `sqlx::postgres::PgPoolOptions`, which configures the pool,
 for example its size.
 
+`migrate` records what it has applied in a table of its own, `_tellus_persistence_migrations`, so
+the store's schema and an application's own sqlx migrations can share a database. Release 0.2.14 and
+earlier recorded it in sqlx's shared table `_sqlx_migrations`. In a database which such a release
+has migrated, `migrate` applies the schema once more, which changes nothing, and leaves the old row
+alone. An application which adds its own sqlx migrator to such a database removes that row first.
+Otherwise its migrator fails with `VersionMissing(1)`, unless it sets `ignore_missing`. If one of
+its own migrations has version 1, it fails with `VersionMismatch(1)` either way. This statement
+removes the row:
+
+```sql
+DELETE FROM _sqlx_migrations
+WHERE version = 1
+  AND checksum = '\xf10c204f698541a4885fb4a78dbbc33ff5dc728a9f7d324c2f2ee2d0d63f6863fa349fd623b0dda74481e618e15a466a';
+```
+
+The checksum is that of this crate's first migration, so the statement removes no other row.
+Remove the row only once no process of release 0.2.14 or earlier calls `migrate` in that database.
+Such a release records the row again. Once the application's migrator has recorded a migration,
+`migrate` of such a release fails instead.
+
 ## Schema
 
 Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,

@@ -3,11 +3,12 @@
 //! a whole [Persistence](tellus::Persistence).
 //!
 //! Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,
-//! snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained.
-//! The schema is embedded and applied via [PostgresStore::migrate]. Appends are a single atomic,
-//! conditional statement: an expected next sequence number not matching the actual one, below or
-//! above, fails with [AppendError::Conflict] and leaves the stream untouched, which is tellus's
-//! fencing guarantee. An empty append inserts nothing but is still fenced.
+//! snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained. The
+//! schema is embedded and applied via [PostgresStore::migrate], which records it in a table of its
+//! own, `_tellus_persistence_migrations`. Appends are a single atomic, conditional statement: an
+//! expected next sequence number not matching the actual one, below or above, fails with
+//! [AppendError::Conflict] and leaves the stream untouched, which is tellus's fencing guarantee. An
+//! empty append inserts nothing but is still fenced.
 //!
 //! [PostgresStore::new] takes a [PgPool] of the [sqlx] version this crate depends on. The crate
 //! re-exports sqlx, so an application builds the pool through it and needs no sqlx dependency of
@@ -36,15 +37,13 @@
 
 pub use sqlx;
 
-use sqlx::{PgPool, Row, migrate::Migrator, postgres::PgRow};
+use sqlx::{PgPool, Row, postgres::PgRow};
 use std::num::NonZeroUsize;
 use tellus::{
     AppendError, EncodedEvent, EncodedSnapshot, EventStore, PersistenceId, SchemaVersion, SeqNo,
     SnapshotStore, StoredEvent, StoredSnapshot,
 };
 use thiserror::Error;
-
-static MIGRATOR: Migrator = sqlx::migrate!();
 
 /// A persistence store backed by PostgreSQL, implementing both [EventStore] and [SnapshotStore]
 /// over a shared connection pool; cheap to clone.
@@ -60,14 +59,21 @@ impl PostgresStore {
         Self { pool }
     }
 
-    /// Apply the embedded schema migrations, idempotently.
+    /// Apply the embedded schema migrations, idempotently. They are recorded in the table
+    /// `_tellus_persistence_migrations` rather than in sqlx's shared `_sqlx_migrations`, so an
+    /// application's own sqlx migrations can run in the same database. Release 0.2.14 and earlier
+    /// recorded them in the shared table, in a row which `migrate` leaves alone; see the README
+    /// for removing it.
     ///
     /// # Errors
     /// Fails if the database cannot be reached, if a migration cannot be applied, or if the
-    /// migrations recorded in the database do not match the embedded ones (one was changed, is
+    /// migrations recorded in its own table do not match the embedded ones (one was changed, is
     /// missing or was left partially applied).
     pub async fn migrate(&self) -> Result<(), Error> {
-        MIGRATOR.run(&self.pool).await?;
+        let mut migrator = sqlx::migrate!();
+        // The default table is shared with every other sqlx migrator of the database!
+        migrator.dangerous_set_table_name("_tellus_persistence_migrations");
+        migrator.run(&self.pool).await?;
         Ok(())
     }
 }
