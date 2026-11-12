@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794509857551,
+  "lastUpdate": 1794522149236,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12659,6 +12659,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20661199,
             "range": "± 1079914",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "71111da072c76bc0d695481bf781e6531a600fc9",
+          "message": "Merge pull request #314 from tellus-rs/build/rust\n\nbuild(deps): bump Rust to 1.100.0",
+          "timestamp": "2026-11-12T23:13:16+01:00",
+          "tree_id": "e57821096b77e8cd1d0ad1fdd65d020477d7d1de",
+          "url": "https://github.com/tellus-rs/tellus/commit/71111da072c76bc0d695481bf781e6531a600fc9"
+        },
+        "date": 1794522148319,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14452456,
+            "range": "± 1272307",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 14390185,
+            "range": "± 1218835",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 950375,
+            "range": "± 12586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 774597,
+            "range": "± 6459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5847187,
+            "range": "± 92649",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4257841,
+            "range": "± 401153",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19872120,
+            "range": "± 621202",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20214100,
+            "range": "± 595882",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19503426,
+            "range": "± 554767",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20216924,
+            "range": "± 617295",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20917934,
+            "range": "± 551088",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 22591569,
+            "range": "± 713393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 28520399,
+            "range": "± 647239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20640891,
+            "range": "± 674477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 22187534,
+            "range": "± 848210",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 28235202,
+            "range": "± 909778",
             "unit": "ns/iter"
           }
         ]
