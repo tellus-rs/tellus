@@ -204,6 +204,29 @@ rejected on read, and the store is never rewritten. A stored manifest other than
 fails recovery; a snapshot that can no longer be decoded is discarded and recovery falls back to
 full replay, so snapshots never need migration code.
 
+Both provided codecs write two kinds of value which they do not read back:
+
+- **Nesting:** an event or snapshot can nest at most 127 levels with `Json` and 255 with `Cbor`. A
+  deeper event is stored, but every recovery fails on it, and a deeper snapshot is discarded at
+  every recovery. Input taken from outside, such as a JSON document a client sent, should therefore
+  have its depth limited before it goes into an event.
+- **`Some(None)`:** neither codec preserves it. `Some(None)`, `Some(())` and `Some(Value::Null)` are
+  written as null and read back as `None`, so a recovered state differs from the live one without
+  any error. A value with three states should be an enum, like
+  `enum Patch<T> { Keep, Clear, Set(T) }`. For a struct field, `serde_with`'s `double_option` works
+  too, since both codecs write a struct as a map and a missing field is a state of its own:
+
+  ```rust
+  #[serde(
+      default,
+      skip_serializing_if = "Option::is_none",
+      with = "::serde_with::rust::double_option"
+  )]
+  nickname: Option<Option<String>>,
+  ```
+
+  It works only for struct fields, though, and all three attributes are needed.
+
 `EncodedEvent::manifest` and `EncodedSnapshot::manifest` are `Cow<'static, str>`: framework-created
 values borrow `Versioned::MANIFEST` without allocating per event, while stores use the owned form
 for manifests read from durable storage. Custom stores should bind or compare `manifest.as_ref()`

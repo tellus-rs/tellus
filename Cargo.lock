@@ -4552,6 +4552,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "serde_with",
  "tempfile",
  "thiserror 2.0.21",
  "tokio",
