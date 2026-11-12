@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.1.4...tellus-cluster-inspect-v0.2.0) - 2026-11-12
+
+### Fixed
+
+- *(inspect)* [**breaking**] end event streams and the recorder on a shutdown future
+- *(cluster)* [**breaking**] return a ClusterStateSubscription from cluster_state
+
 ## [0.1.4](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.1.3...tellus-cluster-inspect-v0.1.4) - 2026-11-01
 
 ### Other
