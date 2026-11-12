@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794500593205,
+  "lastUpdate": 1794500595756,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -19995,6 +19995,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3722255,
             "range": "± 268127",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ebdaa62a7515e438ac5503d108f25ee59b23ead3",
+          "message": "Merge pull request #303 from tellus-rs/fix/codecs-read-back-what-they-wrote\n\nfix: decode long CBOR text and exact JSON floats, refuse non-finite ones",
+          "timestamp": "2026-11-12T17:14:29+01:00",
+          "tree_id": "b29e8e82c7d384d7438bff34380848f47da8babf",
+          "url": "https://github.com/tellus-rs/tellus/commit/ebdaa62a7515e438ac5503d108f25ee59b23ead3"
+        },
+        "date": 1794500594808,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30905063,
+            "range": "± 1557459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30880630,
+            "range": "± 1604475",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4309974,
+            "range": "± 426838",
             "unit": "ns/iter"
           }
         ]
