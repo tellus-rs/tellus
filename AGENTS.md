@@ -298,7 +298,10 @@ Item order within a file:
   from a bounded `EventLog` (`src/events.rs`). A client that cannot resume gets the retained
   history and then the current state and verdict, captured under the recorder's one lock
   (`src/recorder.rs`) so the pair and the log agree; only the pair's last item carries an id, so a
-  client dropping mid-recovery recovers again. Part of `just all` like the bootstrap crates.
+  client dropping mid-recovery recovers again. `router` takes a shutdown future. Once it resolves,
+  every `/events` stream ends and the recorder task stops. A server which shuts down gracefully on
+  the same signal then does not wait for the clients following the stream. Part of `just all` like
+  the bootstrap crates.
 - `tellus-persistence-postgres/`: the PostgreSQL stores (`PostgresStore` implements `EventStore`
   and `SnapshotStore`). Tests need Docker (testcontainers) and run as part of `just all`; their
   image tag and credentials come from the root `compose.yaml` via `composed`, so there is

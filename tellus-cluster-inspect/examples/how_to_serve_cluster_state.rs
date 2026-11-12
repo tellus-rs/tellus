@@ -7,7 +7,10 @@
 
 use anyhow::Context;
 use axum::Router;
-use std::net::{Ipv4Addr, SocketAddr};
+use std::{
+    future,
+    net::{Ipv4Addr, SocketAddr},
+};
 use tellus::cluster::{self, EndpointConfig, transport::QuicTransport};
 use tellus_cluster_inspect::InspectConfig;
 use tokio::{net::TcpListener, signal};
@@ -23,8 +26,8 @@ async fn main() -> anyhow::Result<()> {
     cluster::start_endpoint(EndpointConfig::new(addr), transport).context("remoting endpoint")?;
     cluster::form().context("forming the cluster")?;
 
-    let inspect =
-        tellus_cluster_inspect::router(InspectConfig::default()).context("inspect router")?;
+    let inspect = tellus_cluster_inspect::router(InspectConfig::default(), future::pending())
+        .context("inspect router")?;
     let app = Router::new().nest("/inspect", inspect);
     let listener = TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, HTTP_PORT)))
         .await

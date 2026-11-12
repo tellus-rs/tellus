@@ -17,7 +17,7 @@ use axum::{Json, Router, extract::State, http::HeaderMap, response::IntoResponse
 use reqwest::Client;
 use std::{
     collections::BTreeSet,
-    env,
+    env, future,
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
     path::{Path, PathBuf},
@@ -339,6 +339,7 @@ async fn events(State(state): State<Arc<VerifierState>>, headers: HeaderMap) -> 
         replay.into_items(state.started_at),
         anchor,
         hello,
+        future::pending(),
     )
 }
 

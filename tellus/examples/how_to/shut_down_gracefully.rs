@@ -57,10 +57,9 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("binding the HTTP port")?;
     let drain = Arc::new(Notify::new());
-    let drained = drain.clone();
     let server = tokio::spawn(
         axum::serve(listener, router(app.clone()))
-            .with_graceful_shutdown(async move { drained.notified().await })
+            .with_graceful_shutdown(drain.clone().notified_owned())
             .into_future(),
     );
     println!("Serving, press Ctrl-C to shut down");
@@ -82,13 +81,17 @@ async fn shut_down(
     println!("Unhealthy, still serving");
     sleep(UNHEALTHY_LINGER).await;
 
-    drain.notify_one();
-    timeout(DRAIN_TIMEOUT, server)
-        .await
-        .context("the requests in flight did not drain within the timeout")?
-        .context("the HTTP server panicked")?
-        .context("serving HTTP")?;
-    println!("Drained, leaving the cluster");
+    drain.notify_waiters();
+    match timeout(DRAIN_TIMEOUT, server).await {
+        Ok(served) => {
+            served
+                .context("the HTTP server panicked")?
+                .context("serving HTTP")?;
+            println!("Drained, leaving the cluster");
+        }
+
+        Err(_) => println!("Requests still in flight after the drain timeout, leaving the cluster"),
+    }
 
     system.stop();
     let departure = timeout(
