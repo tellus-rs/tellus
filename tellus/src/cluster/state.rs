@@ -4,7 +4,13 @@ use crate::cluster::{
     node::{ClusterId, Incarnation, NodeId},
     receptionist::{PublishedChange, Settlement, SnapshotSource},
 };
-use std::{collections::VecDeque, future::pending, net::SocketAddr};
+use std::{
+    collections::VecDeque,
+    fmt::{self, Debug, Formatter},
+    future::pending,
+    net::SocketAddr,
+    sync::Arc,
+};
 use thiserror::Error;
 use tokio::sync::{
     broadcast::{self, error::RecvError},
@@ -15,11 +21,12 @@ use tokio::sync::{
 /// members this node currently derives as unreachable and the broken links between reachable
 /// members, all of the same version. It also holds this node's own identity, the ID of its cluster
 /// and the other clusters seen at discovered addresses. Published on every change through
-/// [cluster_state]; consumers derive from the current value, never from a history, since a receiver
-/// which reads less often than the state changes skips intermediate values. With the `serde`
-/// feature it serializes as `{version, this: {addr, incarnation}, cluster, members, unreachable,
-/// broken_links: [{observer, subject}], foreign_clusters: [{addr, cluster}]}`, the cluster `null`
-/// while there is none; a deserialized value is a mirror which nothing in tellus consumes.
+/// [cluster_state]; consumers derive from the current value, never from a history, since a
+/// subscription which reads less often than the state changes skips intermediate values. With the
+/// `serde` feature it serializes as `{version, this: {addr, incarnation}, cluster, members,
+/// unreachable, broken_links: [{observer, subject}], foreign_clusters: [{addr, cluster}]}`, the
+/// cluster `null` while there is none; a deserialized value is a mirror which nothing in tellus
+/// consumes.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct ClusterState {
@@ -355,6 +362,66 @@ impl Changes {
     }
 }
 
+/// The subscription [cluster_state] returns: this node's current [ClusterState] and the moment a
+/// new version of it is published. Every state is handed out as an `Arc`, so a consumer holds no
+/// lock of the endpoint. It may keep a state for as long as it likes and call
+/// [down](crate::cluster::down) or [form](crate::cluster::form) with it in hand.
+pub struct ClusterStateSubscription {
+    state: watch::Receiver<Arc<ClusterState>>,
+}
+
+impl ClusterStateSubscription {
+    /// Resolves with the first state this subscription reads which satisfies the predicate, the
+    /// current one included, and marks it as seen. A state which was replaced before the
+    /// subscription read it is never tested. The predicate runs on a state handed out like any
+    /// other, so it may itself call into the cluster. Cancel safe: a dropped call has marked no
+    /// state as seen but those the predicate refused.
+    pub async fn wait_for<P>(&mut self, mut predicate: P) -> Arc<ClusterState>
+    where
+        P: FnMut(&ClusterState) -> bool,
+    {
+        loop {
+            let state = self.current();
+            if predicate(&state) {
+                return state;
+            }
+            drop(state);
+            self.changed().await;
+        }
+    }
+
+    /// The state as of now; marks it as seen, so
+    /// [changed](ClusterStateSubscription::changed) waits for the next change.
+    pub fn current(&mut self) -> Arc<ClusterState> {
+        self.state.borrow_and_update().clone()
+    }
+
+    /// Resolves once the state has a version which this subscription has not seen. A version
+    /// counts as seen once [current](ClusterStateSubscription::current) or
+    /// [wait_for](ClusterStateSubscription::wait_for) has read it or `changed` has resolved for
+    /// it, and a new subscription has seen the state as of its creation. Cancel safe: dropping
+    /// the future before it completes marks no version as seen.
+    pub async fn changed(&mut self) {
+        if self.state.changed().await.is_err() {
+            pending::<()>().await;
+        }
+    }
+
+    fn new(state: watch::Receiver<Arc<ClusterState>>) -> Self {
+        Self { state }
+    }
+}
+
+impl Debug for ClusterStateSubscription {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // A borrow of the watch must not outlive this statement: formatting runs foreign code!
+        let version = self.state.borrow().version();
+        f.debug_struct("ClusterStateSubscription")
+            .field("version", &version)
+            .finish()
+    }
+}
+
 /// The cluster state cannot be observed.
 #[derive(Debug, Error)]
 pub enum ClusterStateError {
@@ -364,14 +431,15 @@ pub enum ClusterStateError {
     EndpointNotStarted,
 }
 
-/// Subscribe to this node's view of the cluster. The receiver always holds the current
-/// [ClusterState]; `changed` resolves whenever a new version has been published.
+/// Subscribe to this node's view of the cluster. The subscription always answers the current
+/// [ClusterState], and its `changed` resolves whenever a new version has been published, see
+/// [ClusterStateSubscription].
 ///
 /// # Errors
 /// Fails if the endpoint is not started.
-pub fn cluster_state() -> Result<watch::Receiver<ClusterState>, ClusterStateError> {
+pub fn cluster_state() -> Result<ClusterStateSubscription, ClusterStateError> {
     endpoint::get()
-        .map(|endpoint| endpoint.state_rx())
+        .map(|endpoint| ClusterStateSubscription::new(endpoint.state_rx()))
         .ok_or(ClusterStateError::EndpointNotStarted)
 }
 
@@ -407,17 +475,26 @@ mod tests {
     };
     use crate::{
         cluster::{
+            endpoint::{EndpointConfig, EndpointInner},
             membership::{Member, MemberState},
             node::NodeId,
             receptionist::{PublishedChange, Settlement, SnapshotSource},
-            state::{Change, Changes, ClusterState, Transition},
+            state::{Change, Changes, ClusterState, ClusterStateSubscription, Transition},
         },
         sync::lock,
     };
     #[cfg(feature = "serde")]
     use serde_json::{Value, json};
-    use std::{collections::VecDeque, net::SocketAddr, sync::Mutex, time::Duration};
-    use tokio::{sync::broadcast, time::timeout};
+    use std::{
+        collections::VecDeque,
+        fmt,
+        net::SocketAddr,
+        pin::pin,
+        sync::{Arc, Mutex, mpsc},
+        thread,
+        time::Duration,
+    };
+    use tokio::{runtime::Builder, sync::broadcast, time::timeout};
 
     struct Scripted(Mutex<VecDeque<(ClusterState, Settlement, u64)>>);
 
@@ -472,6 +549,15 @@ mod tests {
                 .await
                 .is_err(),
             "nothing further is expected"
+        );
+    }
+
+    async fn nothing_changed(subscription: &mut ClusterStateSubscription) {
+        assert!(
+            timeout(Duration::from_millis(50), subscription.changed())
+                .await
+                .is_err(),
+            "no unseen version is expected"
         );
     }
 
@@ -827,5 +913,211 @@ mod tests {
             parsed.this_member(),
             Some(&Member::new(this, MemberState::Up))
         );
+    }
+
+    /// A state from a subscription holds no lock of the endpoint. A node death publishes on the
+    /// caller's thread, so it must return while that thread has a state in hand, and the state in
+    /// hand must stay the version it was.
+    #[test]
+    fn a_node_death_with_a_state_in_hand_returns() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        let (versions_tx, versions_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+            let state = subscription.current();
+            endpoint.node_death(peer);
+            let _ = versions_tx.send((state.version(), subscription.current().version()));
+        });
+
+        let versions = versions_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the node death returns with a state in hand");
+        assert_eq!(versions, (1, 2));
+    }
+
+    /// Two reads of one version hand out the same allocation: `current` clones the `Arc`, not the
+    /// members.
+    #[test]
+    fn current_hands_out_the_published_allocation() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+        let mut other_subscription = ClusterStateSubscription::new(endpoint.state_rx());
+
+        assert!(Arc::ptr_eq(
+            &subscription.current(),
+            &other_subscription.current()
+        ));
+    }
+
+    /// A new subscription has seen the state as of its creation. `changed` resolves for a version
+    /// not seen yet and marks it as seen, and `current` marks the state as seen.
+    #[tokio::test]
+    async fn changed_resolves_for_a_version_not_seen_yet() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+        nothing_changed(&mut subscription).await;
+
+        endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(2))));
+        timeout(Duration::from_secs(5), subscription.changed())
+            .await
+            .expect("a new version was published");
+        nothing_changed(&mut subscription).await;
+
+        endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(3))));
+        assert_eq!(subscription.current().version(), 2);
+        nothing_changed(&mut subscription).await;
+    }
+
+    /// `wait_for` answers the current state if it satisfies the predicate, and else waits past
+    /// every state which does not.
+    #[tokio::test]
+    async fn wait_for_answers_the_first_state_which_satisfies() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+        let current = timeout(
+            Duration::from_secs(5),
+            subscription.wait_for(|state| state.up().count() == 1),
+        )
+        .await
+        .expect("the current state satisfies the predicate");
+        assert_eq!(current.version(), 0);
+
+        let mut tested = Vec::new();
+        let all_up = {
+            let mut all_up = pin!(subscription.wait_for(|state| {
+                tested.push(state.version());
+                state.up().count() == 3
+            }));
+            assert!(
+                timeout(Duration::from_millis(50), &mut all_up)
+                    .await
+                    .is_err(),
+                "the current state does not satisfy the predicate"
+            );
+            endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(2))));
+            assert!(
+                timeout(Duration::from_millis(50), &mut all_up)
+                    .await
+                    .is_err(),
+                "the first update does not satisfy the predicate"
+            );
+            endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(3))));
+            timeout(Duration::from_secs(5), all_up)
+                .await
+                .expect("the second update satisfies the predicate")
+        };
+        assert_eq!(all_up.version(), 2);
+        assert_eq!(tested, [0, 1, 2]);
+    }
+
+    /// `wait_for` marks the state it answers as seen, including one it had not seen before the
+    /// call.
+    #[tokio::test]
+    async fn wait_for_marks_the_state_it_answers_as_seen() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+        endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(2))));
+
+        let state = timeout(Duration::from_secs(5), subscription.wait_for(|_| true))
+            .await
+            .expect("the current state satisfies the predicate");
+        assert_eq!(state.version(), 1);
+        nothing_changed(&mut subscription).await;
+    }
+
+    /// `wait_for` answers the very state its predicate accepted, even if a newer one is published
+    /// meanwhile, and that newer one stays unseen.
+    #[test]
+    fn wait_for_answers_the_state_its_predicate_accepted() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let (versions_tx, versions_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let runtime = Builder::new_current_thread()
+                .build()
+                .expect("the runtime is built");
+            let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+            let accepted = runtime.block_on(subscription.wait_for(|_| {
+                endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(2))));
+                true
+            }));
+            runtime.block_on(subscription.changed());
+            let _ = versions_tx.send((accepted.version(), subscription.current().version()));
+        });
+
+        let versions = versions_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the update returns inside the predicate and its state stays unseen");
+        assert_eq!(versions, (0, 1));
+    }
+
+    /// The predicate of `wait_for` runs without a lock of the endpoint, so a node death inside it
+    /// returns.
+    #[test]
+    fn a_predicate_may_call_into_the_cluster() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        let (version_tx, version_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let runtime = Builder::new_current_thread()
+                .build()
+                .expect("the runtime is built");
+            let mut subscription = ClusterStateSubscription::new(endpoint.state_rx());
+            let alone = runtime.block_on(subscription.wait_for(|state| {
+                if state.up().count() == 1 {
+                    return true;
+                }
+                endpoint.node_death(peer);
+                false
+            }));
+            let _ = version_tx.send(alone.version());
+        });
+
+        let version = version_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("the node death returns inside the predicate");
+        assert_eq!(version, 2);
+    }
+
+    /// The borrow of the watch ends before the writer runs: formatting a subscription into a
+    /// writer which itself updates the cluster state returns.
+    #[test]
+    fn formatting_a_subscription_keeps_no_borrow() {
+        struct Updating(&'static EndpointInner);
+
+        impl fmt::Write for Updating {
+            fn write_str(&mut self, _: &str) -> fmt::Result {
+                let peer = NodeId::new(addr(2));
+                self.0.update(|membership, _| membership.add_up(peer));
+                Ok(())
+            }
+        }
+
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let (formatted_tx, formatted_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let subscription = ClusterStateSubscription::new(endpoint.state_rx());
+            let formatted = fmt::write(&mut Updating(endpoint), format_args!("{subscription:?}"));
+            let _ = formatted_tx.send(formatted);
+        });
+
+        let formatted = formatted_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("formatting returns while the writer updates the state");
+        assert_eq!(formatted, Ok(()));
     }
 }

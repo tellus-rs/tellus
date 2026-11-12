@@ -21,6 +21,7 @@ use crate::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, HashMap, HashSet, btree_map},
+    fmt::{self, Debug, Formatter},
     future::pending,
     marker::PhantomData,
     net::SocketAddr,
@@ -169,10 +170,12 @@ impl<M> Subscription<M> {
     }
 }
 
-impl<M> std::fmt::Debug for Subscription<M> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<M> Debug for Subscription<M> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        // A borrow of the watch must not outlive this statement: formatting runs foreign code!
+        let entries = self.listing.borrow().entries.len();
         f.debug_struct("Subscription")
-            .field("entries", &self.listing.borrow().entries.len())
+            .field("entries", &entries)
             .finish()
     }
 }
@@ -868,7 +871,9 @@ mod tests {
     };
     use serde::{Deserialize, Serialize};
     use std::{
+        fmt,
         net::SocketAddr,
+        sync::mpsc,
         thread,
         time::{Duration, Instant},
     };
@@ -1123,6 +1128,47 @@ mod tests {
         expect_state(&mut published, 2);
         expect_settled(&mut published, Settlement::new(2, true), 4);
         assert!(published.try_recv().is_err());
+    }
+
+    /// The borrow of the listing ends before the writer runs: formatting a subscription into a
+    /// writer which itself applies registrations of the subscribed name returns.
+    #[test]
+    fn formatting_a_subscription_keeps_no_borrow() {
+        struct Applying {
+            endpoint: &'static EndpointInner,
+            origin: NodeId,
+            version: u64,
+        }
+
+        impl fmt::Write for Applying {
+            fn write_str(&mut self, _: &str) -> fmt::Result {
+                self.version += 1;
+                let groups = vec![group::<u64>("pool", ActorId::new())];
+                assert!(apply(self.endpoint, self.origin, self.version, groups));
+                Ok(())
+            }
+        }
+
+        let endpoint = endpoint();
+        let origin = NodeId::new(addr(2));
+        up(endpoint, origin);
+        let (formatted_tx, formatted_rx) = mpsc::channel();
+
+        thread::spawn(move || {
+            let subscription = subscribe_at(endpoint, &Key::<u64>::new("pool"));
+            let mut writer = Applying {
+                endpoint,
+                origin,
+                version: 0,
+            };
+            let formatted = fmt::write(&mut writer, format_args!("{subscription:?}"));
+            let _ = formatted_tx.send(formatted);
+        });
+
+        let formatted = formatted_rx
+            .recv_timeout(Duration::from_secs(5))
+            .expect("formatting returns while the writer applies registrations");
+        assert_eq!(formatted, Ok(()));
     }
 
     /// A key nobody subscribes to anymore is dropped on the next change of its name.

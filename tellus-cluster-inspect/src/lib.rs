@@ -142,10 +142,11 @@ impl Sources for Endpoint {
     /// newer, than the state it is shown with.
     fn snapshot(&self) -> Snapshot {
         let settlement = cluster::receptionist::settlement().expect("remoting endpoint started");
-        let state = cluster::cluster_state()
-            .expect("remoting endpoint started")
-            .borrow()
-            .clone();
+        let state = Arc::unwrap_or_clone(
+            cluster::cluster_state()
+                .expect("remoting endpoint started")
+                .current(),
+        );
         Snapshot {
             state,
             lifecycle: cluster::lifecycle().expect("remoting endpoint started"),

@@ -172,8 +172,7 @@ async fn await_all_up() -> anyhow::Result<()> {
         state.wait_for(|state| state.up().count() == NODES),
     )
     .await
-    .context("not all nodes up within the timeout")?
-    .context("the cluster state stopped")?;
+    .context("not all nodes up within the timeout")?;
     Ok(())
 }
 // ANCHOR_END: await-all-up

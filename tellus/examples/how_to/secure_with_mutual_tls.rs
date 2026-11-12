@@ -82,8 +82,7 @@ async fn first_node() -> anyhow::Result<()> {
         state.wait_for(|state| state.up().count() == NODES),
     )
     .await
-    .context("the second node did not come up within the timeout")?
-    .context("the cluster state stopped")?;
+    .context("the second node did not come up within the timeout")?;
     println!("Members up over mutual TLS: {}", state.up().count());
     Ok(())
 }

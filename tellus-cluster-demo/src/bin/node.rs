@@ -95,15 +95,9 @@ async fn main() -> anyhow::Result<()> {
     let addr = endpoint.advertised_addr;
     start_endpoint(endpoint)?;
 
-    let state_rx = cluster::cluster_state().context("subscribing to the cluster state")?;
     let inspect =
         tellus_cluster_inspect::router(InspectConfig::default()).context("inspect router")?;
-    let state = Arc::new(NodeState::new(
-        node_name,
-        addr,
-        app_version.clone(),
-        state_rx,
-    ));
+    let state = Arc::new(NodeState::new(node_name, addr, app_version.clone()));
     tokio::spawn(log_changes());
     info!(name = %state.name, %addr, %app_version, "endpoint started, bootstrapping");
 
@@ -159,18 +153,12 @@ struct NodeState {
     app_version: AppVersion,
     started_at: u64,
     phase: watch::Sender<Phase>,
-    state_rx: watch::Receiver<ClusterState>,
     heard: Heard,
     events: Arc<EventLog<NodeEvent>>,
 }
 
 impl NodeState {
-    fn new(
-        name: String,
-        addr: SocketAddr,
-        app_version: AppVersion,
-        state_rx: watch::Receiver<ClusterState>,
-    ) -> Self {
+    fn new(name: String, addr: SocketAddr, app_version: AppVersion) -> Self {
         let started_at = now_millis();
         Self {
             name,
@@ -178,14 +166,9 @@ impl NodeState {
             app_version,
             started_at,
             phase: watch::Sender::new(Phase::Bootstrapping),
-            state_rx,
             heard: Heard::default(),
             events: Arc::new(EventLog::new(started_at, EVENTS_KEPT)),
         }
-    }
-
-    fn cluster_state(&self) -> ClusterState {
-        self.state_rx.borrow().clone()
     }
 
     fn phase(&self) -> Phase {
@@ -667,11 +650,14 @@ where
 
     // The verdict first, then the state, so the verdict is never newer than the state.
     let settlement = receptionist::settlement().expect("remoting endpoint started");
+    let cluster_state = cluster::cluster_state()
+        .expect("remoting endpoint started")
+        .current();
     Json(ClusterView {
         name: state.name.clone(),
         phase: state.phase(),
         app_version: state.app_version.to_string(),
-        state: state.cluster_state(),
+        state: Arc::unwrap_or_clone(cluster_state),
         settlement,
         workers,
         subscribers,
