@@ -201,9 +201,10 @@ against the capacity, so ordinary senders are refused until the mailbox has drai
 The output of a piped future is delivered the same way (see piping futures below). On the asker's
 node, the reply becomes a dead letter only if the asker has terminated. A reply from another node
 can also be lost on its way, e.g. to a full outbound queue on the responder's node; see
-[cluster.md](cluster.md). This side has no `NoReply`: a missing reply goes unnoticed. An actor which
-must detect one therefore declares `type Timers = Timed`, starts a timer per request and cancels it
-once the reply has arrived (see timers below).
+[cluster.md](cluster.md). A panic in the conversion does not reach the responder: it is logged at
+error level with the asker's ID, and no message is delivered. This side has no `NoReply`: a missing
+reply goes unnoticed. An actor which must detect one therefore declares `type Timers = Timed`,
+starts a timer per request and cancels it once the reply has arrived (see timers below).
 
 Supervision composes with the retained mailbox: a request queued behind a failing message survives
 a restart and is answered by the restarted state, while a request consumed by the failing
