@@ -15,7 +15,8 @@ where
     Self: Serialize + DeserializeOwned,
 {
     /// The stable name stored alongside every payload, independent of the Rust type: it must
-    /// never change once payloads are stored, in particular not with a type rename or move.
+    /// never change once payloads are stored, in particular not with a type rename or move. It must
+    /// not hold a NUL.
     const MANIFEST: &'static str;
 
     /// The current schema version, stored alongside every payload written by the current code.

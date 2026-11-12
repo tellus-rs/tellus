@@ -87,7 +87,10 @@ impl EventStore for PostgresStore {
         next_seq_no: SeqNo,
         events: Vec<EncodedEvent>,
     ) -> Result<(), AppendError<Self::Error>> {
-        let next_seq_no = into_bigint(next_seq_no)?;
+        // No stream of this schema reaches a position beyond BIGINT!
+        let Ok(next_seq_no) = into_bigint(next_seq_no) else {
+            return Err(AppendError::Conflict);
+        };
 
         // An empty append inserts no rows, so the row count cannot reveal a conflict.
         if events.is_empty() {
@@ -158,7 +161,10 @@ impl EventStore for PostgresStore {
         from_seq_no: SeqNo,
         limit: NonZeroUsize,
     ) -> Result<Vec<StoredEvent>, Self::Error> {
-        let from_seq_no = into_bigint(from_seq_no)?;
+        // No stream of this schema reaches a position beyond BIGINT!
+        let Ok(from_seq_no) = into_bigint(from_seq_no) else {
+            return Ok(Vec::new());
+        };
         let limit = i64::try_from(limit.get()).unwrap_or(i64::MAX);
 
         let query = "SELECT seq_no, manifest, schema_version, payload \

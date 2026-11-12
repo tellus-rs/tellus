@@ -24,11 +24,12 @@ bytes; implementations live in separate backend crates, except the in-memory one
 conforming store.
 
 A conforming store reads back every event and snapshot with manifest, schema version and payload
-exactly as written. The `persistence-tests` feature, which implies `persistence`, adds the contract
-test suite [`tellus::persistence_tests`](../tellus/src/persistence_tests.rs) which every store
-implementation must pass. `event_store_contract` and `snapshot_store_contract` run all checks of
-one store, and `snapshot_with_event_tail` checks the recovery read path across both. A backend crate
-runs the suite from its integration tests against a real server, under a Tokio runtime.
+exactly as written. A manifest holds no NUL, so a store may keep it as text. The `persistence-tests`
+feature, which implies `persistence`, adds the contract test suite
+[`tellus::persistence_tests`](../tellus/src/persistence_tests.rs) which every store implementation
+must pass. `event_store_contract` and `snapshot_store_contract` run all checks of one store, and
+`snapshot_with_event_tail` checks the recovery read path across both. A backend crate runs the suite
+from its integration tests against a real server, under a Tokio runtime.
 
 ## Defining an event-sourced actor
 
@@ -68,8 +69,8 @@ same stream. It is unrelated to `ActorId`, which is fresh per spawn and distingu
 over time many `ActorId`s serve one `PersistenceId`.
 
 `PersistenceId::new` fails unless both segments are non-empty, at most 255 bytes long and free of
-slashes. The text form joins them as `entity_type/entity_id`; `Display` writes it and `FromStr`
-parses it back.
+slashes and NULs. The text form joins them as `entity_type/entity_id`; `Display` writes it and
+`FromStr` parses it back.
 
 ## Recovery
 

@@ -10,12 +10,14 @@ use sqlx::{
 };
 use std::{
     convert::Infallible,
+    num::NonZeroUsize,
     sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tellus::{
-    ActorContext, ActorSystem, Effect, EventSourced, Incoming, Nothing, Persistence, PersistenceId,
-    ReplyTo, SchemaVersion, Unstashed, Untimed, Versioned,
+    ActorContext, ActorSystem, AppendError, Effect, EncodedEvent, EventSourced, EventStore,
+    Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, SeqNo, Unstashed,
+    Untimed, Versioned,
 };
 use tellus_persistence_postgres::PostgresStore;
 use testcontainers_modules::{
@@ -48,6 +50,35 @@ async fn snapshot_store_contract() {
 async fn snapshot_with_event_tail() {
     let (store, _container) = store().await;
     tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
+}
+
+/// A position which no stream can reach is a mismatch like any other: a conflict for an append,
+/// with or without events, and an empty page for a read.
+#[tokio::test]
+async fn a_position_beyond_bigint_is_a_conflict_and_an_empty_page() {
+    let (store, _container) = store().await;
+    let id = PersistenceId::new("edges", unique_entity_id()).expect("the segments are valid");
+    let event = EncodedEvent {
+        manifest: "edge".into(),
+        schema_version: SchemaVersion::new(1),
+        payload: vec![1],
+    };
+
+    for beyond in [i64::MAX as u64 + 1, u64::MAX].map(SeqNo::new) {
+        for events in [Vec::new(), vec![event.clone()]] {
+            let len = events.len();
+            let appended = store.append(&id, beyond, events).await;
+            assert!(
+                matches!(appended, Err(AppendError::Conflict)),
+                "an append of {len} events at {beyond} must fail with Conflict, got {appended:?}"
+            );
+        }
+        let read = store.read(&id, beyond, NonZeroUsize::MIN).await;
+        assert!(
+            matches!(read.as_deref(), Ok([])),
+            "a read from {beyond} must be an empty page, got {read:?}"
+        );
+    }
 }
 
 /// Applying the embedded migrations to an already migrated schema succeeds, so an application can
