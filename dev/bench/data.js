@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794522150965,
+  "lastUpdate": 1794522153363,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20835,6 +20835,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3093493,
             "range": "± 181874",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "71111da072c76bc0d695481bf781e6531a600fc9",
+          "message": "Merge pull request #314 from tellus-rs/build/rust\n\nbuild(deps): bump Rust to 1.100.0",
+          "timestamp": "2026-11-12T23:13:16+01:00",
+          "tree_id": "e57821096b77e8cd1d0ad1fdd65d020477d7d1de",
+          "url": "https://github.com/tellus-rs/tellus/commit/71111da072c76bc0d695481bf781e6531a600fc9"
+        },
+        "date": 1794522152944,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30487523,
+            "range": "± 1369331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30484399,
+            "range": "± 1749451",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4354893,
+            "range": "± 364350",
             "unit": "ns/iter"
           }
         ]
