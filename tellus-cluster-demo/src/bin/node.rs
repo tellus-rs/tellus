@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
     convert::Infallible,
+    future,
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
     sync::{Arc, Mutex},
@@ -95,8 +96,8 @@ async fn main() -> anyhow::Result<()> {
     let addr = endpoint.advertised_addr;
     start_endpoint(endpoint)?;
 
-    let inspect =
-        tellus_cluster_inspect::router(InspectConfig::default()).context("inspect router")?;
+    let inspect = tellus_cluster_inspect::router(InspectConfig::default(), future::pending())
+        .context("inspect router")?;
     let state = Arc::new(NodeState::new(node_name, addr, app_version.clone()));
     tokio::spawn(log_changes());
     info!(name = %state.name, %addr, %app_version, "endpoint started, bootstrapping");
@@ -769,6 +770,7 @@ async fn events(State(state): State<Arc<NodeState>>, headers: HeaderMap) -> impl
         replay.into_items(state.started_at),
         anchor,
         hello,
+        future::pending(),
     )
 }
 

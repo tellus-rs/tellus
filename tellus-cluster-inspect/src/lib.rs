@@ -5,8 +5,13 @@
 //! cluster's topology:
 //!
 //! ```ignore
-//! let app = Router::new().nest("/inspect", tellus_cluster_inspect::router(InspectConfig::default())?);
+//! let inspect = tellus_cluster_inspect::router(InspectConfig::default(), shutdown)?;
+//! let app = Router::new().nest("/inspect", inspect);
 //! ```
+//!
+//! `shutdown` is a future of the application. Once it resolves, every stream ends and the task
+//! recording the node's changes stops. A server which shuts down gracefully on the same signal
+//! then does not wait for the clients following the stream.
 //!
 //! The stream is fed by [tellus::cluster::changes]: one whole [ClusterState] per version and the
 //! receptionist's [Settlement] whenever it or the version it judges changes, with an explicit gap
@@ -29,10 +34,14 @@ mod recorder;
 
 use crate::recorder::Recorder;
 use axum::{Json, Router, extract::State, http::HeaderMap, response::IntoResponse, routing::get};
-use futures_util::stream;
+use futures_util::{
+    FutureExt, Stream,
+    future::{BoxFuture, Shared},
+    stream,
+};
 use serde::{Deserialize, Serialize};
 use std::{num::NonZeroUsize, sync::Arc};
-use tellus::cluster::{self, ClusterState, Lifecycle, receptionist::Settlement};
+use tellus::cluster::{self, Change, ClusterState, Lifecycle, receptionist::Settlement};
 use thiserror::Error;
 
 /// How the router behaves.
@@ -112,20 +121,35 @@ pub struct Snapshot {
 }
 
 /// The router serving `/cluster` and `/events` for the endpoint of this process. It spawns the
-/// task recording the endpoint's changes, so call it inside a Tokio runtime.
+/// task recording the endpoint's changes, so call it inside a Tokio runtime. Once `shutdown`
+/// resolves, that task stops and every `/events` stream ends. A stream which is opened after that
+/// ends at once, with no event. A server which shuts down gracefully on the same signal hence
+/// does not wait for the clients following the stream. The server takes a future of its own for
+/// that signal; the README shows one way.
 ///
 /// # Errors
 /// Fails if the endpoint is not started.
-pub fn router(config: InspectConfig) -> Result<Router, InspectError> {
+pub fn router<F>(config: InspectConfig, shutdown: F) -> Result<Router, InspectError>
+where
+    F: Future<Output = ()> + Send + 'static,
+{
     let changes = cluster::changes().map_err(|_| InspectError::EndpointNotStarted)?;
     let recorder = Arc::new(Recorder::new(config.events_kept));
     let changes = stream::unfold(changes, |mut changes| async move {
         let change = changes.next().await;
         Some((change, changes))
     });
-    tokio::spawn(recorder.clone().record(changes));
+    let sources = Arc::new(Endpoint {
+        recorder: recorder.clone(),
+    });
 
-    Ok(router_with(Arc::new(Endpoint { recorder })))
+    Ok(recording_router(sources, recorder, changes, shutdown))
+}
+
+#[derive(Clone)]
+struct RouterState {
+    sources: Arc<dyn Sources>,
+    shutdown: Shared<BoxFuture<'static, ()>>,
 }
 
 trait Sources: Send + Sync {
@@ -159,26 +183,48 @@ impl Sources for Endpoint {
     }
 }
 
-fn router_with(sources: Arc<dyn Sources>) -> Router {
+fn recording_router<S, F>(
+    sources: Arc<dyn Sources>,
+    recorder: Arc<Recorder>,
+    changes: S,
+    shutdown: F,
+) -> Router
+where
+    S: Stream<Item = Change> + Send + 'static,
+    F: Future<Output = ()> + Send + 'static,
+{
+    let shutdown = shutdown.boxed().shared();
+    tokio::spawn(recorder.record(changes, shutdown.clone()));
+
+    router_with(sources, shutdown)
+}
+
+fn router_with(sources: Arc<dyn Sources>, shutdown: Shared<BoxFuture<'static, ()>>) -> Router {
     Router::new()
         .route("/cluster", get(snapshot))
         .route("/events", get(events))
-        .with_state(sources)
+        .with_state(RouterState { sources, shutdown })
 }
 
-async fn snapshot(State(sources): State<Arc<dyn Sources>>) -> Json<Snapshot> {
-    Json(sources.snapshot())
+async fn snapshot(State(state): State<RouterState>) -> Json<Snapshot> {
+    Json(state.sources.snapshot())
 }
 
-async fn events(State(sources): State<Arc<dyn Sources>>, headers: HeaderMap) -> impl IntoResponse {
-    let recorder = sources.recorder();
+async fn events(State(state): State<RouterState>, headers: HeaderMap) -> impl IntoResponse {
+    let recorder = state.sources.recorder();
     let capture = recorder.capture(events::last_event_id(&headers));
     let hello = InspectEvent::Hello {
         started_at: recorder.log().started_at(),
         resumed: capture.resumed,
     };
 
-    events::sse(recorder.log(), capture.items, capture.anchor, hello)
+    events::sse(
+        recorder.log(),
+        capture.items,
+        capture.anchor,
+        hello,
+        state.shutdown,
+    )
 }
 
 #[cfg(test)]
@@ -191,8 +237,11 @@ mod tests {
     };
     use http_body_util::BodyExt;
     use serde_json::Value;
-    use std::time::Duration;
-    use tokio::time::timeout;
+    use std::{future, time::Duration};
+    use tokio::{
+        sync::{mpsc, oneshot},
+        time::{sleep, timeout},
+    };
     use tower::ServiceExt;
 
     const INCARNATION: &str = "019a0000-0000-7000-8000-000000000001";
@@ -237,12 +286,20 @@ mod tests {
     }
 
     fn app(events_kept: usize) -> (Router, Arc<Recorder>) {
+        app_until(events_kept, future::pending())
+    }
+
+    fn app_until<F>(events_kept: usize, shutdown: F) -> (Router, Arc<Recorder>)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         let recorder = Arc::new(Recorder::new(
             NonZeroUsize::new(events_kept).expect("non-zero"),
         ));
-        let router = router_with(Arc::new(Fake {
+        let sources = Arc::new(Fake {
             recorder: recorder.clone(),
-        }));
+        });
+        let router = router_with(sources, shutdown.boxed().shared());
         (router, recorder)
     }
 
@@ -409,9 +466,97 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn a_followed_stream_ends_once_the_shutdown_resolves() {
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let (router, recorder) = app_until(8, shutdown_rx.map(drop));
+
+        let response = get(&router, "/events", None).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let mut body = response.into_body();
+        recorder.push(InspectEvent::State(state(1)));
+        let mut text = String::new();
+        timeout(Duration::from_secs(5), async {
+            while !text.contains(r#""kind":"state""#) {
+                let frame = body
+                    .frame()
+                    .await
+                    .expect("the stream is open")
+                    .expect("a frame");
+                if let Ok(data) = frame.into_data() {
+                    text.push_str(&String::from_utf8_lossy(&data));
+                }
+            }
+        })
+        .await
+        .expect("the event pushed after the request arrives in time");
+        assert!(
+            timeout(Duration::from_millis(50), body.frame())
+                .await
+                .is_err(),
+            "the stream ended before the shutdown"
+        );
+
+        shutdown_tx.send(()).expect("the router holds the shutdown");
+        timeout(Duration::from_secs(5), async {
+            while let Some(frame) = body.frame().await {
+                frame.expect("a frame");
+            }
+        })
+        .await
+        .expect("the stream ends with the shutdown");
+    }
+
+    #[tokio::test]
+    async fn a_stream_opened_after_the_shutdown_ends_with_no_event() {
+        let (router, recorder) = app_until(8, future::ready(()));
+        recorder.push(InspectEvent::State(state(1)));
+
+        let response = get(&router, "/events", None).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let body = timeout(Duration::from_secs(5), response.into_body().collect())
+            .await
+            .expect("the stream ends in time")
+            .expect("a body")
+            .to_bytes();
+        assert!(body.is_empty(), "an event was sent: {body:?}");
+    }
+
+    #[tokio::test]
+    async fn the_recorder_task_stops_once_the_shutdown_resolves() {
+        let (changes_tx, mut changes_rx) = mpsc::channel(1);
+        let changes = stream::poll_fn(move |context| changes_rx.poll_recv(context));
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let recorder = Arc::new(Recorder::new(NonZeroUsize::new(8).expect("non-zero")));
+        let sources = Arc::new(Fake {
+            recorder: recorder.clone(),
+        });
+        let _router = recording_router(sources, recorder.clone(), changes, shutdown_rx.map(drop));
+        changes_tx
+            .send(Change::State(state(1)))
+            .await
+            .expect("the recorder task takes the change");
+        timeout(Duration::from_secs(5), async {
+            while recorder.log().replay(None).entries().count() < 1 {
+                sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("the change is recorded in time");
+        assert!(
+            !changes_tx.is_closed(),
+            "the recorder task stopped before the shutdown"
+        );
+
+        shutdown_tx.send(()).expect("the router holds the shutdown");
+        timeout(Duration::from_secs(5), changes_tx.closed())
+            .await
+            .expect("the recorder task still holds the changes");
+    }
+
+    #[tokio::test]
     async fn the_router_needs_a_started_endpoint() {
         assert_eq!(
-            router(InspectConfig::default()).err(),
+            router(InspectConfig::default(), future::pending()).err(),
             Some(InspectError::EndpointNotStarted)
         );
     }

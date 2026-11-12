@@ -257,15 +257,19 @@ pub fn last_event_id(headers: &HeaderMap) -> Option<Cursor> {
 
 /// The stream a `GET /events` answers: the stamped hello, then `items` (each with its id, if it
 /// has one), then every event pushed after `anchor`, each with its cursor as id, kept alive by
-/// comments.
-pub fn sse<E>(
+/// comments. The stream ends once `shutdown` resolves, so a server which shuts down gracefully on
+/// the same signal does not wait for the client following it. If `shutdown` has resolved already,
+/// the stream ends at once, with no event.
+pub fn sse<E, F>(
     log: &Arc<EventLog<E>>,
     items: Vec<(Option<Cursor>, Stamped<E>)>,
     anchor: u64,
     hello: E,
-) -> impl IntoResponse + use<E>
+    shutdown: F,
+) -> impl IntoResponse + use<E, F>
 where
     E: Serialize + Clone + Send + Sync + 'static,
+    F: Future<Output = ()> + Send + 'static,
 {
     let hello = Stamped {
         at: now_millis(),
@@ -280,7 +284,7 @@ where
         .follow_from(anchor)
         .map(|(cursor, stamped)| Ok(event(Some(cursor), &stamped)));
 
-    Sse::new(opening.chain(live)).keep_alive(KeepAlive::default())
+    Sse::new(opening.chain(live).take_until(shutdown)).keep_alive(KeepAlive::default())
 }
 
 /// Unix milliseconds now.
@@ -321,7 +325,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::Duration;
+    use http_body_util::BodyExt;
+    use std::{future, time::Duration};
     use tokio::time::timeout;
 
     const STARTED_AT: u64 = 1_700_000_000_000;
@@ -509,6 +514,45 @@ mod tests {
         let seqs = replay.entries().map(|(seq, _)| seq).collect::<Vec<_>>();
         assert_eq!(seqs, (1..=512).collect::<Vec<_>>());
         assert_eq!(*log.latest.borrow(), 512);
+    }
+
+    #[tokio::test]
+    async fn sse_sends_the_hello_the_items_and_what_is_pushed_then() {
+        let log = log(8);
+        log.push(10);
+        let replay = log.replay(None);
+        let anchor = replay.anchor;
+        let response = sse(
+            &log,
+            replay.into_items(STARTED_AT),
+            anchor,
+            0,
+            future::pending(),
+        )
+        .into_response();
+        let mut body = response.into_body();
+        log.push(20);
+        let mut text = String::new();
+        timeout(Duration::from_secs(5), async {
+            while text.matches("data:").count() < 3 {
+                let frame = body
+                    .frame()
+                    .await
+                    .expect("the stream is open")
+                    .expect("a frame");
+                if let Ok(data) = frame.into_data() {
+                    text.push_str(&String::from_utf8_lossy(&data));
+                }
+            }
+        })
+        .await
+        .expect("the messages arrive in time");
+
+        assert!(text.contains(r#""event":0"#), "no hello: {text}");
+        assert!(text.contains("id: 1700000000000:1"), "no item: {text}");
+        assert!(text.contains("id: 1700000000000:2"), "nothing live: {text}");
+        let next = timeout(Duration::from_millis(50), body.frame()).await;
+        assert!(next.is_err(), "the stream ended");
     }
 
     #[test]

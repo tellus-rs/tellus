@@ -68,12 +68,13 @@ impl Recorder {
         }
     }
 
-    /// Records every change, in order, until the stream ends.
-    pub(crate) async fn record<S>(self: Arc<Self>, changes: S)
+    /// Records every change, in order, until the stream ends or `shutdown` resolves.
+    pub(crate) async fn record<S, F>(self: Arc<Self>, changes: S, shutdown: F)
     where
         S: Stream<Item = Change>,
+        F: Future<Output = ()>,
     {
-        let mut changes = pin!(changes);
+        let mut changes = pin!(changes.take_until(shutdown));
         while let Some(change) = changes.next().await {
             self.push(match change {
                 Change::State(state) => InspectEvent::State(state),
@@ -116,9 +117,12 @@ struct Current {
 mod tests {
     use super::*;
     use crate::tests::{settlement, state};
-    use futures_util::stream;
-    use std::{collections::VecDeque, time::Duration};
-    use tokio::time::{sleep, timeout};
+    use futures_util::{FutureExt, stream};
+    use std::{collections::VecDeque, future, time::Duration};
+    use tokio::{
+        sync::oneshot,
+        time::{sleep, timeout},
+    };
 
     fn recorder(events_kept: usize) -> Arc<Recorder> {
         Arc::new(Recorder::new(
@@ -164,7 +168,7 @@ mod tests {
             Change::Settled(settlement(1, true)),
         ])
         .chain(stream::pending());
-        tokio::spawn(recorder.clone().record(changes));
+        tokio::spawn(recorder.clone().record(changes, future::pending()));
         recorded(&recorder, 5).await;
 
         let capture = recorder.capture(None);
@@ -196,7 +200,7 @@ mod tests {
                 Some((change, queue))
             },
         );
-        recorder.clone().record(changes).await;
+        recorder.clone().record(changes, future::pending()).await;
 
         assert_eq!(recorder.log.replay(None).entries().count(), 1);
     }
@@ -266,5 +270,23 @@ mod tests {
                 .last()
                 .is_some_and(|(seq, kind)| *seq == Some(2) && kind == "settled 1 false")
         );
+    }
+
+    #[tokio::test]
+    async fn recording_stops_once_the_shutdown_resolves() {
+        let recorder = recorder(16);
+        let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
+        let changes = stream::iter([Change::State(state(1))]).chain(stream::pending());
+        let recording = tokio::spawn(recorder.clone().record(changes, shutdown_rx.map(drop)));
+        recorded(&recorder, 1).await;
+        assert!(!recording.is_finished());
+
+        shutdown_tx
+            .send(())
+            .expect("the recording awaits the shutdown");
+        timeout(Duration::from_secs(5), recording)
+            .await
+            .expect("the recording stops with the shutdown")
+            .expect("the recording does not panic");
     }
 }

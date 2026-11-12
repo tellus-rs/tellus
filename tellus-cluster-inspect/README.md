@@ -4,14 +4,20 @@ An [axum](https://crates.io/crates/axum) `Router` which lets you look into the
 [tellus](../tellus) cluster node it runs in. Mount it into your application's own HTTP server:
 
 ```rust
-let inspect = tellus_cluster_inspect::router(InspectConfig::default())?;
+let inspect = tellus_cluster_inspect::router(InspectConfig::default(), shutdown)?;
 let app = Router::new().nest("/inspect", inspect);
 ```
 
-Call `router` inside a Tokio runtime, since it spawns the task recording the node's changes. Call
-it after `cluster::start_endpoint`; before that it fails with `InspectError::EndpointNotStarted`.
-`cargo run -p tellus-cluster-inspect --example how_to_serve_cluster_state` serves a cluster of one
-this way.
+Call `router` inside a Tokio runtime, since it spawns the task recording the node's changes. Call it
+after `cluster::start_endpoint`; before that it fails with `InspectError::EndpointNotStarted`.
+`shutdown` is a future of your own. Once it resolves, that task stops and every `/events` stream
+ends. Hand it the signal on which your server shuts down gracefully, or that shutdown waits for
+every client following the stream. A future has one taker, so the server and the router each get one
+of their own. With a `tokio::sync::Notify` in an `Arc` that is a `notified_owned()` each, and
+`notify_waiters()` fires both. Take both before it fires: `notify_waiters()` stores no permit, so a
+`notified_owned()` taken later never resolves. A server which never shuts down gracefully hands the
+router `std::future::pending()`. `cargo run -p tellus-cluster-inspect --example
+how_to_serve_cluster_state` serves a cluster of one that way.
 
 It reveals the cluster's topology, so mount it behind whatever protects the rest of your server;
 it brings no authentication of its own and binds no port.
