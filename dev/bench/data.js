@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794509855085,
+  "lastUpdate": 1794509857551,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20625,6 +20625,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4645423,
             "range": "± 409671",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ea2f62ba74766ecd6488443243f000af4524d187",
+          "message": "Merge pull request #313 from tellus-rs/docs/codec-limits\n\ndocs: state the codecs' limits on nesting and on Some(None)",
+          "timestamp": "2026-11-12T19:40:59+01:00",
+          "tree_id": "96cc054d17750211f6a50305c958606cf2dc3cef",
+          "url": "https://github.com/tellus-rs/tellus/commit/ea2f62ba74766ecd6488443243f000af4524d187"
+        },
+        "date": 1794509856925,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 21079635,
+            "range": "± 1050811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 20137926,
+            "range": "± 776256",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3093493,
+            "range": "± 181874",
             "unit": "ns/iter"
           }
         ]
