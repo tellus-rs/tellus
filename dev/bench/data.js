@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794509363716,
+  "lastUpdate": 1794509851444,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12539,6 +12539,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 27652500,
             "range": "± 744433",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ea2f62ba74766ecd6488443243f000af4524d187",
+          "message": "Merge pull request #313 from tellus-rs/docs/codec-limits\n\ndocs: state the codecs' limits on nesting and on Some(None)",
+          "timestamp": "2026-11-12T19:40:59+01:00",
+          "tree_id": "96cc054d17750211f6a50305c958606cf2dc3cef",
+          "url": "https://github.com/tellus-rs/tellus/commit/ea2f62ba74766ecd6488443243f000af4524d187"
+        },
+        "date": 1794509850330,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9785585,
+            "range": "± 219630",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9737965,
+            "range": "± 319282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 727900,
+            "range": "± 8908",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 537458,
+            "range": "± 13613",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4070816,
+            "range": "± 257535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2847576,
+            "range": "± 141661",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16040162,
+            "range": "± 373070",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 17268017,
+            "range": "± 390181",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 15877029,
+            "range": "± 313102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 17105795,
+            "range": "± 323433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 15972877,
+            "range": "± 294584",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18832360,
+            "range": "± 528407",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 20512657,
+            "range": "± 533045",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 13862445,
+            "range": "± 380645",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 16463397,
+            "range": "± 529754",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 20661199,
+            "range": "± 1079914",
             "unit": "ns/iter"
           }
         ]
