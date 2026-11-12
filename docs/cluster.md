@@ -677,16 +677,18 @@ as unknown targets, at-most-once either way.
   since a reply is not idempotent and nothing reply-related is replayed on a reconnect. An ask
   canceled before that releases its entry itself, so a lost notification costs it nothing.
 
-  A proxy's reply which cannot be sent, for lack of outbound capacity, because it exceeds
-  `max_frame_size` or because the node is unreachable, is logged as a dead letter. The proxy then
-  attempts the same `ReplyDropped` as for a dropped one. That attempt can fail the same way, and a
-  reply which was queued successfully and lost afterward takes no such path, so the ask's timeout
-  remains the backstop. Downing a member fails every pending ask toward it as `NoReply`, after the
-  tombstone and quiesce, so such a `NoReply` is never followed by its reply. Every member is
-  heartbeated, so a vanished node's asks are settled by the downing provider, watched or not. Giving
-  up a stale lane, one toward an address no Up member advertises anymore, fails the asks stamped
-  with its peers the same way. If the transport reports the loss too late, the ask timeout still
-  resolves the request.
+  A proxy's reply which cannot be sent, because it cannot be encoded, for lack of outbound capacity,
+  because it exceeds `max_frame_size` or because the node is unreachable, is logged as a dead
+  letter. A panic in the reply's `Schema::encode` counts as a reply which cannot be encoded. It is
+  logged at error level and reaches neither the responder nor, on a node which forwards the reply,
+  that node's stream reader. The proxy then attempts the same `ReplyDropped` as for a dropped one.
+  That attempt fails if the node is unreachable, and a reply which was queued successfully and lost
+  afterward takes no such path, so the ask's timeout remains the backstop. Downing a member fails
+  every pending ask toward it as `NoReply`, after the tombstone and quiesce, so such a `NoReply` is
+  never followed by its reply. Every member is heartbeated, so a vanished node's asks are settled by
+  the downing provider, watched or not. Giving up a stale lane, one toward an address no Up member
+  advertises anymore, fails the asks stamped with its peers the same way. If the transport reports
+  the loss too late, the ask timeout still resolves the request.
 
   A message frame names its payload's reply destinations next to the payload. So a request the
   receiving node dead-letters undecoded, e.g. toward a meanwhile terminated actor, is answered with

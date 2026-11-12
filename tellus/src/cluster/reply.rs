@@ -1,12 +1,13 @@
 use crate::{
     ActorId, ActorRef, ReplyTo, SchemaVersion,
+    actor_context::PanicPayload,
     cluster::{
         codec::{Codec, CodecError},
         discovery::Nonce,
         endpoint::{self, EndpointInner},
         frame::{Frame, StreamKey},
         node::NodeId,
-        schema::Schema,
+        schema::{Peer, Schema},
         sink::{RemoteSendError, encode_and_send},
     },
     request_response::SendReply,
@@ -22,10 +23,11 @@ use std::{
     collections::{HashMap, hash_map::Entry},
     error::Error,
     net::SocketAddr,
+    panic::{AssertUnwindSafe, catch_unwind},
     sync::{Arc, Mutex, Weak, atomic::AtomicU64},
 };
 use thiserror::Error;
-use tracing::{debug, warn};
+use tracing::{debug, error, warn};
 
 type DeliverReply =
     fn(Box<dyn Any + Send>, SchemaVersion, &[u8], &dyn Codec) -> Result<(), CodecError>;
@@ -800,6 +802,7 @@ where
                 recipient = ?recipient,
                 reply_type = type_name::<R>(),
                 %error,
+                source = error.source(),
                 "dead letter"
             ),
         }
@@ -827,7 +830,7 @@ where
     encode_and_send(
         endpoint,
         origin,
-        || reply.encode(endpoint.codec(), &peer),
+        || encode_reply(reply, endpoint.codec(), &peer, origin, recipient),
         |schema_version, payload, _| Frame::Reply {
             nonce,
             recipient,
@@ -839,23 +842,47 @@ where
     Ok(())
 }
 
+fn encode_reply<R>(
+    reply: &R,
+    codec: &dyn Codec,
+    peer: &Peer,
+    origin: NodeId,
+    recipient: Option<ActorId>,
+) -> Result<(SchemaVersion, Vec<u8>), CodecError>
+where
+    R: Schema,
+{
+    catch_unwind(AssertUnwindSafe(|| reply.encode(codec, peer))).unwrap_or_else(|panic| {
+        error!(
+            origin = %origin,
+            recipient = ?recipient,
+            reply_type = type_name::<R>(),
+            panic = %PanicPayload(panic.as_ref()),
+            "reply encode panicked"
+        );
+        Err(CodecError::encoding("reply encode panicked"))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, MailboxCapacity, SchemaVersion,
+        ActorId, MailboxCapacity, ReplyTo, SchemaVersion,
         cluster::{
             codec::{Codec, CodecError},
             discovery::Nonce,
-            endpoint::{EndpointConfig, EndpointInner},
+            endpoint::{self, EndpointConfig, EndpointInner},
             frame::{Frame, StreamKey},
             node::NodeId,
             reply::{
                 AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, note_minted,
-                on_reply_canceled, record_minted,
+                on_reply, on_reply_canceled, record_minted, remote_proxy,
             },
+            schema::{Peer, Schema},
         },
         mailbox::make_mailbox,
     };
+    use serde::{Deserialize, Serialize};
     use std::{
         any::Any,
         sync::{
@@ -1420,6 +1447,74 @@ mod tests {
         assert_eq!(outer.len(), 2);
     }
 
+    /// A reply whose encode panics is dropped like one which cannot be encoded. The panic does not
+    /// reach the caller. The destination minted before it is released, and the origin is told.
+    #[test]
+    fn a_panicking_reply_encode_drops_the_reply() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let nonce = Nonce::first();
+        let reply_to =
+            remote_proxy::<MintsThenPanics>(endpoint.pending_replies(), origin, nonce, None);
+
+        endpoint::with_current(endpoint, || {
+            reply_to.reply(MintsThenPanics(ReplyTo::new(|_| ())));
+        });
+
+        assert_eq!(endpoint.pending_replies().len(), 0);
+        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        assert_eq!(lane.addr, origin.addr());
+        assert!(matches!(
+            lane.control_rx.try_recv(),
+            Ok(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
+        ));
+        assert!(lane.control_rx.is_empty());
+    }
+
+    /// A node which forwards a reply encodes it again. A panic of that encode drops the reply too:
+    /// it does not reach the caller of `on_reply`, and the origin is told.
+    #[test]
+    fn a_panicking_encode_of_a_forwarded_reply_drops_the_reply() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let next = NodeId::new("127.0.0.1:3".parse().expect("valid address"));
+        let origin_nonce = Nonce::first();
+        let pending = endpoint.pending_replies();
+        let reply_to = remote_proxy::<PanicsWhenEncoded>(pending, origin, origin_nonce, None);
+        let (forwarded, tags) = endpoint::with_current(endpoint, || {
+            record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        forwarded.expect("the proxy is serialized");
+        send_stamped(pending, &tags, next, None);
+        let payload = endpoint
+            .codec()
+            .encode(&PanicsWhenEncoded)
+            .expect("the reply is serialized");
+
+        endpoint::with_current(endpoint, || {
+            on_reply(
+                endpoint,
+                next,
+                tags[0].nonce,
+                PanicsWhenEncoded::VERSION,
+                &payload,
+            );
+        });
+
+        assert_eq!(pending.len(), 0);
+        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        assert_eq!(lane.addr, origin.addr());
+        assert!(matches!(
+            lane.control_rx.try_recv(),
+            Ok(Frame::ReplyDropped { nonce, .. }) if nonce == origin_nonce
+        ));
+        assert!(lane.control_rx.is_empty());
+    }
+
     fn deliver_nothing(
         _send_reply: Box<dyn Any + Send>,
         _schema_version: SchemaVersion,
@@ -1438,6 +1533,29 @@ mod tests {
         fn drop(&mut self) {
             let unlocked = self.pending.pending.try_lock().is_ok();
             self.unlocked.store(unlocked, Ordering::Relaxed);
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct MintsThenPanics(ReplyTo<u64>);
+
+    impl Schema for MintsThenPanics {
+        fn encode(
+            &self,
+            codec: &dyn Codec,
+            _: &Peer,
+        ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+            codec.encode(self)?;
+            panic!("reply encode bug")
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct PanicsWhenEncoded;
+
+    impl Schema for PanicsWhenEncoded {
+        fn encode(&self, _: &dyn Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+            panic!("reply encode bug")
         }
     }
 }
