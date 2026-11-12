@@ -438,6 +438,17 @@ mod tests {
         Struct { float: f64 },
     }
 
+    #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+    struct Profile {
+        name: String,
+        #[serde(
+            default,
+            skip_serializing_if = "Option::is_none",
+            with = "::serde_with::rust::double_option"
+        )]
+        nickname: Option<Option<String>>,
+    }
+
     /// Both shipped codecs are self-describing as the trait promises: a payload decodes back into
     /// its own type with nothing but the bytes, no schema handed alongside.
     #[test]
@@ -660,6 +671,36 @@ mod tests {
             Json.encode(&value).expect("the value is JSON encodable"),
             serde_json::to_vec(&value).expect("the value is JSON encodable")
         );
+    }
+
+    /// A struct field with `default`, `skip_serializing_if` and `serde_with`'s `double_option`
+    /// keeps its three states through both codecs, see docs/persistence.md.
+    #[test]
+    fn a_double_option_field_keeps_its_three_states() {
+        for nickname in [None, Some(None), Some(Some("Al".to_string()))] {
+            let profile = Profile {
+                name: "Alice".to_string(),
+                nickname,
+            };
+
+            let payload = Cbor
+                .encode(&profile)
+                .expect("the profile is CBOR encodable");
+            assert_eq!(
+                Cbor.decode::<Profile>(&payload)
+                    .expect("the payload is CBOR decodable"),
+                profile
+            );
+
+            let payload = Json
+                .encode(&profile)
+                .expect("the profile is JSON encodable");
+            assert_eq!(
+                Json.decode::<Profile>(&payload)
+                    .expect("the payload is JSON decodable"),
+                profile
+            );
+        }
     }
 
     fn value() -> Value {
