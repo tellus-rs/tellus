@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794476383791,
+  "lastUpdate": 1794476386602,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -19785,6 +19785,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4624233,
             "range": "± 358148",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b152d67dad17689f4b34b3f88a0eabb504618762",
+          "message": "Merge pull request #305 from tellus-rs/fix/postgres-own-migrations-table\n\nfix: record the PostgreSQL store's migrations in a table of its own",
+          "timestamp": "2026-11-12T10:32:03+01:00",
+          "tree_id": "4d7e7b2a2b3d1a6cf976c1074827f020730fe5b3",
+          "url": "https://github.com/tellus-rs/tellus/commit/b152d67dad17689f4b34b3f88a0eabb504618762"
+        },
+        "date": 1794476386345,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24792009,
+            "range": "± 1048960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 23787927,
+            "range": "± 1198956",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3722255,
+            "range": "± 268127",
             "unit": "ns/iter"
           }
         ]
