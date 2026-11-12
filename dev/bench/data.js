@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794476386602,
+  "lastUpdate": 1794500590081,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -12179,6 +12179,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 22324536,
             "range": "± 598136",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ebdaa62a7515e438ac5503d108f25ee59b23ead3",
+          "message": "Merge pull request #303 from tellus-rs/fix/codecs-read-back-what-they-wrote\n\nfix: decode long CBOR text and exact JSON floats, refuse non-finite ones",
+          "timestamp": "2026-11-12T17:14:29+01:00",
+          "tree_id": "b29e8e82c7d384d7438bff34380848f47da8babf",
+          "url": "https://github.com/tellus-rs/tellus/commit/ebdaa62a7515e438ac5503d108f25ee59b23ead3"
+        },
+        "date": 1794500588199,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14393022,
+            "range": "± 1374614",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 15576737,
+            "range": "± 1408876",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1086550,
+            "range": "± 28039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 789381,
+            "range": "± 7642",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5783679,
+            "range": "± 131148",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4284207,
+            "range": "± 334074",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 20270836,
+            "range": "± 484473",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20562880,
+            "range": "± 440498",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 20179556,
+            "range": "± 599853",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 20767939,
+            "range": "± 651355",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20009362,
+            "range": "± 605367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 21917150,
+            "range": "± 474221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 27419275,
+            "range": "± 1212562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20264980,
+            "range": "± 621055",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21918818,
+            "range": "± 870199",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 27208685,
+            "range": "± 750157",
             "unit": "ns/iter"
           }
         ]
