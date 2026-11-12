@@ -1,6 +1,7 @@
 //! Contract and end-to-end tests against a real PostgreSQL server via testcontainers. Each test
-//! starts its own container: a shared one would die with the first finishing test's runtime,
-//! since every `#[tokio::test]` runs its own and the pool's background tasks live on it.
+//! which needs a server starts its own container: a shared one would die with the first finishing
+//! test's runtime, since every `#[tokio::test]` runs its own and the pool's background tasks live
+//! on it.
 
 use composed::{Compose, compose};
 use serde::{Deserialize, Serialize};
@@ -214,6 +215,47 @@ async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
         .expect("the store's migrations still run");
 }
 
+/// The definition of the schema in the README is the one embedded migration, byte for byte.
+#[test]
+fn the_schema_of_the_readme_is_the_embedded_migration() {
+    let migrator = sqlx::migrate!();
+    let embedded_migrations = migrator
+        .iter()
+        .map(|migration| migration.sql.as_str())
+        .collect::<Vec<_>>();
+
+    assert_eq!(
+        embedded_migrations,
+        [readme_schema()],
+        "the README's definition of the schema is not the embedded migration"
+    );
+}
+
+/// A database whose tables were created from the definition in the README, without `migrate`:
+/// the store passes its contract on it and creates no table of its own.
+#[tokio::test]
+async fn the_store_passes_its_contract_on_the_schema_of_the_readme() {
+    let (pool, _container) = database().await;
+    sqlx::raw_sql(readme_schema())
+        .execute(&pool)
+        .await
+        .expect("the definition of the README runs");
+
+    let store = PostgresStore::new(pool.clone());
+    tellus::persistence_tests::event_store_contract(store.clone()).await;
+    tellus::persistence_tests::snapshot_store_contract(store.clone()).await;
+    tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
+
+    let tables = sqlx::query_scalar::<_, String>(
+        "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' \
+         ORDER BY table_name",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("the tables are listed");
+    assert_eq!(tables, ["events", "snapshots"]);
+}
+
 /// End to end through tellus: a counter increments against PostgreSQL, terminates, and a second
 /// incarnation recovers the count by replay.
 #[tokio::test]
@@ -325,6 +367,20 @@ fn application_migrator() -> Migrator {
         "CREATE TABLE read_model (id BIGINT PRIMARY KEY)".into_sql_str(),
         false,
     )])
+}
+
+fn readme_schema() -> &'static str {
+    let (_, schema) = include_str!("../README.md")
+        .split_once("## Schema")
+        .expect("the README has a section on the schema");
+    let (_, schema) = schema
+        .split_once("```sql\n")
+        .expect("the README opens the definition of the schema");
+    let (schema, _) = schema
+        .split_once("```")
+        .expect("the README closes the definition of the schema");
+
+    schema
 }
 
 async fn store() -> (PostgresStore, ContainerAsync<Postgres>) {

@@ -308,7 +308,10 @@ Item order within a file:
   one place to change either. Its examples need the `postgres` service from the root
   `compose.yaml`: start it with `docker compose up -d --wait postgres`, then `cargo run
   --quiet -p tellus-persistence-postgres --example event_sourced_counter` (or
-  `event_sourced_supervision`); `docker compose down` stops it, `down -v` resets the data.
+  `event_sourced_supervision`); `docker compose down` stops it, `down -v` resets the data. Its
+  README gives the schema as the supported definition for an application which creates the tables
+  itself, and `tests/store.rs` holds that definition to the embedded migration. A change to the
+  schema hence names what changes in its commit subject, which is what the changelog shows.
 - `tellus/src/persistence_tests.rs` (feature `persistence-tests`, implies `persistence`): the
   contract test suite for persistence stores; backend crates run it from their integration tests
   against real servers. `tellus/src/persistence/in_memory_store.rs` (feature

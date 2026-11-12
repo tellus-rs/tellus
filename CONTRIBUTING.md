@@ -57,6 +57,9 @@ it describes, and keep it consistent with your change. The integration tests in
 A change to the cluster's wire format updates the pinned-byte tests in
 [frame.rs](tellus/src/cluster/frame.rs).
 
+A change to the schema of the PostgreSQL stores names what changes in its commit subject. An
+application which creates the tables itself learns of the change from the changelog.
+
 ## Performance
 
 The per pull request benchmark comparison is a hint and never a verdict, since a single run varies
