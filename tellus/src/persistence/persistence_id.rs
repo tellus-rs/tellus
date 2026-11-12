@@ -10,7 +10,7 @@ const MAX_SEGMENT_LEN: usize = 255;
 /// persistence ID.
 ///
 /// It pairs an entity type, e.g. "order", with an entity ID, e.g. "42". Both segments must be
-/// non-empty, at most 255 bytes long and free of slashes; [Display] joins them as
+/// non-empty, at most 255 bytes long and free of slashes and NULs; [Display] joins them as
 /// `entity_type/entity_id` and [FromStr] parses that shape back.
 #[derive(Debug, Display, Clone, PartialEq, Eq, Hash)]
 #[cfg_attr(
@@ -28,7 +28,7 @@ impl PersistenceId {
     /// Create a persistence ID from the given entity type and entity ID.
     ///
     /// # Errors
-    /// Fails if a segment is empty, longer than 255 bytes or contains a slash.
+    /// Fails if a segment is empty, longer than 255 bytes or contains a slash or a NUL.
     pub fn new<T, I>(entity_type: T, entity_id: I) -> Result<Self, InvalidPersistenceId>
     where
         T: AsRef<str>,
@@ -115,6 +115,13 @@ pub enum InvalidPersistenceId {
         segment: PersistenceIdSegment,
     },
 
+    /// A segment contains a NUL.
+    #[error("{segment} contains a NUL")]
+    NulInSegment {
+        /// The segment which contains a NUL.
+        segment: PersistenceIdSegment,
+    },
+
     /// The parsed string lacks the `entity_type/entity_id` separator.
     #[error("persistence ID without a slash separator")]
     MissingSeparator,
@@ -127,6 +134,8 @@ fn valid_segment(value: &str, segment: PersistenceIdSegment) -> Result<&str, Inv
         Err(InvalidPersistenceId::SegmentTooLong { segment })
     } else if value.contains('/') {
         Err(InvalidPersistenceId::SlashInSegment { segment })
+    } else if value.contains('\0') {
+        Err(InvalidPersistenceId::NulInSegment { segment })
     } else {
         Ok(value)
     }
@@ -192,6 +201,24 @@ mod tests {
             })
         );
         assert_eq!(
+            PersistenceId::new("or\0der", "42"),
+            Err(InvalidPersistenceId::NulInSegment {
+                segment: PersistenceIdSegment::EntityType
+            })
+        );
+        assert_eq!(
+            PersistenceId::new("order", "42\0"),
+            Err(InvalidPersistenceId::NulInSegment {
+                segment: PersistenceIdSegment::EntityId
+            })
+        );
+        assert_eq!(
+            "order/4\0".parse::<PersistenceId>(),
+            Err(InvalidPersistenceId::NulInSegment {
+                segment: PersistenceIdSegment::EntityId
+            })
+        );
+        assert_eq!(
             "order-42".parse::<PersistenceId>(),
             Err(InvalidPersistenceId::MissingSeparator)
         );
@@ -225,7 +252,7 @@ mod tests {
     #[cfg(feature = "serde")]
     #[test]
     fn serde_rejects_an_invalid_string() {
-        for invalid in ["\"order\"", "\"/42\"", "\"order/\""] {
+        for invalid in ["\"order\"", "\"/42\"", "\"order/\"", "\"or\\u0000der/42\""] {
             assert!(
                 serde_json::from_str::<PersistenceId>(invalid).is_err(),
                 "{invalid} must not deserialize"

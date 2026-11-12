@@ -204,7 +204,8 @@ where
 
 /// An empty append inserts nothing but is still conditional: it succeeds against the stream's
 /// actual next sequence number, empty streams included, fails with [AppendError::Conflict]
-/// against a mismatched one, below or above, and leaves the stream untouched either way.
+/// against a mismatched one, below or above, up to the largest sequence number, and leaves the
+/// stream untouched either way.
 pub async fn an_empty_append_is_fenced<E>(store: E)
 where
     E: EventStore,
@@ -227,7 +228,7 @@ where
         .await
         .expect("an empty append at the stream head must succeed");
 
-    for mismatched in [0, 1, 7].map(SeqNo::new) {
+    for mismatched in [0, 1, 7, u64::MAX].map(SeqNo::new) {
         let conflict = store.append(&id, mismatched, Vec::new()).await;
         assert!(
             matches!(conflict, Err(AppendError::Conflict)),
@@ -444,7 +445,7 @@ where
 }
 
 /// Reads start at the given sequence number inclusively, honor the limit, and return nothing
-/// beyond the stream or for an unknown ID.
+/// beyond the stream, up to the largest sequence number, or for an unknown ID.
 pub async fn reads_are_paged_and_inclusive<E>(store: E)
 where
     E: EventStore,
@@ -487,6 +488,15 @@ where
     assert!(
         beyond.is_empty(),
         "a read beyond the stream must return nothing"
+    );
+
+    let far_beyond = store
+        .read(&id, SeqNo::new(u64::MAX), LIMIT)
+        .await
+        .expect("the read at the largest sequence number must succeed");
+    assert!(
+        far_beyond.is_empty(),
+        "a read at the largest sequence number must return nothing"
     );
 
     let unknown = store
