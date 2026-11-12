@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794501089981,
+  "lastUpdate": 1794501091442,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20205,6 +20205,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4309974,
             "range": "± 426838",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "713ca219283700f5abf11315a8dca07475c9d308",
+          "message": "Merge pull request #308 from tellus-rs/fix/persistence-nul-and-positions\n\nfix!: refuse a NUL in a persistence ID, map positions beyond BIGINT",
+          "timestamp": "2026-11-12T17:14:54+01:00",
+          "tree_id": "3700ea2ccb5a24dcdb17786369f62c8443ff0656",
+          "url": "https://github.com/tellus-rs/tellus/commit/713ca219283700f5abf11315a8dca07475c9d308"
+        },
+        "date": 1794501091176,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29685551,
+            "range": "± 1913354",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30347540,
+            "range": "± 1778241",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4414846,
+            "range": "± 304623",
             "unit": "ns/iter"
           }
         ]
