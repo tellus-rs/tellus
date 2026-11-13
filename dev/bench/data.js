@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794563024299,
+  "lastUpdate": 1794563033692,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20533,6 +20533,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 107546,
             "range": "± 2838",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d9ed7b7a272fda454210de1b2574d0197f80656f",
+          "message": "Merge pull request #323 from tellus-rs/test/zombie-deadline\n\ntest(cluster): drop the zombie's deadline, tell closed stdout apart",
+          "timestamp": "2026-11-13T10:35:41+01:00",
+          "tree_id": "38cf6219ef6a128f9cf490497bac3ba8386cd75f",
+          "url": "https://github.com/tellus-rs/tellus/commit/d9ed7b7a272fda454210de1b2574d0197f80656f"
+        },
+        "date": 1794563033234,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2027365,
+            "range": "± 98562",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2063010,
+            "range": "± 111394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 656866,
+            "range": "± 7221",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 83230,
+            "range": "± 1849",
             "unit": "ns/iter"
           }
         ]
