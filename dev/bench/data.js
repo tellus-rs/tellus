@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794595516296,
+  "lastUpdate": 1794595520212,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20869,6 +20869,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 112222,
             "range": "± 3802",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a982ac1d28aa55aebe9055ed7e687712b048d1ac",
+          "message": "Merge pull request #331 from tellus-rs/fix/own-address\n\nfix(cluster): refuse a send toward another incarnation of this node",
+          "timestamp": "2026-11-13T19:30:06+01:00",
+          "tree_id": "1d5f50dab70ed1d255cef6e4ee34272056c80e11",
+          "url": "https://github.com/tellus-rs/tellus/commit/a982ac1d28aa55aebe9055ed7e687712b048d1ac"
+        },
+        "date": 1794595519836,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3033783,
+            "range": "± 167518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2882479,
+            "range": "± 117002",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1110878,
+            "range": "± 19718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 143387,
+            "range": "± 4324",
             "unit": "ns/iter"
           }
         ]
