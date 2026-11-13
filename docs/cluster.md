@@ -88,19 +88,19 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `failure_detector.phi_accrual.threshold` | 8.0 | finite and positive |
 | `failure_detector.phi_accrual.max_sample_size` | 200 | at least 2 |
 | `failure_detector.phi_accrual.min_std_deviation` | 100ms | not 0 |
-| `failure_detector.phi_accrual.acceptable_pause` | 3s | |
-| `failure_detector.phi_accrual.warmup_deadline` | 5s | |
+| `failure_detector.phi_accrual.acceptable_pause` | 3s | 0 adds no pause; the margin left must cover the intervals, see below |
+| `failure_detector.phi_accrual.warmup_deadline` | 5s | not 0 |
 | `failure_detector.deadline` | none | not 0 |
 | `downing_provider` | `keep_majority` | `keep_majority` or `down_after_deadline` |
-| `downing_provider.keep_majority.after` | 10s | |
-| `downing_provider.down_after_deadline.after` | none | |
-| `down_retention` | 5m | |
+| `downing_provider.keep_majority.after` | 10s | 0 adds no grace once a member leaves the reachability component |
+| `downing_provider.down_after_deadline.after` | none | 0 adds no grace once a member leaves the reachability component |
+| `down_retention` | 5m | not 0 |
 | `down_watermarks` | 4096 | not 0; not larger than on the nodes joining this one |
-| `leave_timeout` | 3s | |
+| `leave_timeout` | 3s | not 0 |
 | `reconnect_backoff.min` | 250ms | not 0; required once `reconnect_backoff` is given |
 | `reconnect_backoff.max` | 3s | not below `min`; required once `reconnect_backoff` is given |
 | `max_connect_attempts` | 8 | not 0 |
-| `ambiguous_join_bound` | 30s | |
+| `ambiguous_join_bound` | 30s | not 0 |
 | `change_capacity` | 256 | a power of two, at most half the address space |
 
 The failure detector must tolerate the longer of `heartbeat_interval` and `watch_refresh_interval`
@@ -111,10 +111,10 @@ after a burst of traffic, see [Failure detection](#failure-detection-and-node-de
 | Key | Default | Constraint |
 | --- | --- | --- |
 | `min_peers` | 2 | not 0 |
-| `settle` | 3s | |
+| `settle` | 3s | 0 decides on the second resolution seeing the same addresses |
 | `resolve_interval` | 1s | not 0 |
 | `formation` | `majority` | `majority`, `majority_with_fallback`, `unanimous` or `explicit` |
-| `formation.majority_with_fallback.after` | none | |
+| `formation.majority_with_fallback.after` | none | 0 passes over on the first unavailable round |
 | `probe_interval` | 30s | not 0; `null` turns the probe off |
 
 `QuicConfig`:

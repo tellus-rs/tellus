@@ -88,7 +88,8 @@ impl KeepMajority {
 
     /// A provider deciding once every unreachable member has been unreachable for the given
     /// duration; a member falling silent or answering again postpones the decision, so a flapping
-    /// link is waited out rather than resolved.
+    /// link is waited out rather than resolved. Zero adds no grace: the provider decides on the
+    /// first heartbeat tick which finds a member outside this node's reachability component.
     pub fn new(after: Duration) -> Self {
         Self { after }
     }
@@ -153,7 +154,8 @@ pub struct DownAfterDeadline {
 }
 
 impl DownAfterDeadline {
-    /// A provider downing members unreachable for the given duration.
+    /// A provider downing members unreachable for the given duration. Zero downs a member on the
+    /// first heartbeat tick which finds it outside this node's reachability component.
     pub fn new(after: Duration) -> Self {
         Self { after }
     }
@@ -435,6 +437,36 @@ mod tests {
             serde_json::from_str::<DowningProviderConfig>(r#"{ "down_after_deadline": {} }"#)
                 .is_err(),
             "the deliberate test provider must not default its deadline"
+        );
+    }
+
+    /// With a zero `after` the providers decide at the instant a member is disconnected, with no
+    /// grace.
+    #[test]
+    fn a_zero_after_decides_once_a_member_is_disconnected() {
+        let members = [
+            member(1, MemberState::Up),
+            member(2, MemberState::Up),
+            member(3, MemberState::Up),
+        ];
+        let since = Instant::now();
+        let disconnected = [(members[2], since)];
+
+        assert_eq!(
+            KeepMajority::new(Duration::ZERO).down(
+                &members,
+                Disconnected::new(&disconnected),
+                since
+            ),
+            Downing::Members(vec![members[2]])
+        );
+        assert_eq!(
+            DownAfterDeadline::new(Duration::ZERO).down(
+                &members,
+                Disconnected::new(&disconnected),
+                since
+            ),
+            Downing::Members(vec![members[2]])
         );
     }
 }

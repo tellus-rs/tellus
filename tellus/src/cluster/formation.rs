@@ -244,7 +244,7 @@ pub struct MajorityWithFallback {
 
 impl MajorityWithFallback {
     /// A provider passing over an address once it has been continuously unavailable for the given
-    /// duration.
+    /// duration. Zero passes over an address on the first round which reports it unavailable.
     pub fn new(after: Duration) -> Self {
         Self {
             after,
@@ -592,6 +592,24 @@ mod tests {
                 universe: 4
             })
         );
+    }
+
+    /// With a zero `after` the lowest address is passed over on the first round reporting it
+    /// unavailable.
+    #[test]
+    fn majority_with_fallback_with_a_zero_after_passes_over_at_once() {
+        let mut provider = MajorityWithFallback::new(Duration::ZERO);
+        let formation = formation(
+            2,
+            &[1, 2, 3, 4],
+            &[
+                (1, JoinOutcome::Unavailable),
+                (3, JoinOutcome::NoCluster),
+                (4, JoinOutcome::NoCluster),
+            ],
+        );
+
+        assert_eq!(observed_decision(&mut provider, &formation), Decision::Form);
     }
 
     /// A round which must not form still counts: a held answer resets the timer, so the lowest

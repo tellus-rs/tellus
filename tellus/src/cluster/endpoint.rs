@@ -182,7 +182,7 @@ pub struct EndpointConfig {
     /// How long a detailed Left or Down member is listed after this node learned of it. Must
     /// comfortably exceed the gossip convergence time so the detailed entry normally reaches every
     /// current member. It is also the age past which a watermark above `down_watermarks` may be
-    /// evicted and a parked reachability record is dropped. Defaults to
+    /// evicted and a parked reachability record is dropped. Must not be zero; defaults to
     /// [EndpointConfig::DEFAULT_DOWN_RETENTION].
     pub down_retention: Duration,
 
@@ -203,8 +203,8 @@ pub struct EndpointConfig {
     /// Bounds a shutting down process, so it is sized by the deployment's termination grace
     /// period rather than by the gossip cadence; an acknowledgment costs a round trip. It also
     /// bounds how long this node keeps delivering from the connection of a departed node, and
-    /// may acknowledge its drain, before running its node death sequence. Defaults to
-    /// [EndpointConfig::DEFAULT_LEAVE_TIMEOUT].
+    /// may acknowledge its drain, before running its node death sequence. Must not be zero;
+    /// defaults to [EndpointConfig::DEFAULT_LEAVE_TIMEOUT].
     pub leave_timeout: Duration,
 
     /// The bounds pacing reconnection of a lost connection: the first attempt waits the minimum,
@@ -232,7 +232,7 @@ pub struct EndpointConfig {
     /// a definitive refusal, e.g. by a timeout or a lost connection, so the seed may count this
     /// node already. Forming is refused with [FormError::JoinAmbiguous] until that address
     /// answers a join definitively, discovery drops it from the universe, or this bound passes.
-    /// Joins through any seed continue meanwhile. Defaults to
+    /// Joins through any seed continue meanwhile. Must not be zero; defaults to
     /// [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
     pub ambiguous_join_bound: Duration,
 
@@ -376,6 +376,18 @@ pub enum InvalidEndpointConfig {
     /// The configured `watch_refresh_interval` is zero.
     #[error("watch_refresh_interval is zero")]
     ZeroWatchRefreshInterval,
+
+    /// The configured `down_retention` is zero.
+    #[error("down_retention is zero")]
+    ZeroDownRetention,
+
+    /// The configured `leave_timeout` is zero.
+    #[error("leave_timeout is zero")]
+    ZeroLeaveTimeout,
+
+    /// The configured `ambiguous_join_bound` is zero.
+    #[error("ambiguous_join_bound is zero")]
+    ZeroAmbiguousJoinBound,
 
     /// The configured `change_capacity` is not a power of two, or too large for the channel.
     #[error("change_capacity of {change_capacity} is not a power of two up to {max}")]
@@ -1846,6 +1858,15 @@ fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
     if config.watch_refresh_interval.is_zero() {
         return Err(InvalidEndpointConfig::ZeroWatchRefreshInterval);
     }
+    if config.down_retention.is_zero() {
+        return Err(InvalidEndpointConfig::ZeroDownRetention);
+    }
+    if config.leave_timeout.is_zero() {
+        return Err(InvalidEndpointConfig::ZeroLeaveTimeout);
+    }
+    if config.ambiguous_join_bound.is_zero() {
+        return Err(InvalidEndpointConfig::ZeroAmbiguousJoinBound);
+    }
     if !config.change_capacity.is_power_of_two()
         || config.change_capacity.get() > MAX_CHANGE_CAPACITY
     {
@@ -3099,7 +3120,8 @@ mod tests {
 
     /// A frame size below one snapshot chunk is refused at start, since a connection setup could
     /// not send its member snapshot without the receiver refusing the frame. A zero interval is
-    /// refused too: both intervals drive a Tokio interval, which panics on a zero period.
+    /// refused too: both intervals drive a Tokio interval, which panics on a zero period. So are a
+    /// zero `down_retention`, `leave_timeout` and `ambiguous_join_bound`.
     #[test]
     fn an_invalid_config_is_refused() {
         let addr = "127.0.0.1:2552".parse().expect("valid address");
@@ -3134,6 +3156,27 @@ mod tests {
         ));
 
         config.watch_refresh_interval = EndpointConfig::DEFAULT_WATCH_REFRESH_INTERVAL;
+        config.down_retention = Duration::ZERO;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::ZeroDownRetention)
+        ));
+
+        config.down_retention = EndpointConfig::DEFAULT_DOWN_RETENTION;
+        config.leave_timeout = Duration::ZERO;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::ZeroLeaveTimeout)
+        ));
+
+        config.leave_timeout = EndpointConfig::DEFAULT_LEAVE_TIMEOUT;
+        config.ambiguous_join_bound = Duration::ZERO;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::ZeroAmbiguousJoinBound)
+        ));
+
+        config.ambiguous_join_bound = EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND;
         for rejected in [3, 1 << (usize::BITS - 1)] {
             config.change_capacity = NonZeroUsize::new(rejected).expect("not zero");
             assert!(matches!(
@@ -3677,6 +3720,9 @@ mod tests {
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "watch_refresh_interval": "0s" }"#;
+        assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
+
+        let json = r#"{ "advertised_addr": "127.0.0.1:2552", "leave_timeout": "0s" }"#;
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "max_frame_size": 1 }"#;
