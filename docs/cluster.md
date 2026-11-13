@@ -1260,6 +1260,14 @@ swap is added.
   window is the handshake of the first connection. A lane toward a new member usually opens through
   gossip before an application holds a ref at that address, but a ref carried in a message from a
   third node can arrive earlier.
+- **The provided codec, postcard, has no limit on nesting.** A node can encode and send a message
+  which nests deeper than the receiving node can decode. Decoding it overflows the stack of the
+  thread running the stream reader. That aborts the receiving node's process, and no dead letter is
+  logged. In a release build, a value of `enum Tree { Leaf, Node(Box<Tree>) }` nested 3,000 levels
+  deep arrived and one nested 5,000 levels deep aborted the node. Both nodes ran on macOS on arm64,
+  the stream reader on a Tokio worker thread with its default stack of 2 MiB. Input taken from
+  outside, such as a JSON document a client sent, should therefore have its depth limited before it
+  goes into a message.
 - **A publish costs one frame per node and data stream, not one per node.** A node's subscribers
   spread over the streams of the lane toward it like any recipients, so a topic with many
   subscribers on one node costs up to `max_streams_per_peer` frames toward it. The receiving node
