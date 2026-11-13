@@ -152,6 +152,7 @@ impl<R> ReplyTo<R> {
     /// Send the reply without blocking. If it cannot be delivered, e.g. because the asker has
     /// terminated or is no longer awaiting it, the reply is dropped and logged as a dead letter.
     /// A panic in a conversion given to [ActorContext::reply_to] does not reach the caller.
+    /// Neither does a panic in the `Schema::encode` of a reply which goes to another node.
     pub fn reply(self, reply: R) {
         match self.send_reply.take() {
             Some(send_reply) => send_reply(reply),

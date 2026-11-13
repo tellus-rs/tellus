@@ -18,16 +18,16 @@
 //! address. In that last case the tombstone kills the old incarnation, not the address, and the
 //! directory plus FIFO work against the new one.
 //!
-//! Request-response crosses nodes through the serializable `ReplyTo`. A remote `ask` resolves
-//! with the reply, and a reply stays FIFO with the responder's other messages to the asker. A
-//! forwarded `ReplyTo` chains its reply over two hops, and a `ReplyTo` serialized and resolved on
-//! its own node comes home (and refuses a second serialization). An ask resolves as `NoReply`
-//! rather than by timeout when the responder drops its `ReplyTo` and when the reply is oversize.
-//! A request targeting a terminated remote actor resolves as `NoReply` too, through the frame's
-//! reply tags. A request beyond `max_frame_size` fails its ask at the send, likewise instead of by
-//! timeout. Killing a node holding a `ReplyTo` fails the pending ask as `NoReply` via failure
-//! detection, and killing an unwatched node holding a `ReplyTo` fails the pending ask as `NoReply`
-//! once the member is downed.
+//! Request-response crosses nodes through the serializable `ReplyTo`. A remote `ask` resolves with
+//! the reply, and a reply stays FIFO with the responder's other messages to the asker. A forwarded
+//! `ReplyTo` chains its reply over two hops, and a `ReplyTo` serialized and resolved on its own
+//! node comes home (and refuses a second serialization). An ask resolves as `NoReply` rather than
+//! by timeout when the responder drops its `ReplyTo`, when the reply is oversize and when the
+//! reply's encode panics, which the responder survives. A request targeting a terminated remote
+//! actor resolves as `NoReply` too, through the frame's reply tags. A request beyond
+//! `max_frame_size` fails its ask at the send, likewise instead of by timeout. Killing a node
+//! holding a `ReplyTo` fails the pending ask as `NoReply` via failure detection, and killing an
+//! unwatched node holding a `ReplyTo` fails the pending ask as `NoReply` once the member is downed.
 //!
 //! A terminated signal survives a sever in the middle of the stream it must stay behind, with no
 //! message after it. A downed node frozen until its Down entry was swept is refused by the address
@@ -783,6 +783,11 @@ impl Actor for EchoServer {
                 Ok(Control::Continue(state))
             }
 
+            Incoming::Message(Request::AskPanickingReply { reply_to }) => {
+                reply_to.reply(PanickingReply);
+                Ok(Control::Continue(state))
+            }
+
             Incoming::Message(Request::Hold { reply_to }) => {
                 state.holds.push(reply_to);
                 Ok(Control::Continue(state))
@@ -951,6 +956,10 @@ enum Request {
 
     AskOversizeReply {
         reply_to: ReplyTo<BulkReply>,
+    },
+
+    AskPanickingReply {
+        reply_to: ReplyTo<PanickingReply>,
     },
 
     /// A payload acknowledged with its sequence number.
@@ -1376,6 +1385,15 @@ struct BulkReply {
 }
 
 impl Schema for BulkReply {}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct PanickingReply;
+
+impl Schema for PanickingReply {
+    fn encode(&self, _: &dyn Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+        panic!("the encode of this reply panics on purpose")
+    }
+}
 
 /// A node's own address next to the Up members it sees, so the client can tell whose view it is
 /// asserting on.
@@ -2496,7 +2514,8 @@ fn dead_target_ask_scenario(
 /// A remote `ask` resolves with the reply. A responder dropping its `ReplyTo` resolves the ask as
 /// `NoReply` via the reply-dropped notification rather than by timeout. A request beyond
 /// `max_frame_size` fails the ask at the send, and an oversize reply resolves it as `NoReply` via
-/// the reply-dropped notification, both instead of by timeout.
+/// the reply-dropped notification, both instead of by timeout. A reply whose encode panics
+/// resolves it as `NoReply` the same way, and the responder answers the next ask.
 fn remote_ask_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<()> {
     for seq in 0..ASKS {
         let reply = runtime
@@ -2524,6 +2543,21 @@ fn remote_ask_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::R
         runtime.block_on(echo.ask(TIMEOUT, |reply_to| Request::AskOversizeReply { reply_to }));
     if !matches!(oversize_reply, Err(AskError::NoReply)) {
         bail!("oversize reply ask resolved to {oversize_reply:?}");
+    }
+
+    let panicking_reply =
+        runtime.block_on(echo.ask(TIMEOUT, |reply_to| Request::AskPanickingReply { reply_to }));
+    if !matches!(panicking_reply, Err(AskError::NoReply)) {
+        bail!("panicking reply ask resolved to {panicking_reply:?}");
+    }
+    let reply = runtime
+        .block_on(echo.ask(TIMEOUT, |reply_to| Request::Ask {
+            seq: ASKS,
+            reply_to,
+        }))
+        .context("ask after a panicking reply")?;
+    if reply.seq != ASKS {
+        bail!("reply {} instead of {ASKS}", reply.seq);
     }
     Ok(())
 }
