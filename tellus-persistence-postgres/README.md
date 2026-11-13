@@ -32,9 +32,12 @@ store.migrate().await?;
 let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
 ```
 
-`migrate` applies the embedded schema, idempotently; skip it if the schema is managed externally.
 The re-export also gives access to `sqlx::postgres::PgPoolOptions`, which configures the pool,
 for example its size.
+
+`migrate` applies the embedded schema, idempotently. Calling it is optional: `PostgresStore::new`
+does not touch the schema. An application which manages its schema with a tool of its own can
+create the tables itself instead, from the definition under [Schema](#schema).
 
 `migrate` records what it has applied in a table of its own, `_tellus_persistence_migrations`, so
 the store's schema and an application's own sqlx migrations can share a database. Release 0.2.14 and
@@ -59,9 +62,37 @@ Such a release records the row again. Once the application's migrator has record
 ## Schema
 
 Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,
-snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained. The
-schema is [`migrations/0001_events_and_snapshots.sql`](migrations/0001_events_and_snapshots.sql),
-embedded in the crate and applied via `PostgresStore::migrate`.
+snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained.
+`PostgresStore::migrate` applies
+[`migrations/0001_events_and_snapshots.sql`](migrations/0001_events_and_snapshots.sql), which is
+embedded in the crate. Its two statements are the supported definition of the schema, also for an
+application which creates the tables itself:
+
+```sql
+CREATE TABLE IF NOT EXISTS events (
+    entity_type    TEXT   NOT NULL,
+    entity_id      TEXT   NOT NULL,
+    seq_no         BIGINT NOT NULL,
+    manifest       TEXT   NOT NULL,
+    schema_version INT    NOT NULL,
+    payload        BYTEA  NOT NULL,
+    PRIMARY KEY (entity_type, entity_id, seq_no)
+);
+
+CREATE TABLE IF NOT EXISTS snapshots (
+    entity_type    TEXT   NOT NULL,
+    entity_id      TEXT   NOT NULL,
+    next_seq_no    BIGINT NOT NULL,
+    manifest       TEXT   NOT NULL,
+    schema_version INT    NOT NULL,
+    payload        BYTEA  NOT NULL,
+    PRIMARY KEY (entity_type, entity_id)
+);
+```
+
+The store uses these two tables only. A database whose tables an application created itself hence
+needs no `_tellus_persistence_migrations`. Every change to the schema is listed in the
+[changelog](CHANGELOG.md).
 
 Appends are a single atomic, conditional statement: a stale expected next sequence number, below
 or above the actual one, fails with `AppendError::Conflict` and leaves the stream untouched, which

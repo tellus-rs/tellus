@@ -54,7 +54,7 @@ pub struct PostgresStore {
 
 impl PostgresStore {
     /// Create a store over the given connection pool. The schema is not touched; apply it via
-    /// [PostgresStore::migrate] or manage it externally.
+    /// [PostgresStore::migrate] or create it from the definition in the README.
     pub fn new(pool: PgPool) -> Self {
         Self { pool }
     }
