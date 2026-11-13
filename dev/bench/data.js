@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794609500802,
+  "lastUpdate": 1794609505794,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21373,6 +21373,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 125842,
             "range": "± 2768",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7473398ced03260da305bd39600252980cb98abd",
+          "message": "Merge pull request #332 from tellus-rs/fix/zero-durations\n\nfix(cluster)!: refuse zero durations which switch off a safeguard",
+          "timestamp": "2026-11-13T23:27:40+01:00",
+          "tree_id": "60738514105fd9159d86717d364dcb17904eadc6",
+          "url": "https://github.com/tellus-rs/tellus/commit/7473398ced03260da305bd39600252980cb98abd"
+        },
+        "date": 1794609505562,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2560539,
+            "range": "± 64160",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2520210,
+            "range": "± 46067",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 763709,
+            "range": "± 29282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 102184,
+            "range": "± 8435",
             "unit": "ns/iter"
           }
         ]
