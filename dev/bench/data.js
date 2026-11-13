@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794608606992,
+  "lastUpdate": 1794608609971,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21037,6 +21037,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 143387,
             "range": "± 4324",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0c176679b309401c938ce52f6d78bec640739f3b",
+          "message": "Merge pull request #333 from tellus-rs/test/zombie-joined\n\ntest(cluster): freeze a zombie only once its own join has returned",
+          "timestamp": "2026-11-13T23:15:38+01:00",
+          "tree_id": "cb8924cff6cbc517fc185ea513b2ec23f502e716",
+          "url": "https://github.com/tellus-rs/tellus/commit/0c176679b309401c938ce52f6d78bec640739f3b"
+        },
+        "date": 1794608609629,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3268669,
+            "range": "± 197951",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3102662,
+            "range": "± 147066",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1117060,
+            "range": "± 4655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 138703,
+            "range": "± 3207",
             "unit": "ns/iter"
           }
         ]
