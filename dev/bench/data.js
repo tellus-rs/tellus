@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794609069506,
+  "lastUpdate": 1794609500802,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -13859,6 +13859,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 36566779,
             "range": "± 847817",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7473398ced03260da305bd39600252980cb98abd",
+          "message": "Merge pull request #332 from tellus-rs/fix/zero-durations\n\nfix(cluster)!: refuse zero durations which switch off a safeguard",
+          "timestamp": "2026-11-13T23:27:40+01:00",
+          "tree_id": "60738514105fd9159d86717d364dcb17904eadc6",
+          "url": "https://github.com/tellus-rs/tellus/commit/7473398ced03260da305bd39600252980cb98abd"
+        },
+        "date": 1794609500199,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 21988227,
+            "range": "± 6232970",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 25683053,
+            "range": "± 7153878",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 694115,
+            "range": "± 4933",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 801205,
+            "range": "± 8769",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 10973120,
+            "range": "± 846765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 8079205,
+            "range": "± 508867",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 25151820,
+            "range": "± 355925",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 26682023,
+            "range": "± 319071",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 25101093,
+            "range": "± 434384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 26219453,
+            "range": "± 380317",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 26137909,
+            "range": "± 415957",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 28471668,
+            "range": "± 232556",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 33033898,
+            "range": "± 438296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 25988171,
+            "range": "± 440545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 28128327,
+            "range": "± 444784",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 33350607,
+            "range": "± 222426",
             "unit": "ns/iter"
           }
         ]
