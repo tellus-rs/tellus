@@ -16,7 +16,9 @@
 //! over the reconnected lane. It is also covered by a terminated frame dropped on the watched node
 //! being healed by the watch refresh, and by a node killed under a watch and restarted at its old
 //! address. In that last case the tombstone kills the old incarnation, not the address, and the
-//! directory plus FIFO work against the new one.
+//! directory plus FIFO work against the new one. A node restarted as a cluster of one, where no
+//! member holds a fence for its predecessor, refuses a reference to the predecessor by itself: a
+//! watch on it fires, and the node never dials its own address.
 //!
 //! Request-response crosses nodes through the serializable `ReplyTo`. A remote `ask` resolves with
 //! the reply, and a reply stays FIFO with the responder's other messages to the asker. A forwarded
@@ -53,9 +55,9 @@
 //! find each other through bootstrap's probe and report each other as foreign clusters.
 //!
 //! Every spawned node but the majority, mutual TLS, cluster ID, foreign probe and bootstrap
-//! nodes joins the cluster through the client as its seed. Scenarios hence also exercise the join
-//! handshake, the member snapshot and the supersession of a restarted incarnation on every
-//! bootstrap.
+//! nodes and the two nodes of the own address scenario joins the cluster through the client as
+//! its seed. Scenarios hence also exercise the join handshake, the member snapshot and the
+//! supersession of a restarted incarnation on every bootstrap.
 
 use anyhow::{Context, bail};
 use derive_more::{Deref, DerefMut};
@@ -86,9 +88,9 @@ use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, AskError, Control, Incoming, ReplyTo,
     SchemaVersion, Unstashed, Untimed,
     cluster::{
-        self, BootstrapConfig, Change, Changes, ClusterState, ClusterStateSubscription, DownError,
-        EndpointConfig, FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member, MemberState, Peer,
-        Schema, Transition, UnsupportedSchemaVersion,
+        self, BootstrapConfig, Change, Changes, ClusterState, ClusterStateSubscription, Departure,
+        DownError, EndpointConfig, FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member,
+        MemberState, Peer, Schema, Transition, UnsupportedSchemaVersion,
         codec::{Codec, CodecError},
         downing::{Disconnected, DownAfterDeadline, Downing, DowningProvider, KeepMajority},
         failure::{Deadline, DeadlineFailureDetector},
@@ -117,6 +119,7 @@ const CLUSTER_SIZE_ENV: &str = "TELLUS_REMOTING_CLUSTER_SIZE";
 const STREAMS_ENV: &str = "TELLUS_REMOTING_STREAMS";
 const FORCE_COLLISION_ENV: &str = "TELLUS_REMOTING_FORCE_COLLISION";
 const APP_VERSION_ENV: &str = "TELLUS_REMOTING_APP_VERSION";
+const STALE_REF_ENV: &str = "TELLUS_REMOTING_STALE_REF";
 const ADDR_PREFIX: &str = "ADDR ";
 const REF_PREFIX: &str = "REF ";
 const JOIN_PREFIX: &str = "JOIN ";
@@ -211,6 +214,7 @@ fn main() -> anyhow::Result<()> {
         Ok(role) if role == Role::Majority.as_str() => majority_node(),
         Ok(role) if role == Role::ClusterId.as_str() => cluster_id_node(),
         Ok(role) if role == Role::ForeignProbe.as_str() => foreign_probe_node(),
+        Ok(role) if role == Role::Successor.as_str() => successor_node(),
         Ok(role) if role == Role::Legacy.as_str() => legacy_node(),
         Ok(role) if role == Role::Bench.as_str() => bench_client(),
         Ok(role) if role == Role::GossipBench.as_str() => gossip_bench_client(),
@@ -262,6 +266,7 @@ enum Role {
     Majority,
     ClusterId,
     ForeignProbe,
+    Successor,
     Legacy,
     Bench,
     GossipBench,
@@ -282,6 +287,7 @@ impl Role {
             Role::Majority => "majority",
             Role::ClusterId => "cluster-id",
             Role::ForeignProbe => "foreign-probe",
+            Role::Successor => "successor",
             Role::Legacy => "legacy",
             Role::Bench => "bench",
             Role::GossipBench => "bench-gossip",
@@ -684,6 +690,42 @@ fn foreign_probe_node() -> anyhow::Result<()> {
 
         std::future::pending::<anyhow::Result<()>>().await
     })
+}
+
+/// The successor node: reads back the reference which its predecessor at the same address
+/// serialized, from [STALE_REF_ENV]. Given neither [SEEDS_ENV] nor [BOOTSTRAP_ENV], it forms a
+/// cluster of its own. It checks that a watch on the reference, its first use, fires. Then it
+/// leaves and checks its departure report, which names a peer only if this node dialed one.
+fn successor_node() -> anyhow::Result<()> {
+    let runtime = Runtime::new()?;
+    let _guard = runtime.enter();
+    runtime.block_on(start_endpoint())?;
+
+    let stale = hex_decode(&env::var(STALE_REF_ENV).context("stale reference")?)?;
+    let stale = cluster::deserialize_ref::<Request>(&stale).context("stale reference")?;
+
+    // The watch must be the first use of the reference: a later one is refused by its lane anyway!
+    let (event_tx, event_rx) = mpsc::channel();
+    let system = ActorSystem::new(DeathWatch {
+        subject: stale,
+        event_tx,
+    });
+    match recv(&event_rx)? {
+        TestEvent::Watching => {}
+        _ => bail!("unexpected event from the death watch client"),
+    }
+    expect_done(&event_rx).context("the watch on the stale reference fires")?;
+    runtime
+        .block_on(timeout(TIMEOUT, system.terminated()))
+        .context("death watch client termination")??;
+
+    let departure = runtime
+        .block_on(timeout(TIMEOUT, cluster::leave()))
+        .context("leaving the cluster")??;
+    if departure != Departure::default() {
+        bail!("the departure of a cluster of one names a peer: {departure:?}");
+    }
+    Ok(())
 }
 
 /// Downs nobody, so a node only ever learns it is dead from the others.
@@ -1666,6 +1708,7 @@ fn client() -> anyhow::Result<()> {
     identity_binding_scenario().context("identity binding scenario")?;
     foreign_cluster_scenario(&runtime).context("foreign cluster scenario")?;
     retried("foreign probe scenario", foreign_probe_scenario).context("foreign probe scenario")?;
+    retried("own address scenario", own_address_scenario).context("own address scenario")?;
 
     Ok(())
 }
@@ -4128,6 +4171,25 @@ fn foreign_probe_scenario() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A reference outlives the process which serialized it and is read back by its successor at the
+/// same address. Each of the two is a cluster of one, so no member holds a fence for the
+/// predecessor. The successor checks that it refuses the reference by itself, see
+/// [successor_node].
+fn own_address_scenario() -> anyhow::Result<()> {
+    let addr = reserved_addr()?;
+    let mut predecessor = KillOnDrop(spawn_seedless_node(Role::Echo, addr, None)?);
+    let stale = stdout_line(&mut predecessor, REF_PREFIX).context("the predecessor's reference")?;
+    predecessor.0.kill().context("killing the predecessor")?;
+    predecessor.0.wait().context("reaping the predecessor")?;
+    force_collision("rebind", addr);
+    let held = hold_addr(addr)?;
+    drop(held);
+    force_collision("respawn", addr);
+
+    let mut successor = KillOnDrop(spawn_seedless_node(Role::Successor, addr, Some(&stale))?);
+    expect_exit(&mut successor, "successor")
+}
+
 struct EchoClient {
     server: ActorRef<Request>,
     event_tx: mpsc::Sender<TestEvent>,
@@ -5384,8 +5446,8 @@ where
 
 /// Start this process's remoting endpoint, on the address named by [ADDR_ENV] or otherwise an OS
 /// chosen port, and join the cluster through the seeds named by [SEEDS_ENV], if any, or by
-/// bootstrapping from the address list named by [BOOTSTRAP_ENV]. It must run inside a Tokio
-/// runtime.
+/// bootstrapping from the address list named by [BOOTSTRAP_ENV]. With neither it forms a cluster
+/// of its own. It must run inside a Tokio runtime.
 async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     let bind_addr = env::var(ADDR_ENV).unwrap_or_else(|_| "127.0.0.1:0".to_string());
     let transport = QuicTransport::dev(bind_addr.parse()?)?;
@@ -5407,8 +5469,7 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     } else if let Ok(seeds) = env::var(BOOTSTRAP_ENV) {
         bootstrap_cluster(parse_addrs(&seeds)?).await?;
     } else {
-        // A started endpoint is no cluster: the client is the seed the spawned nodes join, so it
-        // is the one node here which forms rather than joins.
+        // A started endpoint is no cluster: a node which is given nothing to join forms one.
         cluster::form().context("forming the cluster")?;
     }
     Ok(addr)
@@ -5687,6 +5748,29 @@ fn spawn_cluster_id_node(bind_addr: SocketAddr, seed: Option<SocketAddr>) -> any
     }
 
     let mut child = command.spawn().context("cluster ID process")?;
+    await_bound(&mut child, bind_addr)?;
+    Ok(child)
+}
+
+/// A node which is given no seed. A role which starts through [start_endpoint] then forms a
+/// cluster of its own. `stale_ref` is handed on as [STALE_REF_ENV].
+fn spawn_seedless_node(
+    role: Role,
+    bind_addr: SocketAddr,
+    stale_ref: Option<&str>,
+) -> anyhow::Result<Child> {
+    let mut command = Command::new(env::current_exe()?);
+    command
+        .env(ROLE_ENV, role.as_str())
+        .env(ADDR_ENV, bind_addr.to_string())
+        .stdout(Stdio::piped());
+    if let Some(stale_ref) = stale_ref {
+        command.env(STALE_REF_ENV, stale_ref);
+    }
+
+    let mut child = command
+        .spawn()
+        .with_context(|| format!("seedless {} process", role.as_str()))?;
     await_bound(&mut child, bind_addr)?;
     Ok(child)
 }

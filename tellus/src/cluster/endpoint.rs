@@ -911,6 +911,10 @@ impl EndpointInner {
         if self.downed() || self.leaving() {
             return Err(LaneError::NodeUnreachable(peer));
         }
+        // A lane toward another incarnation at this address makes this node dial and admit itself!
+        if peer.addr() == self.node.addr() && peer != self.node {
+            return Err(LaneError::NodeUnreachable(peer));
+        }
 
         #[cfg(feature = "cluster-dev")]
         if matches!(frame, Frame::Terminated { .. }) && self.drop_terminated() {
@@ -2465,6 +2469,26 @@ mod tests {
 
     fn pinned_addr(coordinator: &Coordinator) -> Option<SocketAddr> {
         coordinator.pinned.map(|(addr, _)| addr)
+    }
+
+    /// A send toward another incarnation at this node's own address fails here, for one minted
+    /// before this node's and for one minted after it, and this node never dials itself.
+    #[test]
+    fn a_send_toward_another_incarnation_at_this_nodes_address_fails() {
+        let predecessor = NodeId::new(addr(1));
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let successor = NodeId::new(addr(1));
+        assert!(predecessor.incarnation() < endpoint.node().incarnation());
+        assert!(endpoint.node().incarnation() < successor.incarnation());
+
+        for other in [predecessor, successor] {
+            assert!(matches!(
+                endpoint.send(other, gossip()),
+                Err(LaneError::NodeUnreachable(node)) if node == other
+            ));
+        }
+        assert!(dial_requests.is_empty());
     }
 
     /// Once admission has classified an address as incompatible, later frames fail locally
