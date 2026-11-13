@@ -178,6 +178,13 @@ Releases:
 
 - release-plz opens or updates a release PR whenever `main` has unreleased changes; merging it
   publishes the crates and tags them (`tellus-vX.Y.Z`, `tellus-persistence-postgres-vX.Y.Z`).
+- A change needing more than its commit subject adds a release note, a Markdown file opening with a
+  `###` heading, to the crate's `release-notes/` directory (rules in `CONTRIBUTING.md`). After
+  release-plz has published, `release-plz.yml` runs `.github/release/release_notes.py` for every
+  released tag and puts the notes added since the crate's previous tag in front of the generated
+  changelog of its GitHub release. Nothing else edits a release, and note files are never deleted.
+  Given a tag which does not exist yet, the script previews the next release from `HEAD`;
+  `test_release_notes.py` pins its rules, and CI runs it.
 - The website [tellus-rs.github.io](https://github.com/tellus-rs/tellus-rs.github.io) pins
   tellus as a submodule at a release tag. It shows code from the examples and tests of the pinned
   tag and reads the version it displays from there. Its daily `pin-tellus.yml` workflow notices a

@@ -51,6 +51,22 @@ jobs:
           toolchain: ${{ needs.toolchain.outputs.toolchain }}
 
       - name: Run release-plz
+        id: release-plz
         uses: MarcoIeni/release-plz-action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+
+      - name: Put the release notes in front of the changelog
+        if: steps.release-plz.outputs.releases_created == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          RELEASES: ${{ steps.release-plz.outputs.releases }}
+        run: |
+          git fetch --quiet --tags origin
+          for tag in $(jq -r '.[].tag' <<< "$RELEASES"); do
+            gh release view "$tag" --json body --jq .body > "$RUNNER_TEMP/changelog.md"
+            python3 -I .github/release/release_notes.py "$tag" "$RUNNER_TEMP/changelog.md" > "$RUNNER_TEMP/body.md"
+            if [ -s "$RUNNER_TEMP/body.md" ]; then
+              gh release edit "$tag" --notes-file "$RUNNER_TEMP/body.md"
+            fi
+          done

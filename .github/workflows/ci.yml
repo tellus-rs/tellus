@@ -168,3 +168,14 @@ jobs:
         run: |
           python3 -I .github/stack-sweep/test_report.py
           python3 -I .github/stack-sweep/test_codegen.py
+
+  release-scripts:
+    name: Test Release Scripts
+    runs-on: ubuntu-latest
+    needs: single-commit
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Run the tests of release_notes.py
+        run: python3 -I .github/release/test_release_notes.py

@@ -34,6 +34,13 @@ The commit message is a single subject line of at most 72 characters, without a 
 zero leave_timeout`. release-plz builds the changelog from these subjects, so the subject is what
 users will read.
 
+A breaking change which the compiler does not explain, or which needs manual steps such as a
+statement against a database, also adds a release note: a Markdown file of its own in the crate's
+`release-notes/` directory, named after the issue or the change, e.g. `311-table-rename.md`. It
+opens with a `###` heading and says what changed, why, and what a user has to do. The note goes in
+front of the changelog in the GitHub release of the crate's next version, and the file stays where
+it is. `python3 -I .github/release/release_notes.py tellus-v<next version>` previews that release.
+
 Sign off your commit with `git commit -s`. The `Signed-off-by` trailer certifies that you may
 contribute the change under the project's license, as the
 [Developer Certificate of Origin](https://developercertificate.org) states.
