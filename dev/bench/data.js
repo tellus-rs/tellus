@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794595048466,
+  "lastUpdate": 1794595050567,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20701,6 +20701,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 83230,
             "range": "± 1849",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1b43c9e7ef41c177991036c77edfcedbef83cce",
+          "message": "Merge pull request #327 from tellus-rs/fix/decode-panic\n\nfix(cluster): keep a panicking decode from closing the connection",
+          "timestamp": "2026-11-13T19:29:38+01:00",
+          "tree_id": "de4c5815c3bce50793dc867e05c4d1ea76d641ad",
+          "url": "https://github.com/tellus-rs/tellus/commit/c1b43c9e7ef41c177991036c77edfcedbef83cce"
+        },
+        "date": 1794595049976,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2570030,
+            "range": "± 85437",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2493338,
+            "range": "± 77271",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 898134,
+            "range": "± 6203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 112222,
+            "range": "± 3802",
             "unit": "ns/iter"
           }
         ]
