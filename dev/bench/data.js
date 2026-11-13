@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794560239112,
+  "lastUpdate": 1794560240876,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20197,6 +20197,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 138600,
             "range": "± 4990",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1b3620276cefa54eb424c6fde157812ed139c151",
+          "message": "Merge pull request #320 from tellus-rs/ci/release-notes\n\nci: put hand-written release notes in front of the changelog",
+          "timestamp": "2026-11-13T09:49:07+01:00",
+          "tree_id": "8dc569a3eda508331ea842594ea6e464674d8b84",
+          "url": "https://github.com/tellus-rs/tellus/commit/1b3620276cefa54eb424c6fde157812ed139c151"
+        },
+        "date": 1794560240432,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2831684,
+            "range": "± 57959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2943493,
+            "range": "± 115346",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1112837,
+            "range": "± 9974",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 137628,
+            "range": "± 4446",
             "unit": "ns/iter"
           }
         ]
