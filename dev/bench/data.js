@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794561138693,
+  "lastUpdate": 1794561141098,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21675,6 +21675,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4736128,
             "range": "± 385243",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f16123be04820fbada3dc9bf60ff6c6b5561ea3f",
+          "message": "Merge pull request #321 from tellus-rs/docs/release-notes\n\ndocs: add release notes for the breaking changes since 0.5.3",
+          "timestamp": "2026-11-13T10:04:33+01:00",
+          "tree_id": "90e87b456401fe07674117de64fff826206da064",
+          "url": "https://github.com/tellus-rs/tellus/commit/f16123be04820fbada3dc9bf60ff6c6b5561ea3f"
+        },
+        "date": 1794561140845,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24905475,
+            "range": "± 1005678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 25045404,
+            "range": "± 1141580",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3970480,
+            "range": "± 278024",
             "unit": "ns/iter"
           }
         ]
