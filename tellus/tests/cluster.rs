@@ -76,7 +76,7 @@ use std::{
     sync::{
         Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError,
         atomic::{AtomicBool, AtomicU32, Ordering},
-        mpsc,
+        mpsc::{self, RecvTimeoutError},
     },
     thread,
     time::{Duration, Instant},
@@ -526,15 +526,9 @@ fn zombie_node() -> anyhow::Result<()> {
             .await
             .context("joining the cluster")??;
 
-        let downed = async {
-            while cluster::lifecycle()? != Lifecycle::Downed {
-                sleep(CONVERGENCE_POLL).await;
-            }
-            anyhow::Ok(())
-        };
-        timeout(GIVE_UP_TIMEOUT, downed)
-            .await
-            .context("downed within the timeout")??;
+        while cluster::lifecycle()? != Lifecycle::Downed {
+            sleep(CONVERGENCE_POLL).await;
+        }
 
         println!("{JOIN_PREFIX}downed");
         std::io::stdout().flush()?;
@@ -5737,9 +5731,11 @@ fn expect_line(lines: &mpsc::Receiver<String>, expected: &str) -> anyhow::Result
     let deadline = Instant::now() + TIMEOUT;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let line = lines
-            .recv_timeout(remaining)
-            .with_context(|| format!("line {expected:?} within the timeout"))?;
+        let line = match lines.recv_timeout(remaining) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => bail!("no line {expected:?} within the timeout"),
+            Err(RecvTimeoutError::Disconnected) => bail!("stdout closed before line {expected:?}"),
+        };
         if line == expected {
             return Ok(());
         }
@@ -5752,9 +5748,11 @@ fn prefixed_line(lines: &mpsc::Receiver<String>, prefix: &str) -> anyhow::Result
     let deadline = Instant::now() + TIMEOUT;
     loop {
         let remaining = deadline.saturating_duration_since(Instant::now());
-        let line = lines
-            .recv_timeout(remaining)
-            .with_context(|| format!("line {prefix:?} within the timeout"))?;
+        let line = match lines.recv_timeout(remaining) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => bail!("no line {prefix:?} within the timeout"),
+            Err(RecvTimeoutError::Disconnected) => bail!("stdout closed before line {prefix:?}"),
+        };
         if let Some(rest) = line.strip_prefix(prefix) {
             return Ok(rest.to_string());
         }
