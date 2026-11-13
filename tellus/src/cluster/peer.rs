@@ -1889,6 +1889,7 @@ mod tests {
         ActorId, Backoff, Incoming, MailboxCapacity, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
+            codec::{Codec, CodecError},
             discovery::{KeyKind, WireKey},
             endpoint::{EndpointConfig, EndpointInner, FormError, MemberAdmission},
             formation::JoinOutcome,
@@ -1907,6 +1908,7 @@ mod tests {
                 write_streams,
             },
             receptionist::{self, WireGroup},
+            schema::Schema,
             state::ForeignCluster,
             transport::{
                 ConnectedControl, Connection, FrameReceiver, FrameSender, PeerIdentity, Transport,
@@ -1919,6 +1921,7 @@ mod tests {
         watch::WatcherRegistration,
     };
     use semver::Version;
+    use serde::{Deserialize, Serialize};
     use std::{
         borrow::Cow,
         collections::{BTreeSet, HashSet, VecDeque},
@@ -1926,7 +1929,11 @@ mod tests {
         io, iter,
         net::{IpAddr, Ipv4Addr, SocketAddr},
         num::NonZeroUsize,
-        sync::{Arc, Mutex, atomic::AtomicBool, mpsc},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicBool, Ordering},
+            mpsc,
+        },
         time::Duration,
     };
     use tokio::{
@@ -1941,6 +1948,7 @@ mod tests {
 
     static NOT_LEAVING: AtomicBool = AtomicBool::new(false);
     static LEAVING: AtomicBool = AtomicBool::new(true);
+    static DECODE_PANICKED: AtomicBool = AtomicBool::new(false);
 
     struct FakeReceiver {
         frames: VecDeque<Vec<u8>>,
@@ -2053,6 +2061,56 @@ mod tests {
         };
         assert_eq!(received(first_mailbox), [42]);
         assert_eq!(received(second_mailbox), [42, 42]);
+    }
+
+    /// A message whose decode panics is a dead letter like one which does not decode: the reader
+    /// goes on with the next frame.
+    #[tokio::test]
+    async fn a_panicking_message_decode_does_not_end_the_reader() {
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let peer = peer();
+        let (first, _first_mailbox) =
+            SelfRef::<PanicsWhenDecoded>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        let (second, second_mailbox) =
+            SelfRef::<u64>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        endpoint.registry().bind(first.actor_ref());
+        endpoint.registry().bind(second.actor_ref());
+        let frames = [first.actor_ref().actor_id(), second.actor_ref().actor_id()]
+            .map(|target| message(endpoint, target, 42))
+            .map(|frame| frame.encode_into(Vec::new()).expect("frame encodes"));
+
+        let end = read_frames(
+            FakeReceiver::new(frames),
+            peer,
+            endpoint.track_liveness(peer),
+            endpoint,
+        )
+        .await;
+
+        assert!(matches!(end, ReadEnd::Closed));
+        assert!(DECODE_PANICKED.load(Ordering::Relaxed));
+        let received = second_mailbox
+            .split()
+            .0
+            .drain()
+            .filter_map(|incoming| match incoming {
+                Incoming::Message(message) => Some(message),
+                Incoming::Terminated(_) => None,
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(received, [42]);
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct PanicsWhenDecoded;
+
+    impl Schema for PanicsWhenDecoded {
+        fn decode(_: &dyn Codec, _: SchemaVersion, _: &[u8]) -> Result<Self, CodecError> {
+            DECODE_PANICKED.store(true, Ordering::Relaxed);
+            panic!("message decode bug")
+        }
     }
 
     /// A multicast which never reaches the transport is a dead letter for every target it names.

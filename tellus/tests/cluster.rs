@@ -24,10 +24,11 @@
 //! node comes home (and refuses a second serialization). An ask resolves as `NoReply` rather than
 //! by timeout when the responder drops its `ReplyTo`, when the reply is oversize and when the
 //! reply's encode panics, which the responder survives. A request targeting a terminated remote
-//! actor resolves as `NoReply` too, through the frame's reply tags. A request beyond
-//! `max_frame_size` fails its ask at the send, likewise instead of by timeout. Killing a node
-//! holding a `ReplyTo` fails the pending ask as `NoReply` via failure detection, and killing an
-//! unwatched node holding a `ReplyTo` fails the pending ask as `NoReply` once the member is downed.
+//! actor resolves as `NoReply` too, through the frame's reply tags, and so does one whose decode
+//! panics on the receiving node. A request beyond `max_frame_size` fails its ask at the send,
+//! likewise instead of by timeout. Killing a node holding a `ReplyTo` fails the pending ask as
+//! `NoReply` via failure detection, and killing an unwatched node holding a `ReplyTo` fails the
+//! pending ask as `NoReply` once the member is downed.
 //!
 //! A terminated signal survives a sever in the middle of the stream it must stay behind, with no
 //! message after it. A downed node frozen until its Down entry was swept is refused by the address
@@ -62,7 +63,7 @@ use rustls::{
     RootCertStore,
     pki_types::{CertificateDer, PrivateKeyDer},
 };
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
@@ -782,6 +783,11 @@ impl Actor for EchoServer {
                 Ok(Control::Continue(state))
             }
 
+            Incoming::Message(Request::AskPanickingDecode { reply_to, .. }) => {
+                reply_to.reply(Reply { seq: 0 });
+                Ok(Control::Continue(state))
+            }
+
             Incoming::Message(Request::Hold { reply_to }) => {
                 state.holds.push(reply_to);
                 Ok(Control::Continue(state))
@@ -954,6 +960,12 @@ enum Request {
 
     AskPanickingReply {
         reply_to: ReplyTo<PanickingReply>,
+    },
+
+    AskPanickingDecode {
+        // Must precede `reply_to`: a proxy decoded ahead of the panic answers by its drop!
+        poison: PanicsWhenDecoded,
+        reply_to: ReplyTo<Reply>,
     },
 
     /// A payload acknowledged with its sequence number.
@@ -1386,6 +1398,19 @@ struct PanickingReply;
 impl Schema for PanickingReply {
     fn encode(&self, _: &dyn Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         panic!("the encode of this reply panics on purpose")
+    }
+}
+
+/// Deserializing it panics, so the decode of a request which holds it panics on the receiving node.
+#[derive(Serialize)]
+struct PanicsWhenDecoded;
+
+impl<'de> Deserialize<'de> for PanicsWhenDecoded {
+    fn deserialize<D>(_: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        panic!("the decode of this request panics on purpose")
     }
 }
 
@@ -2508,8 +2533,10 @@ fn dead_target_ask_scenario(
 /// A remote `ask` resolves with the reply. A responder dropping its `ReplyTo` resolves the ask as
 /// `NoReply` via the reply-dropped notification rather than by timeout. A request beyond
 /// `max_frame_size` fails the ask at the send, and an oversize reply resolves it as `NoReply` via
-/// the reply-dropped notification, both instead of by timeout. A reply whose encode panics
-/// resolves it as `NoReply` the same way, and the responder answers the next ask.
+/// the reply-dropped notification, both instead of by timeout. A reply whose encode panics resolves
+/// it as `NoReply` the same way, and the responder answers the next ask. A request whose decode
+/// panics on the responder's node resolves it as `NoReply` as well, and the node answers the next
+/// ask.
 fn remote_ask_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<()> {
     for seq in 0..ASKS {
         let reply = runtime
@@ -2550,6 +2577,24 @@ fn remote_ask_scenario(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::R
             reply_to,
         }))
         .context("ask after a panicking reply")?;
+    if reply.seq != ASKS {
+        bail!("reply {} instead of {ASKS}", reply.seq);
+    }
+
+    let panicking_decode =
+        runtime.block_on(echo.ask(TIMEOUT, |reply_to| Request::AskPanickingDecode {
+            poison: PanicsWhenDecoded,
+            reply_to,
+        }));
+    if !matches!(panicking_decode, Err(AskError::NoReply)) {
+        bail!("panicking decode ask resolved to {panicking_decode:?}");
+    }
+    let reply = runtime
+        .block_on(echo.ask(TIMEOUT, |reply_to| Request::Ask {
+            seq: ASKS,
+            reply_to,
+        }))
+        .context("ask after a panicking decode")?;
     if reply.seq != ASKS {
         bail!("reply {} instead of {ASKS}", reply.seq);
     }

@@ -613,7 +613,9 @@ as unknown targets, at-most-once either way.
   full outbound queue, a message encoding beyond `max_frame_size` and an undecodable payload all
   become logged dead letters. Undecodable includes a payload whose embedded reference names an
   actor of the receiving node which has already terminated: the whole message is the dead letter
-  then, unlike a local tell to a terminated actor, which costs only itself.
+  then, unlike a local tell to a terminated actor, which costs only itself. Undecodable also
+  includes a payload, of a message or of a reply, whose `Schema::decode` panics. The panic is
+  logged at error level, and the stream reader goes on with the next frame.
 - **Per-sender FIFO holds** for messages from one sender to one target, "with gaps" across
   reconnects as above.
 - **Remote death watch has two tiers**, indistinguishable in the API:

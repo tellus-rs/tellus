@@ -6,7 +6,7 @@ use crate::{
         receptionist::{
             MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, Registration, WireGroup, registration_len,
         },
-        schema::Schema,
+        schema::{self, Schema},
     },
     sync::{lock, read, write},
     watch::{ActorTerminated, TerminatedHandler, Watcher, WatcherRegistry},
@@ -326,7 +326,11 @@ where
         payload: &[u8],
         codec: &dyn Codec,
     ) -> Result<(), CodecError> {
-        let message = M::decode(codec, schema_version, payload)?;
+        let message = schema::catch_panic_and_log::<M, _, _>(
+            "message decode panicked",
+            CodecError::decoding,
+            || M::decode(codec, schema_version, payload),
+        )?;
         self.actor_ref.tell(message);
         Ok(())
     }
