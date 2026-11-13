@@ -516,7 +516,7 @@ fn leave_node() -> anyhow::Result<()> {
 
 /// The zombie node: a member which never downs anybody. So whatever happens while it is frozen,
 /// it keeps dialing the client once resumed and can only learn its fate from the refusal. It
-/// prints that verdict once its lifecycle says so.
+/// prints `joined` once its join has returned and `downed` once its lifecycle says so.
 fn zombie_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -532,6 +532,8 @@ fn zombie_node() -> anyhow::Result<()> {
         timeout(TIMEOUT, cluster::join(&seeds))
             .await
             .context("joining the cluster")??;
+        println!("{JOIN_PREFIX}joined");
+        std::io::stdout().flush()?;
 
         while cluster::lifecycle()? != Lifecycle::Downed {
             sleep(CONVERGENCE_POLL).await;
@@ -3730,6 +3732,8 @@ fn zombie_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         is_up(state, addr)
     })
     .context("the zombie joins")?;
+    // Must precede the freeze: the join of a zombie frozen inside it can fail with `Downed`!
+    expect_join_line(&mut zombie, "joined").context("the zombie's join returns")?;
 
     signal(&zombie, "STOP")?;
     cluster::down(addr).context("downing the zombie")?;
@@ -3780,6 +3784,9 @@ fn held_join_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         is_up(state, witness_addr) && is_up(state, frozen_addr)
     })
     .context("the zombies join")?;
+    expect_join_line(&mut witness, "joined").context("the witness's join returns")?;
+    // Must precede the freeze: the join of a zombie frozen inside it can fail with `Downed`!
+    expect_join_line(&mut frozen, "joined").context("the frozen zombie's join returns")?;
 
     signal(&frozen, "STOP")?;
     await_state(runtime, &mut subscription, &mut observed, |state| {
