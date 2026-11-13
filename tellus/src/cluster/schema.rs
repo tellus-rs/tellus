@@ -3,6 +3,7 @@
 
 use crate::{
     ActorRef, ReplyTo, SchemaVersion,
+    actor_context::PanicPayload,
     cluster::{
         codec::{Codec, CodecError},
         node::{Incarnation, NodeId},
@@ -10,8 +11,13 @@ use crate::{
 };
 use semver::Version;
 use serde::{Serialize, de::DeserializeOwned};
-use std::{any::type_name, net::SocketAddr};
+use std::{
+    any::type_name,
+    net::SocketAddr,
+    panic::{AssertUnwindSafe, catch_unwind},
+};
 use thiserror::Error;
+use tracing::error;
 
 /// The version of the application a node runs, announced at its handshake: a semantic version,
 /// ordered by semver precedence.
@@ -178,6 +184,25 @@ impl UnsupportedSchemaVersion {
     }
 }
 
+pub(crate) fn catch_panic_and_log<T, U, F>(
+    failure: &'static str,
+    into_error: fn(&'static str) -> CodecError,
+    f: F,
+) -> Result<U, CodecError>
+where
+    T: Schema,
+    F: FnOnce() -> Result<U, CodecError>,
+{
+    catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|panic| {
+        error!(
+            payload_type = type_name::<T>(),
+            panic = %PanicPayload(panic.as_ref()),
+            "{failure}"
+        );
+        Err(into_error(failure))
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use crate::{
@@ -185,7 +210,7 @@ mod tests {
         cluster::{
             codec::{Codec, CodecError, Postcard},
             node::NodeId,
-            schema::{Peer, Schema},
+            schema::{Peer, Schema, catch_panic_and_log},
         },
     };
     use serde::{Deserialize, Serialize};
@@ -320,6 +345,60 @@ mod tests {
                 && source.contains("Notes")
                 && source.ends_with("the current version is 1"),
             "{source}"
+        );
+    }
+
+    /// A panic is answered as the failure the caller names, an encoding or a decoding one as the
+    /// caller chooses.
+    #[test]
+    fn a_panic_is_answered_as_the_given_failure() {
+        let error =
+            catch_panic_and_log::<Notes, Notes, _>("decode panicked", CodecError::decoding, || {
+                panic!("a bug in a decode")
+            })
+            .expect_err("a panic is a failure");
+        assert!(matches!(error, CodecError::Decode(_)));
+        assert_eq!(
+            error.source().expect("the failure").to_string(),
+            "decode panicked"
+        );
+
+        let error = catch_panic_and_log::<Notes, (SchemaVersion, Vec<u8>), _>(
+            "encode panicked",
+            CodecError::encoding,
+            || panic!("a bug in an encode"),
+        )
+        .expect_err("a panic is a failure");
+        assert!(matches!(error, CodecError::Encode(_)));
+        assert_eq!(
+            error.source().expect("the failure").to_string(),
+            "encode panicked"
+        );
+    }
+
+    /// Without a panic the result comes back as it is, an error with its own source.
+    #[test]
+    fn a_result_without_a_panic_comes_back_unchanged() {
+        let payload = Postcard.encode(&7_u64).expect("encodes");
+
+        let decoded =
+            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::decoding, || {
+                u64::decode(CODEC, SchemaVersion::new(0), &payload)
+            });
+        assert_eq!(decoded.expect("decodes"), 7);
+
+        let error =
+            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::decoding, || {
+                u64::decode(CODEC, SchemaVersion::new(1), &payload)
+            })
+            .expect_err("version 1 is not decodable");
+        assert!(
+            error
+                .source()
+                .expect("the version is the source")
+                .to_string()
+                .starts_with("unsupported schema version 1 of "),
+            "{error:?}"
         );
     }
 }
