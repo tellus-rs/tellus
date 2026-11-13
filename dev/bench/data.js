@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794556150320,
+  "lastUpdate": 1794556152403,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21045,6 +21045,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4354893,
             "range": "± 364350",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9b7427e633e788f8a9b273b259817042e51f22fc",
+          "message": "Merge pull request #316 from tellus-rs/fix/reply-encode-panic\n\nfix(cluster): keep a panicking reply encode from failing the responder",
+          "timestamp": "2026-11-13T08:41:31+01:00",
+          "tree_id": "dcfc7dd5aafa8f1042e975ec2c2537a445aebf2a",
+          "url": "https://github.com/tellus-rs/tellus/commit/9b7427e633e788f8a9b273b259817042e51f22fc"
+        },
+        "date": 1794556151737,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31287833,
+            "range": "± 2028836",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 32605126,
+            "range": "± 2221982",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4279766,
+            "range": "± 377222",
             "unit": "ns/iter"
           }
         ]
