@@ -334,11 +334,15 @@ refusal the dialer treats as retryable, since gossip may not have carried that n
 everywhere yet. The backoff retry succeeds once it has. A dead incarnation's handshake is refused
 finally. The outbound direction is optimistic: a send toward a node this endpoint does not know yet,
 e.g. a reference which arrived ahead of the gossip naming its node, dials anyway and lets the far
-side judge. A send toward a Left or Down incarnation is refused locally. Three more sends fail
-locally: a send while this node is downed or leaving, a send toward an address currently refused
-(see the wire model), and a send toward a lane already bound to another incarnation at that address.
-In that last case a send toward a successor fails until this node learns of its predecessor's death,
-one gossip hop away, since a reference alone is no proof the predecessor is gone.
+side judge. A send toward a Left or Down incarnation is refused locally. Four more sends fail
+locally: a send while this node is downed or leaving, a send toward another incarnation at this
+node's own address, a send toward an address currently refused (see the wire model), and a send
+toward a lane already bound to another incarnation at that address. In that last case a send toward
+a successor fails until this node learns of its predecessor's death, one gossip hop away, since a
+reference alone is no proof the predecessor is gone. A send toward another incarnation at this
+node's own address opens no lane, since that lane would connect this node to itself. A reference to
+an actor of this node's predecessor, e.g. one serialized before a restart and read back afterward at
+the same address, hence fails fast.
 
 *Supersession*: a join from a younger incarnation at an address an Up member already advertises
 proves the old process is gone, so the old incarnation is downed and the new one admitted. A join
@@ -634,9 +638,10 @@ as unknown targets, at-most-once either way.
 
     Two cases fire the same signal without the node death sequence, and the promise above does not
     cover them. The first is a `Watch` frame this node cannot send: toward a refused address, toward
-    a lane bound to another incarnation, or while this node is downed or leaving. The second is a
-    lane given up for an address no Up member advertises, which signals every incarnation watched
-    there. Neither marks the watched incarnation Down.
+    another incarnation at this node's own address, toward a lane bound to another incarnation, or
+    while this node is downed or leaving. The second is a lane given up for an address no Up member
+    advertises, which signals every incarnation watched there. Neither marks the watched incarnation
+    Down.
   - A *clean leave* keeps the real tier as the normal case rather than as a promise:
     `cluster::leave_on_terminated` announces the departure only once the local tree has terminated.
     So every `Terminated` frame it owes is queued first, and the drain covers those streams too. The
@@ -669,9 +674,10 @@ as unknown targets, at-most-once either way.
   frame names that actor and hence rides its stream. The `NoReply` detection weakens to best-effort.
   A request which cannot be queued fails the ask as it does locally: a full outbound queue as
   `MailboxFull`, and an unreachable node as `ActorTerminated`. An unreachable node means a Left or
-  Down incarnation, a refused address, a lane bound to another incarnation or this node being downed
-  or leaving. A request which encodes beyond `max_frame_size` fails as `TooLarge` and one the codec
-  cannot encode as `NotEncodable`, both at the send rather than by timeout.
+  Down incarnation, a refused address, another incarnation at this node's own address, a lane bound
+  to another incarnation or this node being downed or leaving. A request which encodes beyond
+  `max_frame_size` fails as `TooLarge` and one the codec cannot encode as `NotEncodable`, both at
+  the send rather than by timeout.
 
   `ReplyDropped` is fire-and-forget: one lost with its connection resolves the ask by its timeout,
   since a reply is not idempotent and nothing reply-related is replayed on a reconnect. An ask
