@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794609064782,
+  "lastUpdate": 1794609067643,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21205,6 +21205,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 138703,
             "range": "± 3207",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5b83752b4d4a166859638aef81b93844f033b35b",
+          "message": "Merge pull request #328 from tellus-rs/fix/postgres-table-names\n\nfix(postgres)!: rename the store's tables so they cannot collide",
+          "timestamp": "2026-11-13T23:22:13+01:00",
+          "tree_id": "b907576b27ab9320aba86d4999941f1f8a9853eb",
+          "url": "https://github.com/tellus-rs/tellus/commit/5b83752b4d4a166859638aef81b93844f033b35b"
+        },
+        "date": 1794609067238,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3290567,
+            "range": "± 201080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3386194,
+            "range": "± 247012",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 970431,
+            "range": "± 7233",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 125842,
+            "range": "± 2768",
             "unit": "ns/iter"
           }
         ]
