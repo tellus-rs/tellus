@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794556641343,
+  "lastUpdate": 1794556642611,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21255,6 +21255,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4279766,
             "range": "± 377222",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a38131af93e3e302d913a54a7e9739fcd85b6864",
+          "message": "Merge pull request #315 from tellus-rs/docs/postgres-schema\n\ndocs: give the PostgreSQL store's schema as the supported definition",
+          "timestamp": "2026-11-13T08:41:41+01:00",
+          "tree_id": "f32a8c3ad37663e571d15415ff131dd4d9664bbe",
+          "url": "https://github.com/tellus-rs/tellus/commit/a38131af93e3e302d913a54a7e9739fcd85b6864"
+        },
+        "date": 1794556642377,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30354132,
+            "range": "± 1544151",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30120510,
+            "range": "± 1578591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4316929,
+            "range": "± 276765",
             "unit": "ns/iter"
           }
         ]
