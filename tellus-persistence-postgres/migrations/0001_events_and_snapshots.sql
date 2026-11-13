@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE tellus_events (
     entity_type    TEXT   NOT NULL,
     entity_id      TEXT   NOT NULL,
     seq_no         BIGINT NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY (entity_type, entity_id, seq_no)
 );
 
-CREATE TABLE IF NOT EXISTS snapshots (
+CREATE TABLE tellus_snapshots (
     entity_type    TEXT   NOT NULL,
     entity_id      TEXT   NOT NULL,
     next_seq_no    BIGINT NOT NULL,

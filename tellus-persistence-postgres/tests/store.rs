@@ -16,11 +16,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use tellus::{
-    ActorContext, ActorSystem, AppendError, Effect, EncodedEvent, EventSourced, EventStore,
-    Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, SeqNo, Unstashed,
-    Untimed, Versioned,
+    ActorContext, ActorSystem, AppendError, Effect, EncodedEvent, EncodedSnapshot, EventSourced,
+    EventStore, Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, SeqNo,
+    SnapshotStore, StoredEvent, StoredSnapshot, Unstashed, Untimed, Versioned,
 };
-use tellus_persistence_postgres::PostgresStore;
+use tellus_persistence_postgres::{Error, PostgresStore};
 use testcontainers_modules::{
     postgres::Postgres,
     testcontainers::{ContainerAsync, ImageExt, runners::AsyncRunner},
@@ -29,6 +29,18 @@ use tokio::time::timeout;
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 const APPLICATION_VERSION: i64 = 20_260_101_000_000;
+
+/// The checksum of the first migration as release 0.2.14 and earlier embedded and recorded it.
+const EARLIER_CHECKSUM: &str = concat!(
+    "f10c204f698541a4885fb4a78dbbc33ff5dc728a9f7d324c",
+    "2f2ee2d0d63f6863fa349fd623b0dda74481e618e15a466a",
+);
+
+/// The checksum of the embedded first migration.
+const CHECKSUM: &str = concat!(
+    "4c993d1dc5f8bb453f303ef640f7f8232113bf21a2dc48c5",
+    "9da9a2cb376fc8c743e02761a44e1252fa7028fdeb467ca5",
+);
 
 /// Image tag and credentials come from the repository's compose.yaml, so the tests always
 /// run against the version and settings developers run locally, never against the testcontainers
@@ -121,20 +133,13 @@ async fn migrations_coexist_with_an_applications_own() {
 }
 
 /// A database which an earlier release has migrated, recording that in sqlx's shared table:
-/// `migrate` succeeds, records in the store's own table, keeps the events and leaves the old row
-/// alone. That row still stops an application's own migrations, unless they ignore missing
-/// versions. The statement of the README removes that row and no other, and then they run.
+/// `migrate` succeeds, records in the store's own table, creates the store's tables and leaves the
+/// old tables and the old row alone. That row still stops an application's own migrations, unless
+/// they ignore missing versions. The statement of the README removes that row and no other, and
+/// then they run.
 #[tokio::test]
-async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
-    let (pool, _container) = database().await;
-    sqlx::migrate!()
-        .run_to(1, &pool)
-        .await
-        .expect("the first migration runs as an earlier release ran it");
-    sqlx::query("INSERT INTO events VALUES ('counter', 'kept', 0, 'increased', 1, ''::bytea)")
-        .execute(&pool)
-        .await
-        .expect("an event is stored");
+async fn a_database_of_an_earlier_release_keeps_its_old_tables_and_its_old_row() {
+    let (pool, _container) = database_of_an_earlier_release().await;
 
     let store = PostgresStore::new(pool.clone());
     store
@@ -147,11 +152,24 @@ async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
             .await
             .expect("the store's own table is read");
     assert_eq!(recorded_versions, [1]);
-    let event_count = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM events")
-        .fetch_one(&pool)
-        .await
-        .expect("the events are counted");
-    assert_eq!(event_count, 1);
+    assert_eq!(
+        table_names(&pool).await,
+        [
+            "_sqlx_migrations",
+            "_tellus_persistence_migrations",
+            "events",
+            "snapshots",
+            "tellus_events",
+            "tellus_snapshots"
+        ]
+    );
+    let earlier_counts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT (SELECT COUNT(*) FROM events), (SELECT COUNT(*) FROM snapshots)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the events and snapshots of the earlier release are counted");
+    assert_eq!(earlier_counts, (1, 1));
 
     let migrator = application_migrator();
     // sqlx keeps its advisory lock on a connection whose migrator has failed!
@@ -178,18 +196,9 @@ async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
     let (statement, _) = statement
         .split_once("```")
         .expect("the README closes the statement");
-    let checksum = sqlx::migrate!()
-        .iter()
-        .next()
-        .expect("the first migration is embedded")
-        .checksum
-        .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect::<String>();
     assert!(
-        statement.contains(&checksum),
-        "the statement of the README does not name the checksum of the first migration, which \
-         must never change"
+        statement.contains(EARLIER_CHECKSUM),
+        "the statement of the README does not name the checksum which earlier releases recorded"
     );
     let removed = sqlx::query(statement)
         .execute(&pool)
@@ -213,6 +222,187 @@ async fn a_database_of_an_earlier_release_keeps_its_events_and_its_old_row() {
         .migrate()
         .await
         .expect("the store's migrations still run");
+}
+
+/// The statements of the release note move the events and snapshots of a database which an
+/// earlier release has migrated into the store's tables, once `migrate` has created them. Until
+/// then the store finds neither.
+#[tokio::test]
+async fn the_statements_of_the_release_note_move_what_an_earlier_release_stored() {
+    let (pool, _container) = database_of_an_earlier_release().await;
+    let id = PersistenceId::new("counter", "kept").expect("the segments are valid");
+    let limit = NonZeroUsize::new(10).expect("10 is not zero");
+    let store = PostgresStore::new(pool.clone());
+    store
+        .migrate()
+        .await
+        .expect("the store's migrations run on the migrated database");
+    let read = store.read(&id, SeqNo::ZERO, limit).await;
+    assert_eq!(read.expect("the events are read"), []);
+    let loaded = store.load(&id).await;
+    assert_eq!(loaded.expect("the snapshot is loaded"), None);
+
+    sqlx::raw_sql(release_note_statements())
+        .execute(&pool)
+        .await
+        .expect("the statements of the release note run");
+
+    let read = store.read(&id, SeqNo::ZERO, limit).await;
+    assert_eq!(
+        read.expect("the events are read"),
+        [StoredEvent {
+            seq_no: SeqNo::ZERO,
+            event: earlier_event(),
+        }]
+    );
+    let loaded = store.load(&id).await;
+    assert_eq!(
+        loaded.expect("the snapshot is loaded"),
+        Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(1),
+            snapshot: EncodedSnapshot {
+                manifest: "count".into(),
+                schema_version: SchemaVersion::new(1),
+                payload: vec![2],
+            },
+        })
+    );
+    assert_eq!(
+        table_names(&pool).await,
+        [
+            "_sqlx_migrations",
+            "_tellus_persistence_migrations",
+            "tellus_events",
+            "tellus_snapshots"
+        ]
+    );
+}
+
+/// Once the store has appended for an entity of the earlier release, the statements of the release
+/// note fail on that entity and leave the old tables as they are.
+#[tokio::test]
+async fn the_statements_of_the_release_note_change_nothing_after_an_append() {
+    let (pool, _container) = database_of_an_earlier_release().await;
+    let id = PersistenceId::new("counter", "kept").expect("the segments are valid");
+    let store = PostgresStore::new(pool.clone());
+    store
+        .migrate()
+        .await
+        .expect("the store's migrations run on the migrated database");
+    store
+        .append(&id, SeqNo::ZERO, vec![earlier_event()])
+        .await
+        .expect("the store appends to its empty table");
+
+    // A batch which fails leaves its transaction open on its connection!
+    let mut connection = pool.acquire().await.expect("a connection is acquired");
+    let moved = sqlx::raw_sql(release_note_statements())
+        .execute(&mut *connection)
+        .await;
+    connection
+        .close()
+        .await
+        .expect("the connection with the open transaction closes");
+
+    assert!(
+        moved.is_err(),
+        "the statements of the release note ran over an entity which the store had appended to"
+    );
+    let earlier_counts = sqlx::query_as::<_, (i64, i64)>(
+        "SELECT (SELECT COUNT(*) FROM events), (SELECT COUNT(*) FROM snapshots)",
+    )
+    .fetch_one(&pool)
+    .await
+    .expect("the events and snapshots of the earlier release are counted");
+    assert_eq!(earlier_counts, (1, 1));
+}
+
+/// A migration which a release has embedded never changes: a database which has recorded it
+/// fails `migrate` on any other checksum. The first migration of release 0.2.14 and earlier is
+/// kept under `tests/release-0.2.14`, for the tests which start from such a database.
+#[test]
+fn the_first_migration_keeps_its_checksums() {
+    let checksum = |migrator: Migrator| {
+        migrator
+            .iter()
+            .flat_map(|migration| migration.checksum.iter())
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    };
+
+    assert_eq!(checksum(sqlx::migrate!()), CHECKSUM);
+    assert_eq!(checksum(earlier_release_migrator()), EARLIER_CHECKSUM);
+}
+
+/// An application's own tables called `events` and `snapshots` stay as they are: `migrate`
+/// creates the store's tables next to them, and the store passes its contract.
+#[tokio::test]
+async fn an_applications_own_events_and_snapshots_tables_are_left_alone() {
+    let (pool, _container) = database().await;
+    sqlx::raw_sql(
+        "CREATE TABLE events (id BIGINT PRIMARY KEY, name TEXT NOT NULL); \
+         CREATE TABLE snapshots (id BIGINT PRIMARY KEY, name TEXT NOT NULL); \
+         INSERT INTO events VALUES (1, 'signed up'); \
+         INSERT INTO snapshots VALUES (1, 'nightly')",
+    )
+    .execute(&pool)
+    .await
+    .expect("the application's tables are created");
+
+    let store = PostgresStore::new(pool.clone());
+    store
+        .migrate()
+        .await
+        .expect("the store's migrations run next to the application's tables");
+    tellus::persistence_tests::event_store_contract(store.clone()).await;
+    tellus::persistence_tests::snapshot_store_contract(store).await;
+
+    let names = sqlx::query_scalar::<_, String>(
+        "SELECT name FROM events UNION ALL SELECT name FROM snapshots ORDER BY name",
+    )
+    .fetch_all(&pool)
+    .await
+    .expect("the application's tables are read");
+    assert_eq!(names, ["nightly", "signed up"]);
+}
+
+/// `migrate` never adopts a table. Where a table has one of the store's names and `migrate` has
+/// not created it, whether from the definition of the README or of any other shape, it fails
+/// and creates neither of its two tables.
+#[tokio::test]
+async fn migrate_fails_where_a_table_has_one_of_the_stores_names() {
+    let other_shape = "CREATE TABLE tellus_snapshots (id BIGINT PRIMARY KEY)";
+    for (definition, tables_afterward) in [
+        (
+            readme_schema(),
+            vec![
+                "_tellus_persistence_migrations",
+                "tellus_events",
+                "tellus_snapshots",
+            ],
+        ),
+        (
+            other_shape,
+            vec!["_tellus_persistence_migrations", "tellus_snapshots"],
+        ),
+    ] {
+        let (pool, _container) = database().await;
+        sqlx::raw_sql(definition)
+            .execute(&pool)
+            .await
+            .expect("the table is created");
+
+        let migrated = PostgresStore::new(pool.clone()).migrate().await;
+
+        assert!(
+            matches!(
+                migrated,
+                Err(Error::Migrate(MigrateError::ExecuteMigration(_, 1)))
+            ),
+            "migrate did not fail on a table which exists: {migrated:?}"
+        );
+        assert_eq!(table_names(&pool).await, tables_afterward);
+    }
 }
 
 /// The definition of the schema in the README is the one embedded migration, byte for byte.
@@ -246,14 +436,10 @@ async fn the_store_passes_its_contract_on_the_schema_of_the_readme() {
     tellus::persistence_tests::snapshot_store_contract(store.clone()).await;
     tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
 
-    let tables = sqlx::query_scalar::<_, String>(
-        "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' \
-         ORDER BY table_name",
-    )
-    .fetch_all(&pool)
-    .await
-    .expect("the tables are listed");
-    assert_eq!(tables, ["events", "snapshots"]);
+    assert_eq!(
+        table_names(&pool).await,
+        ["tellus_events", "tellus_snapshots"]
+    );
 }
 
 /// End to end through tellus: a counter increments against PostgreSQL, terminates, and a second
@@ -359,6 +545,45 @@ impl Versioned for Increased {
     const VERSION: SchemaVersion = SchemaVersion::new(1);
 }
 
+/// A database as release 0.2.14 left it: the first migration of that release recorded in sqlx's
+/// shared table, and one event and one snapshot in its tables.
+async fn database_of_an_earlier_release() -> (PgPool, ContainerAsync<Postgres>) {
+    let (pool, container) = database().await;
+
+    earlier_release_migrator()
+        .run(&pool)
+        .await
+        .expect("the first migration runs as an earlier release ran it");
+    sqlx::raw_sql(
+        "INSERT INTO events VALUES ('counter', 'kept', 0, 'increased', 1, '\\x01'::bytea); \
+         INSERT INTO snapshots VALUES ('counter', 'kept', 1, 'count', 1, '\\x02'::bytea)",
+    )
+    .execute(&pool)
+    .await
+    .expect("an event and a snapshot are stored");
+
+    (pool, container)
+}
+
+fn earlier_release_migrator() -> Migrator {
+    Migrator::with_migrations(vec![Migration::new(
+        1,
+        "events and snapshots".into(),
+        MigrationType::Simple,
+        include_str!("release-0.2.14/0001_events_and_snapshots.sql").into_sql_str(),
+        false,
+    )])
+}
+
+/// The event which [database_of_an_earlier_release] stores, as the store reads it.
+fn earlier_event() -> EncodedEvent {
+    EncodedEvent {
+        manifest: "increased".into(),
+        schema_version: SchemaVersion::new(1),
+        payload: vec![1],
+    }
+}
+
 fn application_migrator() -> Migrator {
     Migrator::with_migrations(vec![Migration::new(
         APPLICATION_VERSION,
@@ -367,6 +592,17 @@ fn application_migrator() -> Migrator {
         "CREATE TABLE read_model (id BIGINT PRIMARY KEY)".into_sql_str(),
         false,
     )])
+}
+
+fn release_note_statements() -> &'static str {
+    let (_, statements) = include_str!("../release-notes/311-table-rename.md")
+        .split_once("```sql\n")
+        .expect("the release note opens the statements");
+    let (statements, _) = statements
+        .split_once("```")
+        .expect("the release note closes the statements");
+
+    statements
 }
 
 fn readme_schema() -> &'static str {
@@ -381,6 +617,16 @@ fn readme_schema() -> &'static str {
         .expect("the README closes the definition of the schema");
 
     schema
+}
+
+async fn table_names(pool: &PgPool) -> Vec<String> {
+    sqlx::query_scalar(
+        "SELECT table_name::text FROM information_schema.tables WHERE table_schema = 'public' \
+         ORDER BY table_name",
+    )
+    .fetch_all(pool)
+    .await
+    .expect("the tables are listed")
 }
 
 async fn store() -> (PostgresStore, ContainerAsync<Postgres>) {
