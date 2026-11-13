@@ -37,16 +37,17 @@ for example its size.
 
 `migrate` applies the embedded schema, idempotently. Calling it is optional: `PostgresStore::new`
 does not touch the schema. An application which manages its schema with a tool of its own can
-create the tables itself instead, from the definition under [Schema](#schema).
+create the tables itself instead, from the definition under [Schema](#schema). It then does not call
+`migrate`. `migrate` never adopts a table: it fails if `tellus_events` or `tellus_snapshots` exists
+and it has not created it.
 
 `migrate` records what it has applied in a table of its own, `_tellus_persistence_migrations`, so
 the store's schema and an application's own sqlx migrations can share a database. Release 0.2.14 and
 earlier recorded it in sqlx's shared table `_sqlx_migrations`. In a database which such a release
-has migrated, `migrate` applies the schema once more, which changes nothing, and leaves the old row
-alone. An application which adds its own sqlx migrator to such a database removes that row first.
-Otherwise its migrator fails with `VersionMissing(1)`, unless it sets `ignore_missing`. If one of
-its own migrations has version 1, it fails with `VersionMismatch(1)` either way. This statement
-removes the row:
+has migrated, `migrate` leaves the old row alone. An application which adds its own sqlx migrator to
+such a database removes that row first. Otherwise its migrator fails with `VersionMissing(1)`,
+unless it sets `ignore_missing`. If one of its own migrations has version 1, it fails with
+`VersionMismatch(1)` either way. This statement removes the row:
 
 ```sql
 DELETE FROM _sqlx_migrations
@@ -54,22 +55,25 @@ WHERE version = 1
   AND checksum = '\xf10c204f698541a4885fb4a78dbbc33ff5dc728a9f7d324c2f2ee2d0d63f6863fa349fd623b0dda74481e618e15a466a';
 ```
 
-The checksum is that of this crate's first migration, so the statement removes no other row.
-Remove the row only once no process of release 0.2.14 or earlier calls `migrate` in that database.
-Such a release records the row again. Once the application's migrator has recorded a migration,
-`migrate` of such a release fails instead.
+The checksum is that of the first migration as those releases embedded it, so the statement removes
+no other row. Remove the row only once no process of release 0.2.14 or earlier calls `migrate` in
+that database. Such a release records the row again. Once the application's migrator has recorded a
+migration, `migrate` of such a release fails instead.
+
+Such a release also kept its events and snapshots in tables of other names. The
+[release note](release-notes/311-table-rename.md) on the rename says how to move them.
 
 ## Schema
 
-Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,
-snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained.
+Events live in the `tellus_events` table with the primary key `(entity_type, entity_id, seq_no)`,
+snapshots in `tellus_snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained.
 `PostgresStore::migrate` applies
 [`migrations/0001_events_and_snapshots.sql`](migrations/0001_events_and_snapshots.sql), which is
 embedded in the crate. Its two statements are the supported definition of the schema, also for an
 application which creates the tables itself:
 
 ```sql
-CREATE TABLE IF NOT EXISTS events (
+CREATE TABLE tellus_events (
     entity_type    TEXT   NOT NULL,
     entity_id      TEXT   NOT NULL,
     seq_no         BIGINT NOT NULL,
@@ -79,7 +83,7 @@ CREATE TABLE IF NOT EXISTS events (
     PRIMARY KEY (entity_type, entity_id, seq_no)
 );
 
-CREATE TABLE IF NOT EXISTS snapshots (
+CREATE TABLE tellus_snapshots (
     entity_type    TEXT   NOT NULL,
     entity_id      TEXT   NOT NULL,
     next_seq_no    BIGINT NOT NULL,

@@ -319,6 +319,9 @@ Item order within a file:
   README gives the schema as the supported definition for an application which creates the tables
   itself, and `tests/store.rs` holds that definition to the embedded migration. A change to the
   schema hence names what changes in its commit subject, which is what the changelog shows.
+  `tests/release-0.2.14/` holds the first migration as that release embedded it, for the tests
+  which start from a database of that release; it never changes. The same tests run the statements
+  of `release-notes/311-table-rename.md` and pin the checksum of the embedded migration.
 - `tellus/src/persistence_tests.rs` (feature `persistence-tests`, implies `persistence`): the
   contract test suite for persistence stores; backend crates run it from their integration tests
   against real servers. `tellus/src/persistence/in_memory_store.rs` (feature

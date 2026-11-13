@@ -2,10 +2,11 @@
 //! and [SnapshotStore] over one shared connection pool, so a single value, cheap to clone, wires
 //! a whole [Persistence](tellus::Persistence).
 //!
-//! Events live in the `events` table with the primary key `(entity_type, entity_id, seq_no)`,
-//! snapshots in `snapshots` keyed by `(entity_type, entity_id)`, only the latest one retained. The
-//! schema is embedded and applied via [PostgresStore::migrate], which records it in a table of its
-//! own, `_tellus_persistence_migrations`. Appends are a single atomic, conditional statement: an
+//! Events live in the `tellus_events` table with the primary key
+//! `(entity_type, entity_id, seq_no)`, snapshots in `tellus_snapshots` keyed by
+//! `(entity_type, entity_id)`, only the latest one retained. The schema is embedded and applied via
+//! [PostgresStore::migrate], which records it in a table of its own,
+//! `_tellus_persistence_migrations`. Appends are a single atomic, conditional statement: an
 //! expected next sequence number not matching the actual one, below or above, fails with
 //! [AppendError::Conflict] and leaves the stream untouched, which is tellus's fencing guarantee. An
 //! empty append inserts nothing but is still fenced.
@@ -68,7 +69,8 @@ impl PostgresStore {
     /// # Errors
     /// Fails if the database cannot be reached, if a migration cannot be applied, or if the
     /// migrations recorded in its own table do not match the embedded ones (one was changed, is
-    /// missing or was left partially applied).
+    /// missing or was left partially applied). Fails as well if `tellus_events` or
+    /// `tellus_snapshots` exists and `migrate` has not created it, since it never adopts a table.
     pub async fn migrate(&self) -> Result<(), Error> {
         let mut migrator = sqlx::migrate!();
         // The default table is shared with every other sqlx migrator of the database!
@@ -95,7 +97,7 @@ impl EventStore for PostgresStore {
         // An empty append inserts no rows, so the row count cannot reveal a conflict.
         if events.is_empty() {
             let query = "SELECT COALESCE(MAX(seq_no) + 1, 0) \
-                         FROM events \
+                         FROM tellus_events \
                          WHERE entity_type = $1 \
                          AND entity_id = $2";
             let actual = sqlx::query_scalar::<_, i64>(query)
@@ -128,12 +130,13 @@ impl EventStore for PostgresStore {
             payloads.push(event.payload);
         }
 
-        let query = "INSERT INTO events (entity_type, entity_id, seq_no, manifest, schema_version, payload) \
+        let query = "INSERT INTO tellus_events \
+                     (entity_type, entity_id, seq_no, manifest, schema_version, payload) \
                      SELECT $1, $2, seq_no, manifest, schema_version, payload \
                      FROM UNNEST($3::BIGINT[], $4::TEXT[], $5::INT[], $6::BYTEA[]) \
                      AS unnested(seq_no, manifest, schema_version, payload) \
                      WHERE (SELECT COALESCE(MAX(seq_no) + 1, 0) \
-                            FROM events \
+                            FROM tellus_events \
                             WHERE entity_type = $1 \
                             AND entity_id = $2) = $7";
         let inserted = sqlx::query(query)
@@ -168,7 +171,7 @@ impl EventStore for PostgresStore {
         let limit = i64::try_from(limit.get()).unwrap_or(i64::MAX);
 
         let query = "SELECT seq_no, manifest, schema_version, payload \
-                     FROM events \
+                     FROM tellus_events \
                      WHERE entity_type = $1 \
                      AND entity_id = $2 \
                      AND seq_no >= $3 \
@@ -197,7 +200,8 @@ impl SnapshotStore for PostgresStore {
     ) -> Result<(), Self::Error> {
         let next_seq_no = into_bigint(next_seq_no)?;
 
-        let query = "INSERT INTO snapshots (entity_type, entity_id, next_seq_no, manifest, schema_version, payload) \
+        let query = "INSERT INTO tellus_snapshots \
+                     (entity_type, entity_id, next_seq_no, manifest, schema_version, payload) \
                      VALUES ($1, $2, $3, $4, $5, $6) \
                      ON CONFLICT (entity_type, entity_id) DO UPDATE SET \
                      next_seq_no = EXCLUDED.next_seq_no, \
@@ -219,7 +223,7 @@ impl SnapshotStore for PostgresStore {
 
     async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
         let query = "SELECT next_seq_no, manifest, schema_version, payload \
-                     FROM snapshots \
+                     FROM tellus_snapshots \
                      WHERE entity_type = $1 \
                      AND entity_id = $2";
         let row = sqlx::query(query)
