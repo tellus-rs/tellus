@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794664013765,
+  "lastUpdate": 1794664015369,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21709,6 +21709,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105479,
             "range": "± 6094",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2c18038c8f4ac3794d0d6c18fea197ff083f14dc",
+          "message": "Merge pull request #335 from tellus-rs/ci/changelog-skip-merges\n\nci: skip merge commits in the generated changelog",
+          "timestamp": "2026-11-14T14:32:01+01:00",
+          "tree_id": "47158ebe7e1b1028f07f11829cc2faf6e1dddd18",
+          "url": "https://github.com/tellus-rs/tellus/commit/2c18038c8f4ac3794d0d6c18fea197ff083f14dc"
+        },
+        "date": 1794664015129,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2107965,
+            "range": "± 213119",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2064989,
+            "range": "± 72007",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 659124,
+            "range": "± 20189",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 83571,
+            "range": "± 3214",
             "unit": "ns/iter"
           }
         ]
