@@ -54,6 +54,7 @@ pub(crate) enum Frame<'a> {
     },
 
     Reply {
+        asker: NodeId,
         nonce: Nonce,
         recipient: Option<ActorId>,
         schema_version: SchemaVersion,
@@ -62,6 +63,7 @@ pub(crate) enum Frame<'a> {
     },
 
     ReplyDropped {
+        asker: NodeId,
         nonce: Nonce,
         recipient: Option<ActorId>,
     },
@@ -203,9 +205,9 @@ impl<'a> Frame<'a> {
             Frame::Reply {
                 nonce, recipient, ..
             }
-            | Frame::ReplyDropped { nonce, recipient } => {
-                Some(recipient.map_or(StreamKey::Nonce(*nonce), StreamKey::Actor))
-            }
+            | Frame::ReplyDropped {
+                nonce, recipient, ..
+            } => Some(recipient.map_or(StreamKey::Nonce(*nonce), StreamKey::Actor)),
 
             Frame::Handshake(_)
             | Frame::Watch { .. }
@@ -513,6 +515,7 @@ mod tests {
         );
         assert_eq!(
             Frame::Reply {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
                 schema_version: SchemaVersion::new(0),
@@ -523,6 +526,7 @@ mod tests {
         );
         assert_eq!(
             Frame::ReplyDropped {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
             }
@@ -557,6 +561,7 @@ mod tests {
 
         assert_eq!(
             Frame::Reply {
+                asker: asker(),
                 nonce,
                 recipient: None,
                 schema_version: SchemaVersion::new(0),
@@ -567,6 +572,7 @@ mod tests {
         );
         assert_eq!(
             Frame::ReplyDropped {
+                asker: asker(),
                 nonce,
                 recipient: None,
             }
@@ -729,17 +735,20 @@ mod tests {
         assert_eq!(watcher.to_string(), RECIPIENT);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
-        let bytes = [
-            5, // Frame::Reply
+        let asker = asker();
+        let mut bytes = vec![5]; // Frame::Reply
+        bytes.extend(postcard::to_allocvec(&asker).expect("node encodes")); // asker
+        bytes.extend([
             0, // nonce
             1, // recipient: Some
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // recipient
             1,  // schema version
             2, 4, 5, // payload
-        ];
+        ]);
 
         let frame = Frame::from_bytes(&bytes).expect("frame decodes");
         let Frame::Reply {
+            asker: decoded_asker,
             nonce,
             recipient,
             schema_version,
@@ -748,6 +757,7 @@ mod tests {
         else {
             panic!("not a reply frame");
         };
+        assert_eq!(*decoded_asker, asker);
         assert_eq!(*nonce, Nonce::first());
         assert_eq!(
             recipient.expect("the reply names a recipient").to_string(),
@@ -757,13 +767,14 @@ mod tests {
         assert_eq!(payload.as_ref(), &[4, 5][..]);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
-        let bytes = [
-            5, // Frame::Reply
+        let mut bytes = vec![5]; // Frame::Reply
+        bytes.extend(postcard::to_allocvec(&asker).expect("node encodes")); // asker
+        bytes.extend([
             0, // nonce
             0, // recipient: None
             0, // schema version
             2, 4, 5, // payload
-        ];
+        ]);
 
         let frame = Frame::from_bytes(&bytes).expect("frame decodes");
         let Frame::Reply { recipient, .. } = &frame else {
@@ -831,12 +842,14 @@ mod tests {
             Frame::Unwatch { target, watcher },
             Frame::Terminated { target, watcher },
             Frame::Reply {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
                 schema_version: SchemaVersion::new(1),
                 payload: Cow::Borrowed(&[4, 5, 6]),
             },
             Frame::ReplyDropped {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
             },
@@ -907,6 +920,7 @@ mod tests {
         );
         assert!(
             Frame::Reply {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
                 schema_version: SchemaVersion::new(0),
@@ -924,6 +938,7 @@ mod tests {
         );
         assert!(
             !Frame::ReplyDropped {
+                asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
             }
@@ -1357,5 +1372,9 @@ mod tests {
         assert_eq!(version, 2);
         assert_eq!(synthetic::decode(&bytes, version), Body::V2(v2));
         assert_eq!(synthetic::decode(&bytes, 1), Body::V1(v1));
+    }
+
+    fn asker() -> NodeId {
+        NodeId::new("127.0.0.1:2552".parse().expect("valid address"))
     }
 }

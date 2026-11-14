@@ -515,14 +515,27 @@ pub(crate) fn discard_replies(tags: &[ReplyTag]) {
     }
 }
 
-/// Only the peer a request was sent to may answer it: a nonce is unique to this node only.
+/// Only the peer a request was sent to may answer it, and only this incarnation of this node may
+/// receive the answer: a nonce is unique to one process only.
 pub(crate) fn on_reply(
     endpoint: &EndpointInner,
     peer: NodeId,
+    asker: NodeId,
     nonce: Nonce,
     schema_version: SchemaVersion,
     payload: &[u8],
 ) {
+    if asker != endpoint.node() {
+        warn!(
+            %peer,
+            %asker,
+            %nonce,
+            error = "the reply answers another incarnation of this node",
+            "dead letter"
+        );
+        return;
+    }
+
     match endpoint.pending_replies().take_from(nonce, peer) {
         Some(pending) => {
             let delivered = (pending.deliver)(
@@ -545,9 +558,17 @@ pub(crate) fn on_reply(
     }
 }
 
-/// Dropping the entry resolves its ask as `NoReply`, hence only its peer may drop it.
-pub(crate) fn on_reply_dropped(endpoint: &EndpointInner, peer: NodeId, nonce: Nonce) {
-    endpoint.pending_replies().take_from(nonce, peer);
+/// Dropping the entry resolves its ask as `NoReply`, hence only its peer may drop it, and only for
+/// this incarnation of this node.
+pub(crate) fn on_reply_dropped(
+    endpoint: &EndpointInner,
+    peer: NodeId,
+    asker: NodeId,
+    nonce: Nonce,
+) {
+    if asker == endpoint.node() {
+        endpoint.pending_replies().take_from(nonce, peer);
+    }
 }
 
 pub(crate) fn on_reply_canceled(endpoint: &EndpointInner, origin: NodeId, nonce: Nonce) {
@@ -590,6 +611,7 @@ pub(crate) struct ProxyOrigin {
 pub(crate) fn on_undeliverable(endpoint: &EndpointInner, peer: NodeId, reply_tags: &[ReplyTag]) {
     for tag in reply_tags {
         let frame = Frame::ReplyDropped {
+            asker: peer,
             nonce: tag.nonce,
             recipient: tag.recipient,
         };
@@ -691,6 +713,7 @@ impl Drop for ReplyGuard {
         }
 
         let frame = Frame::ReplyDropped {
+            asker: self.origin.node,
             nonce: self.origin.nonce,
             recipient: self.recipient,
         };
@@ -839,6 +862,7 @@ where
             )
         },
         |schema_version, payload, _| Frame::Reply {
+            asker: origin,
             nonce,
             recipient,
             schema_version,
@@ -861,7 +885,8 @@ mod tests {
             node::NodeId,
             reply::{
                 AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, WireReplyTo,
-                note_minted, on_reply, on_reply_canceled, record_minted, remote_proxy,
+                note_minted, on_reply, on_reply_canceled, on_reply_dropped, record_minted,
+                remote_proxy,
             },
             schema::{Peer, Schema},
         },
@@ -1499,6 +1524,7 @@ mod tests {
             on_reply(
                 endpoint,
                 next,
+                endpoint.node(),
                 tags[0].nonce,
                 PanicsWhenEncoded::VERSION,
                 &payload,
@@ -1541,6 +1567,7 @@ mod tests {
         on_reply(
             endpoint,
             responder,
+            endpoint.node(),
             tags[0].nonce,
             PanicsWhenDecoded::VERSION,
             &payload,
@@ -1551,6 +1578,52 @@ mod tests {
             reply_rx.try_recv(),
             Err(TryRecvError::Disconnected)
         ));
+    }
+
+    /// A reply or a reply-dropped notification naming another incarnation at this node's address
+    /// leaves this incarnation's ask alone under the same nonce, so the real reply still arrives.
+    #[test]
+    fn a_reply_for_another_incarnation_settles_nothing() {
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let predecessor = NodeId::new(endpoint.node().addr());
+        let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let pending = endpoint.pending_replies();
+        let (reply_tx, reply_rx) = mpsc::channel();
+        let reply_to = ReplyTo::<u64>::new(move |reply| {
+            reply_tx.send(reply).expect("the test awaits the reply");
+        });
+        let (request, tags) = endpoint::with_current(endpoint, || {
+            record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        request.expect("the destination is serialized");
+        send_stamped(pending, &tags, responder, None);
+        let stale = endpoint.codec().encode(&1_u64).expect("encodes");
+        let answer = endpoint.codec().encode(&2_u64).expect("encodes");
+
+        on_reply_dropped(endpoint, responder, predecessor, tags[0].nonce);
+        on_reply(
+            endpoint,
+            responder,
+            predecessor,
+            tags[0].nonce,
+            SchemaVersion::new(0),
+            &stale,
+        );
+        assert_eq!(pending.len(), 1);
+        assert!(reply_rx.try_recv().is_err());
+
+        on_reply(
+            endpoint,
+            responder,
+            endpoint.node(),
+            tags[0].nonce,
+            SchemaVersion::new(0),
+            &answer,
+        );
+        assert_eq!(reply_rx.try_recv(), Ok(2));
+        assert_eq!(pending.len(), 0);
     }
 
     fn deliver_nothing(

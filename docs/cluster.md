@@ -608,8 +608,9 @@ connected to. From then on a frame addressed to any other incarnation at that ad
 dead letter rather than traffic written onto its successor's connection. A reference which outlived
 the node it names hence fails fast, close to the sender, instead of being dropped as an unknown
 target on the far side. Frames already sitting in the lane's queues when a reconnect's handshake
-reveals the successor are the exception: they drain onto the new connection and die on the far side
-as unknown targets, at-most-once either way.
+reveals the successor are the exception: they drain onto the new connection and die on the far side,
+a message as an unknown target and a reply as one naming another incarnation, at-most-once either
+way.
 
 ## Guarantees
 
@@ -706,7 +707,9 @@ as unknown targets, at-most-once either way.
   as a whole. Only the peer a request was sent to settles it. A pending entry is stamped with that
   peer before its frame is queued. A `Reply` frame naming a nonce stamped with anybody else is
   dropped as a dead letter, and a `ReplyDropped` frame naming one is ignored. Nonces are unique to
-  this node, not to the member naming one.
+  one process only, since every process counts from zero. So both frames also name the incarnation
+  which asked. One naming another incarnation of this node, such as its predecessor at the same
+  address, is dropped or ignored the same way and settles nothing here.
 
   An ask which ends without its reply, by its timeout or by its future being dropped, releases its
   own reply destination, the one no actor awaits. So an ask which nothing answers costs its entry
