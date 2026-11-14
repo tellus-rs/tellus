@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.14...tellus-persistence-postgres-v0.3.0) - 2026-11-14
+
+### Added
+
+- add stashing, opt-in per actor via Actor::Stash
+
+### Fixed
+
+- *(postgres)* [**breaking**] rename the store's tables so they cannot collide
+- [**breaking**] refuse a NUL in a persistence ID, map positions beyond BIGINT
+- record the PostgreSQL store's migrations in a table of its own
+
+### Other
+
+- add release notes for the breaking changes since 0.5.3
+- give the PostgreSQL store's schema as the supported definition
+- rename docker-compose.yaml to compose.yaml
+
 ## [0.2.14](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.13...tellus-persistence-postgres-v0.2.14) - 2026-11-01
 
 ### Other
