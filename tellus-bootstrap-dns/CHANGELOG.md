@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.4...tellus-bootstrap-dns-v0.2.0) - 2026-11-14
+
+### Other
+
+- *(bootstrap-dns)* [**breaking**] state that this release requires tellus 0.6
+
 ## [0.1.4](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.3...tellus-bootstrap-dns-v0.1.4) - 2026-11-01
 
 ### Other
