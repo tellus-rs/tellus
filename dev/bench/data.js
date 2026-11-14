@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794663557153,
+  "lastUpdate": 1794663559441,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -23145,6 +23145,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3468565,
             "range": "± 60620",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "167ffed61aed044b5a0949e3aea5921715e2086e",
+          "message": "Merge pull request #334 from tellus-rs/docs/bootstrap-dns-tellus-0-6\n\ndocs(bootstrap-dns)!: state that this release requires tellus 0.6",
+          "timestamp": "2026-11-14T14:31:53+01:00",
+          "tree_id": "67fa7dee90b205657960181b967aeb1306c676e0",
+          "url": "https://github.com/tellus-rs/tellus/commit/167ffed61aed044b5a0949e3aea5921715e2086e"
+        },
+        "date": 1794663558983,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29594669,
+            "range": "± 983039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27743482,
+            "range": "± 296146",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3294573,
+            "range": "± 57576",
             "unit": "ns/iter"
           }
         ]
