@@ -253,7 +253,7 @@ mod tests {
             "this": { "addr": "10.0.0.1:7878", "incarnation": INCARNATION },
             "cluster": CLUSTER,
             "members": [
-                { "addr": "10.0.0.1:7878", "incarnation": INCARNATION, "state": "Up" }
+                { "addr": "10.0.0.1:7878", "incarnation": INCARNATION, "state": "up" }
             ],
             "unreachable": [],
             "broken_links": [],

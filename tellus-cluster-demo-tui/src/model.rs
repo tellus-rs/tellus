@@ -695,11 +695,11 @@ mod tests {
     }
 
     fn up(port: u16) -> Value {
-        member(port, 1, "Up")
+        member(port, 1, "up")
     }
 
     fn down(port: u16) -> Value {
-        member(port, 1, "Down")
+        member(port, 1, "down")
     }
 
     fn state(version: u64, members: Vec<Value>, unreachable: Vec<Value>) -> ClusterState {
@@ -805,7 +805,7 @@ mod tests {
             &mut app,
             0,
             3,
-            InspectEvent::State(state(2, vec![up(7001), member(7002, 1, "Left")], vec![])),
+            InspectEvent::State(state(2, vec![up(7001), member(7002, 1, "left")], vec![])),
         );
         assert_eq!(app.cell(0, addr(7002)), Cell::Left);
         assert_eq!(texts(&app), vec!["node1 v2: 10.0.0.2:7002#0201 left"]);
@@ -821,7 +821,7 @@ mod tests {
             3,
             InspectEvent::State(state(
                 2,
-                vec![up(7001), down(7002), member(7002, 2, "Up")],
+                vec![up(7001), down(7002), member(7002, 2, "up")],
                 vec![],
             )),
         );
@@ -838,7 +838,7 @@ mod tests {
             &mut app,
             0,
             4,
-            InspectEvent::State(state(3, vec![up(7001), member(7002, 2, "Up")], vec![])),
+            InspectEvent::State(state(3, vec![up(7001), member(7002, 2, "up")], vec![])),
         );
         assert_eq!(app.cell(0, addr(7002)), Cell::Up);
         assert_eq!(

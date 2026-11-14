@@ -726,7 +726,7 @@ mod tests {
         let members = up
             .iter()
             .map(|port| {
-                json!({ "addr": addr(*port), "incarnation": incarnation(*port), "state": "Up" })
+                json!({ "addr": addr(*port), "incarnation": incarnation(*port), "state": "up" })
             })
             .collect::<Vec<_>>();
         serde_json::from_value(json!({

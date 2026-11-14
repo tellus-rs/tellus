@@ -489,7 +489,7 @@ mod tests {
             "version": 1,
             "this": { "addr": addr, "incarnation": incarnation },
             "cluster": "019a0000-0000-7000-8000-0000000000c1",
-            "members": [{ "addr": addr, "incarnation": incarnation, "state": "Up" }],
+            "members": [{ "addr": addr, "incarnation": incarnation, "state": "up" }],
             "unreachable": [],
             "broken_links": broken_links,
             "foreign_clusters": foreign_clusters,
@@ -576,7 +576,7 @@ mod tests {
             json!({
                 "addr": format!("10.0.0.{port}:700{port}"),
                 "incarnation": format!("019a0000-0000-7000-8000-00000000000{digit}"),
-                "state": "Up",
+                "state": "up",
             })
         };
         let app = app_with(
