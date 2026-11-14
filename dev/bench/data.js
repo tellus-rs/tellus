@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794670613903,
+  "lastUpdate": 1794670618804,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -21877,6 +21877,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 83571,
             "range": "± 3214",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c6ade230efb058fdd5a0a32881a3bee60f97f03",
+          "message": "Merge pull request #338 from tellus-rs/ci/release-plz-concurrency\n\nci: run release-plz for one push to main at a time",
+          "timestamp": "2026-11-14T16:29:23+01:00",
+          "tree_id": "1eb8a543eeaa9c67b3b709cbe3cad3aa32533bb1",
+          "url": "https://github.com/tellus-rs/tellus/commit/8c6ade230efb058fdd5a0a32881a3bee60f97f03"
+        },
+        "date": 1794670618175,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3057770,
+            "range": "± 308629",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2878278,
+            "range": "± 212046",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 974849,
+            "range": "± 10415",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 122254,
+            "range": "± 2792",
             "unit": "ns/iter"
           }
         ]
