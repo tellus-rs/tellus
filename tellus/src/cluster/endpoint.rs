@@ -914,6 +914,9 @@ impl EndpointInner {
         if peer.addr() == self.node.addr() && peer != self.node {
             return Err(LaneError::NodeUnreachable(peer));
         }
+        if self.membership.is_down(peer) {
+            return Err(LaneError::NodeUnreachable(peer));
+        }
 
         #[cfg(feature = "cluster-dev")]
         if matches!(frame, Frame::Terminated { .. }) && self.drop_terminated() {
@@ -927,9 +930,6 @@ impl EndpointInner {
             peer,
             frame,
             || {
-                if self.membership.is_down(peer) {
-                    return Err(LaneError::NodeUnreachable(peer));
-                }
                 // Built before the write lock, which every send waits for: it copies every
                 // registration.
                 Ok(self.registrations_snapshot())
@@ -2488,6 +2488,60 @@ mod tests {
                 Err(LaneError::NodeUnreachable(node)) if node == other
             ));
         }
+        assert!(dial_requests.is_empty());
+    }
+
+    /// A send toward a member which left is refused, although the lane to it is still bound, and
+    /// the lane gets no frame.
+    #[test]
+    fn a_send_toward_a_left_member_is_refused_on_its_bound_lane() {
+        let peer = NodeId::new(addr(2));
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        let lane = connected_lane(endpoint, &dial_requests, peer);
+
+        endpoint.update(|membership, _| {
+            membership.merge(&[Member::new(peer, MemberState::Left)], Instant::now())
+        });
+
+        assert!(matches!(
+            endpoint.send(peer, gossip()),
+            Err(LaneError::NodeUnreachable(node)) if node == peer
+        ));
+        assert!(lane.control_rx.is_empty());
+    }
+
+    /// A lane still dialing takes no frame for an incarnation known to be Down, while the
+    /// successor at the same address is still reached through it.
+    #[test]
+    fn a_dialing_lane_refuses_a_down_incarnation_and_serves_its_successor() {
+        let predecessor = NodeId::new(addr(2));
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.update(|membership, _| membership.add_up(predecessor));
+        endpoint
+            .send(predecessor, gossip())
+            .expect("the lane opens");
+        let lane = dial_requests.try_recv().expect("the lane is dialed");
+        lane.control_rx.drain().for_each(drop);
+
+        endpoint.update(|membership, _| {
+            membership.merge(
+                &[Member::new(predecessor, MemberState::Down)],
+                Instant::now(),
+            )
+        });
+        let successor = NodeId::new(addr(2));
+
+        assert!(matches!(
+            endpoint.send(predecessor, gossip()),
+            Err(LaneError::NodeUnreachable(node)) if node == predecessor
+        ));
+        endpoint
+            .send(successor, gossip())
+            .expect("the successor is reached through the dialing lane");
+        assert_eq!(lane.control_rx.len(), 1);
         assert!(dial_requests.is_empty());
     }
 
