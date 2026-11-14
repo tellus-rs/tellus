@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794693691340,
+  "lastUpdate": 1794696882515,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -14579,6 +14579,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 28311267,
             "range": "± 1107623",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "afc587042c7bec54820a034daa35d1c819fc24e1",
+          "message": "Merge pull request #382 from tellus-rs/fix/refuse-sends-to-dead-incarnation\n\nfix(cluster): refuse sends toward a dead incarnation through any lane",
+          "timestamp": "2026-11-14T23:47:25+01:00",
+          "tree_id": "78329d780ea4fae498de08ceeab9d187b18d7029",
+          "url": "https://github.com/tellus-rs/tellus/commit/afc587042c7bec54820a034daa35d1c819fc24e1"
+        },
+        "date": 1794696881545,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 17980303,
+            "range": "± 2061312",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 16164665,
+            "range": "± 880516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 930429,
+            "range": "± 35367",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 917948,
+            "range": "± 8951",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 8915278,
+            "range": "± 801328",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 7247426,
+            "range": "± 234248",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 22443154,
+            "range": "± 903919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 23880409,
+            "range": "± 640460",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 22455221,
+            "range": "± 460152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 23937503,
+            "range": "± 505985",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 23279466,
+            "range": "± 286342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 26617931,
+            "range": "± 599331",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 31583852,
+            "range": "± 1232913",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 23367437,
+            "range": "± 1059292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 26704061,
+            "range": "± 632904",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 31393358,
+            "range": "± 962434",
             "unit": "ns/iter"
           }
         ]
