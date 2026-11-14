@@ -25,6 +25,7 @@ use tracing::{debug, info, warn};
 /// A member's three-point state lattice: `Up < Left < Down`, with removal represented by absence.
 /// A downing after a departure wins, since Down is the greater state.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum MemberState {
     /// A member: heartbeated, gossiped, connectable.
     #[display("up")]

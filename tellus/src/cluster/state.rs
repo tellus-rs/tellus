@@ -836,7 +836,8 @@ mod tests {
         );
     }
 
-    /// The flat shape is the contract consumers parse; the incarnation is the UUID as a string.
+    /// The flat shape is the contract consumers parse; the incarnation is the UUID as a string, and
+    /// the state is its name in snake_case. A name in another case does not deserialize.
     #[cfg(feature = "serde")]
     #[test]
     fn a_member_serializes_flat_and_round_trips() {
@@ -846,11 +847,19 @@ mod tests {
         let value = serde_json::to_value(member).expect("serializes");
         assert_eq!(value["addr"], json!("127.0.0.1:1"));
         assert_eq!(value["incarnation"], json!(node.incarnation().to_string()));
-        assert_eq!(value["state"], json!("Up"));
+        assert_eq!(value["state"], json!("up"));
         assert_eq!(value.as_object().map(|object| object.len()), Some(3));
 
         let parsed = serde_json::from_value::<Member>(value).expect("deserializes");
         assert_eq!(parsed, member);
+
+        for (state, name) in [(MemberState::Left, "left"), (MemberState::Down, "down")] {
+            let value = serde_json::to_value(Member::new(node, state)).expect("serializes");
+            assert_eq!(value["state"], json!(name));
+            let parsed = serde_json::from_value::<Member>(value).expect("deserializes");
+            assert_eq!(parsed.state(), state);
+        }
+        assert!(serde_json::from_value::<MemberState>(json!("Up")).is_err());
     }
 
     #[cfg(feature = "serde")]
