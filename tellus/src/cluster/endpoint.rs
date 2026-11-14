@@ -1,13 +1,11 @@
 #[cfg(feature = "serde")]
-use crate::cluster::{
-    codec::CodecConfig, downing::DowningProviderConfig, failure::FailureDetectorConfig,
-};
+use crate::cluster::{downing::DowningProviderConfig, failure::FailureDetectorConfig};
 use crate::{
     ActorId, ActorRef, Backoff,
     actor_context::PanicPayload,
     cluster::{
         bootstrap::BootstrapConfig,
-        codec::{Codec, Postcard},
+        codec::Codec,
         discovery::WireKey,
         downing::{Disconnected, Downing, DowningProvider, DowningProviderFactory, KeepMajority},
         failure::{
@@ -123,10 +121,9 @@ pub struct EndpointConfig {
 
     /// The codec encoding and decoding message payloads, the same on every node of a cluster:
     /// its [name](Codec::name) is carried in every handshake, and a peer naming another one is
-    /// refused. Defaults to [Postcard]; from a config file one of the provided codecs is chosen
-    /// by name, see docs/cluster.md. [start_endpoint] refuses a name longer than 64 bytes.
-    #[debug(skip)]
-    pub codec: Arc<dyn Codec>,
+    /// refused. Defaults to [Codec::Postcard]; from a config file a codec is chosen by name, see
+    /// docs/cluster.md.
+    pub codec: Codec,
 
     /// The version of the application this node runs, announced to every peer at the handshake
     /// and handed to [Schema::encode](crate::cluster::Schema::encode) on the other side as the
@@ -290,7 +287,7 @@ impl EndpointConfig {
         NonZeroUsize::new(256).expect("256 is not zero");
 
     /// A configuration with the given advertised address, every other field taken from its
-    /// `DEFAULT_*` constant: the [Postcard] codec, the [PhiAccrualFailureDetector] with its
+    /// `DEFAULT_*` constant: the [Codec::Postcard] codec, the [PhiAccrualFailureDetector] with its
     /// defaults and [KeepMajority] downing with its own.
     pub fn new(advertised_addr: SocketAddr) -> Self {
         Self {
@@ -298,7 +295,7 @@ impl EndpointConfig {
             outbound_capacity: Self::DEFAULT_OUTBOUND_CAPACITY,
             max_streams_per_peer: Self::DEFAULT_MAX_STREAMS_PER_PEER,
             max_frame_size: Self::DEFAULT_MAX_FRAME_SIZE,
-            codec: Arc::new(Postcard),
+            codec: Codec::Postcard,
             app_version: None,
             heartbeat_interval: Self::DEFAULT_HEARTBEAT_INTERVAL,
             watch_refresh_interval: Self::DEFAULT_WATCH_REFRESH_INTERVAL,
@@ -347,16 +344,6 @@ pub enum InvalidEndpointConfig {
 
         /// The smallest size a handshake and a snapshot chunk can respect.
         min: usize,
-    },
-
-    /// The configured codec's name is longer than a handshake carries.
-    #[error("codec name of {len} bytes exceeds {max} bytes")]
-    CodecNameTooLong {
-        /// The length of the name in bytes.
-        len: usize,
-
-        /// The longest name a handshake carries.
-        max: usize,
     },
 
     /// The configured `app_version` renders longer than a handshake carries.
@@ -425,7 +412,7 @@ struct UncheckedEndpointConfig {
     max_frame_size: Option<NonZeroUsize>,
 
     #[serde(default)]
-    codec: Option<CodecConfig>,
+    codec: Option<Codec>,
 
     #[serde(default)]
     app_version: Option<AppVersion>,
@@ -480,7 +467,7 @@ impl TryFrom<UncheckedEndpointConfig> for EndpointConfig {
                 .max_streams_per_peer
                 .unwrap_or(defaults.max_streams_per_peer),
             max_frame_size: unchecked.max_frame_size.unwrap_or(defaults.max_frame_size),
-            codec: unchecked.codec.map_or(defaults.codec, CodecConfig::codec),
+            codec: unchecked.codec.unwrap_or(defaults.codec),
             app_version: unchecked.app_version,
             heartbeat_interval: unchecked
                 .heartbeat_interval
@@ -764,8 +751,8 @@ impl EndpointInner {
         &self.config
     }
 
-    pub(crate) fn codec(&self) -> &dyn Codec {
-        self.config.codec.as_ref()
+    pub(crate) fn codec(&self) -> Codec {
+        self.config.codec
     }
 
     pub(crate) fn registry(&self) -> &Arc<Registry> {
@@ -1835,13 +1822,6 @@ fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
             min: min_frame_size,
         });
     }
-    let codec_name_len = config.codec.name().len();
-    if codec_name_len > Handshake::MAX_STRING_LEN {
-        return Err(InvalidEndpointConfig::CodecNameTooLong {
-            len: codec_name_len,
-            max: Handshake::MAX_STRING_LEN,
-        });
-    }
     let app_version_len = config
         .app_version
         .as_ref()
@@ -2445,7 +2425,6 @@ fn refusal_backoff(strikes: u32) -> Duration {
 mod tests {
     use crate::cluster::{
         ClusterState,
-        codec::{Codec, DecodeVisitor, Postcard},
         downing::{Disconnected, Downing, DowningProvider},
         endpoint::{
             Coordinator, EndpointConfig, EndpointInner, FULL_GOSSIP_EVERY, ForeignClusters,
@@ -2465,7 +2444,7 @@ mod tests {
         state::{BrokenLink, Change, ForeignCluster},
     };
     #[cfg(feature = "serde")]
-    use crate::cluster::{downing::KeepMajority, failure::PhiAccrual};
+    use crate::cluster::{codec::Codec, downing::KeepMajority, failure::PhiAccrual};
     use semver::Version;
     use std::{
         collections::{BTreeSet, HashSet},
@@ -3615,11 +3594,7 @@ mod tests {
         assert_eq!(config.ambiguous_join_bound, Duration::from_secs(10));
         assert_eq!(config.change_capacity.get(), 64);
 
-        let message = "hello".to_string();
-        assert_eq!(
-            config.codec.encode(&message).expect("encodes"),
-            Postcard.encode(&message).expect("encodes")
-        );
+        assert_eq!(config.codec, Codec::Postcard);
 
         let mut detector = (config.failure_detector)();
         let now = Instant::now();
@@ -3674,11 +3649,7 @@ mod tests {
         assert_eq!(config.ambiguous_join_bound, defaults.ambiguous_join_bound);
         assert_eq!(config.change_capacity, defaults.change_capacity);
 
-        let message = "hello".to_string();
-        assert_eq!(
-            config.codec.encode(&message).expect("encodes"),
-            Postcard.encode(&message).expect("encodes")
-        );
+        assert_eq!(config.codec, Codec::Postcard);
 
         let mut detector = (config.failure_detector)();
         let now = Instant::now();
@@ -4229,46 +4200,13 @@ mod tests {
         assert_eq!(endpoint.state_rx().borrow().cluster(), cluster);
     }
 
-    /// The codec name and the application version travel in the handshake, so a value longer
-    /// than it carries is refused at start, while the exact length passes.
+    /// The application version travels in the handshake, so a version rendering longer than it
+    /// carries is refused at start, while the exact length passes.
     #[test]
-    fn handshake_strings_are_bounded_at_start() {
-        struct Named(&'static str);
-
-        impl Codec for Named {
-            fn name(&self) -> &'static str {
-                self.0
-            }
-
-            fn encode(
-                &self,
-                message: &dyn erased_serde::Serialize,
-            ) -> Result<Vec<u8>, crate::cluster::codec::CodecError> {
-                Postcard.encode(message)
-            }
-
-            fn decode(
-                &self,
-                payload: &[u8],
-                visit: DecodeVisitor<'_>,
-            ) -> Result<(), crate::cluster::codec::CodecError> {
-                Postcard.decode(payload, visit)
-            }
-        }
-
+    fn the_app_version_is_bounded_at_start() {
         let max = Handshake::MAX_STRING_LEN;
         let mut config = EndpointConfig::new(addr(2552));
 
-        config.codec = Arc::new(Named("c".repeat(max).leak()));
-        assert!(validate(&config).is_ok());
-        config.codec = Arc::new(Named("c".repeat(max + 1).leak()));
-        assert!(matches!(
-            validate(&config),
-            Err(InvalidEndpointConfig::CodecNameTooLong { len, max: limit })
-                if len == max + 1 && limit == max
-        ));
-
-        config.codec = Arc::new(Postcard);
         let with_build = |len: usize| {
             Version::parse(&format!("1.0.0+{}", "b".repeat(len - 6))).expect("a semantic version")
         };

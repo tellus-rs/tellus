@@ -85,8 +85,7 @@ where
     manifest::claim::<M>();
     let endpoint = endpoint::get().ok_or(RefError::EndpointNotStarted)?;
 
-    let (manifest, WireRef { node, id }) =
-        endpoint.codec().decode_to::<(String, WireRef)>(bytes)?;
+    let (manifest, WireRef { node, id }) = endpoint.codec().decode::<(String, WireRef)>(bytes)?;
 
     if manifest != M::MANIFEST {
         return Err(RefError::TypeMismatch);
@@ -165,4 +164,39 @@ where
 struct WireRef {
     node: NodeId,
     id: ActorId,
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cluster::{codec::Codec, wire::WireRef};
+
+    /// The bytes the trait object codec this one replaced encoded a manifest and a [WireRef]
+    /// into.
+    const WIRE_REF_PAYLOAD: &[u8] = &[
+        19, 116, 101, 108, 108, 117, 115, 46, 116, 101, 115, 116, 46, 82, 101, 113, 117, 101, 115,
+        116, 0, 127, 0, 0, 1, 248, 19, 16, 1, 161, 219, 7, 101, 218, 119, 87, 150, 37, 188, 240,
+        109, 92, 4, 57, 16, 1, 161, 219, 7, 101, 218, 119, 87, 150, 37, 188, 241, 177, 116, 192,
+        75,
+    ];
+
+    /// An actor reference serialized by the trait object codec decodes here, and encodes back
+    /// into the same bytes.
+    #[test]
+    fn a_wire_ref_matches_the_trait_object_codec() {
+        let (manifest, wire_ref) = Codec::Postcard
+            .decode::<(String, WireRef)>(WIRE_REF_PAYLOAD)
+            .expect("decodes");
+
+        assert_eq!(manifest, "tellus.test.Request");
+        assert_eq!(
+            wire_ref.node.addr(),
+            "127.0.0.1:2552".parse().expect("an address")
+        );
+        assert_eq!(
+            Codec::Postcard
+                .encode(&(manifest, wire_ref))
+                .expect("encodes"),
+            WIRE_REF_PAYLOAD
+        );
+    }
 }
