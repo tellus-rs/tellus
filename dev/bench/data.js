@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794696882515,
+  "lastUpdate": 1794696884904,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -22381,6 +22381,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 137737,
             "range": "± 4797",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "afc587042c7bec54820a034daa35d1c819fc24e1",
+          "message": "Merge pull request #382 from tellus-rs/fix/refuse-sends-to-dead-incarnation\n\nfix(cluster): refuse sends toward a dead incarnation through any lane",
+          "timestamp": "2026-11-14T23:47:25+01:00",
+          "tree_id": "78329d780ea4fae498de08ceeab9d187b18d7029",
+          "url": "https://github.com/tellus-rs/tellus/commit/afc587042c7bec54820a034daa35d1c819fc24e1"
+        },
+        "date": 1794696884527,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2853108,
+            "range": "± 233229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2819123,
+            "range": "± 119031",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 844358,
+            "range": "± 6323",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109804,
+            "range": "± 2033",
             "unit": "ns/iter"
           }
         ]
