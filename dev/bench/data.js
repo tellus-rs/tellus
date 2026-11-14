@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794680088887,
+  "lastUpdate": 1794680092921,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -22045,6 +22045,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 122254,
             "range": "± 2792",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "25fab96be979f4c0177a72819b162fff811990f3",
+          "message": "Merge pull request #339 from tellus-rs/fix/member-state-snake-case\n\nfix(cluster)!: serialize MemberState in snake_case",
+          "timestamp": "2026-11-14T19:06:35+01:00",
+          "tree_id": "fca09da0683f75e0c108cf76a9a18615f95c1eec",
+          "url": "https://github.com/tellus-rs/tellus/commit/25fab96be979f4c0177a72819b162fff811990f3"
+        },
+        "date": 1794680092679,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2790627,
+            "range": "± 69301",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2811897,
+            "range": "± 82868",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1105724,
+            "range": "± 8327",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 133396,
+            "range": "± 3814",
             "unit": "ns/iter"
           }
         ]
