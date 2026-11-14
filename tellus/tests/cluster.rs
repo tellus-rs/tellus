@@ -1123,11 +1123,7 @@ enum Job {
 impl Schema for Job {
     const VERSION: SchemaVersion = SchemaVersion::new(1);
 
-    fn encode(
-        &self,
-        codec: &dyn Codec,
-        peer: &Peer,
-    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+    fn encode(&self, codec: Codec, peer: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         if peer.app_version().is_none_or(|version| version.major < 2) {
             let view = match self {
                 Job::Compute {
@@ -1154,12 +1150,12 @@ impl Schema for Job {
     }
 
     fn decode(
-        codec: &dyn Codec,
+        codec: Codec,
         schema_version: SchemaVersion,
         payload: &[u8],
     ) -> Result<Self, CodecError> {
         if schema_version == SchemaVersion::new(0) {
-            let job = match codec.decode_to::<JobV0>(payload)? {
+            let job = match codec.decode::<JobV0>(payload)? {
                 JobV0::Compute { factor, reply_to } => Job::Compute {
                     factor,
                     label: LEGACY_LABEL.to_string(),
@@ -1180,7 +1176,7 @@ impl Schema for Job {
             return Ok(job);
         }
         if schema_version == Self::VERSION {
-            return codec.decode_to(payload);
+            return codec.decode(payload);
         }
         Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
             schema_version,
@@ -1237,11 +1233,7 @@ struct Total {
 impl Schema for Total {
     const VERSION: SchemaVersion = SchemaVersion::new(1);
 
-    fn encode(
-        &self,
-        codec: &dyn Codec,
-        peer: &Peer,
-    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+    fn encode(&self, codec: Codec, peer: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         if peer.app_version().is_none_or(|version| version.major < 2) {
             return Ok((SchemaVersion::new(0), codec.encode(&self.value)?));
         }
@@ -1249,18 +1241,18 @@ impl Schema for Total {
     }
 
     fn decode(
-        codec: &dyn Codec,
+        codec: Codec,
         schema_version: SchemaVersion,
         payload: &[u8],
     ) -> Result<Self, CodecError> {
         if schema_version == SchemaVersion::new(0) {
             return Ok(Total {
-                value: codec.decode_to(payload)?,
+                value: codec.decode(payload)?,
                 computed_by: None,
             });
         }
         if schema_version == Self::VERSION {
-            return codec.decode_to(payload);
+            return codec.decode(payload);
         }
         Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
             schema_version,
@@ -1440,7 +1432,7 @@ impl Schema for BulkReply {}
 struct PanickingReply;
 
 impl Schema for PanickingReply {
-    fn encode(&self, _: &dyn Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+    fn encode(&self, _: Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         panic!("the encode of this reply panics on purpose")
     }
 }

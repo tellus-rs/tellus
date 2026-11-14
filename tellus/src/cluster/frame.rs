@@ -240,8 +240,8 @@ impl Handshake {
     /// The longest codec name and application version a handshake carries, in bytes.
     pub(crate) const MAX_STRING_LEN: usize = 64;
 
-    /// The widest handshake this build sends, pinned by a test: an IPv6 node at the highest port,
-    /// a cluster ID and both strings at [MAX_STRING_LEN](Handshake::MAX_STRING_LEN).
+    /// The widest handshake a peer may send, pinned by a test: an IPv6 node at the highest port, a
+    /// cluster ID and both strings at [MAX_STRING_LEN](Handshake::MAX_STRING_LEN).
     pub(crate) const MAX_ENCODED_LEN: usize = 195;
 
     pub(crate) fn new(body: HandshakeV2) -> Self {
@@ -1205,7 +1205,7 @@ mod tests {
         }
     }
 
-    /// The widest handshake this build sends encodes to exactly the pinned bound, which the
+    /// The widest handshake a peer may send encodes to exactly the pinned bound, which the
     /// minimum frame size must hold; a string one byte over the cap is refused.
     #[test]
     fn the_widest_handshake_matches_its_pinned_bound() {

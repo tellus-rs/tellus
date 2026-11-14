@@ -7,7 +7,7 @@
 //! started: message types embed reference fields, e.g. `reply_to: ActorRef<Reply>`, and work
 //! unchanged no matter where their counterpart lives. Serializing a local reference lazily binds
 //! the actor in the endpoint's registry, so inbound messages find it; the binding is evicted once
-//! the actor terminates. Message payloads are encoded by a [Codec], by default [Postcard].
+//! the actor terminates. Message payloads are encoded by a [Codec], by default [Codec::Postcard].
 //!
 //! The nodes messaging each other form a *cluster*, and membership is not optional. A started
 //! endpoint is not a cluster and admits nobody: [form] makes it a cluster of one, [join] makes it a
@@ -85,13 +85,13 @@
 //! member fails the asks pending toward it. See docs/cluster.md for the exact contract.
 //!
 //! [Codec]: crate::cluster::codec::Codec
+//! [Codec::Postcard]: crate::cluster::codec::Codec::Postcard
 //! [DowningProvider]: crate::cluster::downing::DowningProvider
 //! [FailureDetector]: crate::cluster::failure::FailureDetector
 //! [FormationProvider]: crate::cluster::formation::FormationProvider
 //! [KeepMajority]: crate::cluster::downing::KeepMajority
 //! [Majority]: crate::cluster::formation::Majority
 //! [PhiAccrualFailureDetector]: crate::cluster::failure::PhiAccrualFailureDetector
-//! [Postcard]: crate::cluster::codec::Postcard
 //! [QuicTransport]: crate::cluster::transport::QuicTransport
 //! [Transport]: crate::cluster::transport::Transport
 //! [ActorContext::reply_to]: crate::ActorContext::reply_to

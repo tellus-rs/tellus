@@ -14,7 +14,7 @@ use derive_more::Debug;
 use std::borrow::Cow;
 use thiserror::Error;
 
-type Encode<M> = fn(&M, &dyn Codec, &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError>;
+type Encode<M> = fn(&M, Codec, &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError>;
 
 #[derive(Debug)]
 pub(crate) struct RemoteSink<M> {
