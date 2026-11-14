@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794693688371,
+  "lastUpdate": 1794693691340,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -23985,6 +23985,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4320620,
             "range": "± 391946",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9a300103cf6cfa0547bb754fba90a75cd07c5fa7",
+          "message": "Merge pull request #340 from tellus-rs/perf/codec-enum\n\nperf(cluster)!: make the payload codec a closed enum",
+          "timestamp": "2026-11-14T22:53:05+01:00",
+          "tree_id": "b1c372a1c47d31ac8e904edeef16f8dd59d052ed",
+          "url": "https://github.com/tellus-rs/tellus/commit/9a300103cf6cfa0547bb754fba90a75cd07c5fa7"
+        },
+        "date": 1794693691091,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30569827,
+            "range": "± 1556655",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30184914,
+            "range": "± 1585413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4532531,
+            "range": "± 306697",
             "unit": "ns/iter"
           }
         ]
