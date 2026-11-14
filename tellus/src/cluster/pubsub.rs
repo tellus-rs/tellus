@@ -331,7 +331,7 @@ mod tests {
         ActorId, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
-            codec::{Codec, CodecError, Postcard},
+            codec::{Codec, CodecError},
             discovery::Key,
             endpoint::{self, EndpointConfig, EndpointInner},
             frame::Frame,
@@ -660,10 +660,7 @@ mod tests {
             );
             assert!(targets.is_sorted());
             assert_eq!(
-                endpoint
-                    .codec()
-                    .decode_to::<u64>(&payload)
-                    .expect("decodes"),
+                endpoint.codec().decode::<u64>(&payload).expect("decodes"),
                 42
             );
             told.entry(addr).or_default().extend(targets);
@@ -862,7 +859,7 @@ mod tests {
 
         fn encode(
             &self,
-            codec: &dyn Codec,
+            codec: Codec,
             peer: &Peer,
         ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
             if peer.app_version().is_none_or(|version| version.major < 2) {
@@ -901,7 +898,7 @@ mod tests {
     impl Schema for GatedReply {
         fn encode(
             &self,
-            codec: &dyn Codec,
+            codec: Codec,
             peer: &Peer,
         ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
             if peer.app_version().is_some_and(|version| version.major >= 2) {
@@ -946,8 +943,8 @@ mod tests {
             })
             .collect::<Vec<_>>();
         shapes.sort_by_key(|(addr, _, _)| *addr);
-        let old = Postcard.encode(&5_u64).expect("encodes");
-        let new = Postcard.encode(&(5_u64, true)).expect("encodes");
+        let old = Codec::Postcard.encode(&5_u64).expect("encodes");
+        let new = Codec::Postcard.encode(&(5_u64, true)).expect("encodes");
         assert_eq!(
             shapes,
             [
@@ -990,11 +987,11 @@ mod tests {
             [
                 (
                     SchemaVersion::new(0),
-                    Postcard.encode(&5_u64).expect("encodes")
+                    Codec::Postcard.encode(&5_u64).expect("encodes")
                 ),
                 (
                     SchemaVersion::new(1),
-                    Postcard.encode(&(6_u64, true)).expect("encodes")
+                    Codec::Postcard.encode(&(6_u64, true)).expect("encodes")
                 ),
             ]
         );

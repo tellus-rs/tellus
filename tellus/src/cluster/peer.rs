@@ -2107,7 +2107,7 @@ mod tests {
     struct PanicsWhenDecoded;
 
     impl Schema for PanicsWhenDecoded {
-        fn decode(_: &dyn Codec, _: SchemaVersion, _: &[u8]) -> Result<Self, CodecError> {
+        fn decode(_: Codec, _: SchemaVersion, _: &[u8]) -> Result<Self, CodecError> {
             DECODE_PANICKED.store(true, Ordering::Relaxed);
             panic!("message decode bug")
         }

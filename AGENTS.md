@@ -458,8 +458,9 @@ cross-file invariants:
   observing the node `lifecycle`, `cluster_state` and `changes`, defined in `state.rs` with
   `ClusterState`) plus one submodule per pluggable family, each holding a trait, its factory and the
   provided implementations: `cluster::transport` (with QUIC in `transport/quic.rs`),
-  `cluster::codec`, `cluster::downing`, `cluster::failure` and `cluster::formation`, and one each
-  for the directory and the fan-out over it: `cluster::receptionist` (`lookup`, `lookup_at`,
+  `cluster::downing`, `cluster::failure` and `cluster::formation`, one for the payload codec
+  (`cluster::codec`, the closed enum `Codec`), and one each for the directory and the fan-out over
+  it: `cluster::receptionist` (`lookup`, `lookup_at`,
   `subscribe`, `settled`) and `cluster::pubsub` (`Topic`, `subscribe`, `publish`, which tells the
   local subscribers the receptionist resolves and serializes once per remote node, one
   `Multicast` frame per node and data stream). `ActorRef` is serializable via a process-wide

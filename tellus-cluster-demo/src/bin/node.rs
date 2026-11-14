@@ -304,11 +304,7 @@ struct Pong {
 impl Schema for Pong {
     const VERSION: SchemaVersion = SchemaVersion::new(1);
 
-    fn encode(
-        &self,
-        codec: &dyn Codec,
-        peer: &Peer,
-    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+    fn encode(&self, codec: Codec, peer: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         if peer.app_version().is_none_or(|version| version.major < 2) {
             let view = PongV0 {
                 addr: self.addr,
@@ -320,12 +316,12 @@ impl Schema for Pong {
     }
 
     fn decode(
-        codec: &dyn Codec,
+        codec: Codec,
         schema_version: SchemaVersion,
         payload: &[u8],
     ) -> Result<Self, CodecError> {
         if schema_version == SchemaVersion::new(0) {
-            let PongV0 { addr, up_members } = codec.decode_to(payload)?;
+            let PongV0 { addr, up_members } = codec.decode(payload)?;
             return Ok(Pong {
                 addr,
                 up_members,
@@ -333,7 +329,7 @@ impl Schema for Pong {
             });
         }
         if schema_version == Self::VERSION {
-            return codec.decode_to(payload);
+            return codec.decode(payload);
         }
         Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
             schema_version,
@@ -954,13 +950,13 @@ mod tests {
         SchemaVersion,
         cluster::{
             AppVersion, Schema,
-            codec::{Codec, CodecError, Postcard},
+            codec::{Codec, CodecError},
         },
     };
     use tellus_bootstrap_dns::Query;
     use tellus_bootstrap_k8s::{Pods, Port};
 
-    const CODEC: &dyn Codec = &Postcard;
+    const CODEC: Codec = Codec::Postcard;
 
     fn addr() -> SocketAddr {
         "172.28.0.11:7878".parse().expect("valid")
