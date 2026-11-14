@@ -18,7 +18,6 @@ rustdoc-args = [ "--cfg", "docsrs" ]
 
 [features]
 cluster = [
-    "dep:erased-serde",
     "dep:postcard",
     "dep:quinn",
     "dep:rustls",
@@ -43,7 +42,6 @@ test-util             = [  ]
 [dependencies]
 ciborium        = { workspace = true, optional = true }
 derive_more     = { workspace = true, features = [ "debug", "display", "into" ] }
-erased-serde    = { workspace = true, optional = true }
 flume           = { workspace = true, features = [ "async" ] }
 hotpath         = { workspace = true, optional = true }
 humantime-serde = { workspace = true, optional = true }

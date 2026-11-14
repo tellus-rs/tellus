@@ -54,11 +54,7 @@ where
     /// # Errors
     /// Implementations fail if the value cannot be encoded in the codec's format, or in the shape
     /// the peer decodes.
-    fn encode(
-        &self,
-        codec: &dyn Codec,
-        peer: &Peer,
-    ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+    fn encode(&self, codec: Codec, peer: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         let _ = peer;
         let payload = codec.encode(self)?;
         Ok((Self::VERSION, payload))
@@ -66,19 +62,19 @@ where
 
     /// Decode a payload sent with the given schema version. The default decodes
     /// [VERSION](Schema::VERSION) only; an override upcasts older versions, typically by decoding
-    /// the old shape into its own type with the codec's `decode_to` and converting.
+    /// the old shape into its own type with [Codec::decode] and converting.
     ///
     /// # Errors
     /// Implementations fail if `schema_version` is one they cannot decode, with
     /// [UnsupportedSchemaVersion] as the source, or if the payload does not decode as that
     /// version.
     fn decode(
-        codec: &dyn Codec,
+        codec: Codec,
         schema_version: SchemaVersion,
         payload: &[u8],
     ) -> Result<Self, CodecError> {
         if schema_version == Self::VERSION {
-            codec.decode_to(payload)
+            codec.decode(payload)
         } else {
             Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
                 schema_version,
@@ -208,7 +204,7 @@ mod tests {
     use crate::{
         SchemaVersion,
         cluster::{
-            codec::{Codec, CodecError, Postcard},
+            codec::{Codec, CodecError},
             node::NodeId,
             schema::{Peer, Schema, catch_panic_and_log},
         },
@@ -230,7 +226,7 @@ mod tests {
 
         fn encode(
             &self,
-            codec: &dyn Codec,
+            codec: Codec,
             peer: &Peer,
         ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
             if peer.app_version().is_none_or(|version| version.major < 2) {
@@ -241,12 +237,12 @@ mod tests {
         }
 
         fn decode(
-            codec: &dyn Codec,
+            codec: Codec,
             schema_version: SchemaVersion,
             payload: &[u8],
         ) -> Result<Self, CodecError> {
             if schema_version == SchemaVersion::new(0) {
-                let texts = codec.decode_to::<Vec<String>>(payload)?;
+                let texts = codec.decode::<Vec<String>>(payload)?;
                 let notes = texts
                     .into_iter()
                     .map(|text| Note { text, stars: 0 })
@@ -254,7 +250,7 @@ mod tests {
                 return Ok(Notes(notes));
             }
             if schema_version == Self::VERSION {
-                return codec.decode_to(payload);
+                return codec.decode(payload);
             }
             Err(CodecError::decoding(
                 super::UnsupportedSchemaVersion::new::<Self>(schema_version),
@@ -262,7 +258,7 @@ mod tests {
         }
     }
 
-    const CODEC: &dyn Codec = &Postcard;
+    const CODEC: Codec = Codec::Postcard;
 
     fn peer(app_version: Option<&str>) -> Peer {
         let node = NodeId::new("127.0.0.1:2552".parse().expect("valid address"));
@@ -282,7 +278,7 @@ mod tests {
         let value = Some(2.5_f64);
         let (schema_version, payload) = value.encode(CODEC, &peer(None)).expect("encodes");
         assert_eq!(schema_version, SchemaVersion::new(0));
-        assert_eq!(payload, Postcard.encode(&value).expect("encodes"));
+        assert_eq!(payload, Codec::Postcard.encode(&value).expect("encodes"));
         assert_eq!(
             <Option<f64>>::decode(CODEC, SchemaVersion::new(0), &payload).expect("decodes"),
             value
@@ -314,7 +310,7 @@ mod tests {
             assert_eq!(schema_version, SchemaVersion::new(0));
             assert_eq!(
                 CODEC
-                    .decode_to::<Vec<String>>(&payload)
+                    .decode::<Vec<String>>(&payload)
                     .expect("the old shape"),
                 ["hello"]
             );
@@ -379,7 +375,7 @@ mod tests {
     /// Without a panic the result comes back as it is, an error with its own source.
     #[test]
     fn a_result_without_a_panic_comes_back_unchanged() {
-        let payload = Postcard.encode(&7_u64).expect("encodes");
+        let payload = Codec::Postcard.encode(&7_u64).expect("encodes");
 
         let decoded =
             catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::decoding, || {

@@ -318,9 +318,9 @@ transport:
   server_name: tellus
 ```
 
-A custom codec, failure detector, downing provider or formation provider is not something a config
-file can name, so those stay code: the fields are public and take the implementation after the
-config was loaded. Validation holds across the boundary here too: deserialization refuses exactly
+A custom failure detector, downing provider or formation provider is not something a config file
+can name, so those stay code: the fields are public and take the implementation after the config
+was loaded. Validation holds across the boundary here too: deserialization refuses exactly
 what `start_endpoint` and `bootstrap` refuse. Examples are an advertised address with an unspecified
 IP or a zero port, a zero heartbeat interval, a frame size too small for one member or one
 reachability record and a zero resolve interval. `InvalidEndpointConfig` and

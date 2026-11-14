@@ -27,8 +27,7 @@ use std::{
 use thiserror::Error;
 use tracing::{debug, warn};
 
-type DeliverReply =
-    fn(Box<dyn Any + Send>, SchemaVersion, &[u8], &dyn Codec) -> Result<(), CodecError>;
+type DeliverReply = fn(Box<dyn Any + Send>, SchemaVersion, &[u8], Codec) -> Result<(), CodecError>;
 
 thread_local! {
     static MINTED_TAGS: RefCell<Option<Vec<ReplyTag>>> = const { RefCell::new(None) };
@@ -717,7 +716,7 @@ fn deliver_reply<R>(
     send_reply: Box<dyn Any + Send>,
     schema_version: SchemaVersion,
     payload: &[u8],
-    codec: &dyn Codec,
+    codec: Codec,
 ) -> Result<(), CodecError>
 where
     R: Schema + Send + 'static,
@@ -861,8 +860,8 @@ mod tests {
             frame::{Frame, StreamKey},
             node::NodeId,
             reply::{
-                AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, note_minted,
-                on_reply, on_reply_canceled, record_minted, remote_proxy,
+                AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, WireReplyTo,
+                note_minted, on_reply, on_reply_canceled, record_minted, remote_proxy,
             },
             schema::{Peer, Schema},
         },
@@ -877,6 +876,20 @@ mod tests {
             mpsc::{self, TryRecvError},
         },
     };
+
+    /// The bytes the trait object codec this one replaced encoded a [WireReplyTo] with a recipient
+    /// into, and one without.
+    const REPLY_TO_PAYLOADS: [&[u8]; 2] = [
+        &[
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 249, 19, 16, 1, 161, 219, 7, 101,
+            218, 119, 87, 150, 37, 188, 242, 134, 204, 219, 104, 41, 1, 16, 1, 161, 219, 7, 101,
+            218, 119, 87, 150, 37, 188, 243, 77, 39, 244, 205,
+        ],
+        &[
+            1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 249, 19, 16, 1, 161, 219, 7, 101,
+            218, 119, 87, 150, 37, 188, 242, 134, 204, 219, 104, 42, 0,
+        ],
+    ];
 
     fn add_entry(pending: &PendingReplies, recipient: Option<ActorId>) -> Nonce {
         pending.add(Box::new(()), deliver_nothing, recipient, None, None, None)
@@ -1544,7 +1557,7 @@ mod tests {
         _send_reply: Box<dyn Any + Send>,
         _schema_version: SchemaVersion,
         _payload: &[u8],
-        _codec: &dyn Codec,
+        _codec: Codec,
     ) -> Result<(), CodecError> {
         Ok(())
     }
@@ -1565,11 +1578,7 @@ mod tests {
     struct MintsThenPanics(ReplyTo<u64>);
 
     impl Schema for MintsThenPanics {
-        fn encode(
-            &self,
-            codec: &dyn Codec,
-            _: &Peer,
-        ) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+        fn encode(&self, codec: Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
             codec.encode(self)?;
             panic!("reply encode bug")
         }
@@ -1579,7 +1588,7 @@ mod tests {
     struct PanicsWhenEncoded;
 
     impl Schema for PanicsWhenEncoded {
-        fn encode(&self, _: &dyn Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+        fn encode(&self, _: Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
             panic!("reply encode bug")
         }
     }
@@ -1588,8 +1597,27 @@ mod tests {
     struct PanicsWhenDecoded;
 
     impl Schema for PanicsWhenDecoded {
-        fn decode(_: &dyn Codec, _: SchemaVersion, _: &[u8]) -> Result<Self, CodecError> {
+        fn decode(_: Codec, _: SchemaVersion, _: &[u8]) -> Result<Self, CodecError> {
             panic!("reply decode bug")
+        }
+    }
+
+    /// A reply-to serialized by the trait object codec decodes here, with and without a
+    /// recipient, and encodes back into the same bytes.
+    #[test]
+    fn a_wire_reply_to_matches_the_trait_object_codec() {
+        for (payload, nonce) in REPLY_TO_PAYLOADS.into_iter().zip([41, 42]) {
+            let reply_to = Codec::Postcard
+                .decode::<WireReplyTo>(payload)
+                .expect("decodes");
+
+            assert_eq!(
+                reply_to.node.addr(),
+                "[::1]:2553".parse().expect("an address")
+            );
+            assert_eq!(reply_to.nonce.to_string(), nonce.to_string());
+            assert_eq!(reply_to.recipient.is_some(), nonce == 41);
+            assert_eq!(Codec::Postcard.encode(&reply_to).expect("encodes"), payload);
         }
     }
 }

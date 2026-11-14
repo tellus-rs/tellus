@@ -135,7 +135,7 @@ impl Registry {
         target: ActorId,
         schema_version: SchemaVersion,
         payload: &[u8],
-        codec: &dyn Codec,
+        codec: Codec,
     ) -> Result<(), DeliverError> {
         let route = read(&self.routes).get(&target).cloned();
 
@@ -304,7 +304,7 @@ where
         &self,
         schema_version: SchemaVersion,
         payload: &[u8],
-        codec: &dyn Codec,
+        codec: Codec,
     ) -> Result<(), CodecError>;
 
     fn watcher_registry(&self) -> WatcherRegistry;
@@ -324,7 +324,7 @@ where
         &self,
         schema_version: SchemaVersion,
         payload: &[u8],
-        codec: &dyn Codec,
+        codec: Codec,
     ) -> Result<(), CodecError> {
         let message = schema::catch_panic_and_log::<M, _, _>(
             "message decode panicked",
@@ -367,7 +367,7 @@ mod tests {
         ActorId, Incoming, MailboxCapacity, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
-            codec::{Codec, CodecError, Postcard},
+            codec::{Codec, CodecError},
             discovery::{KeyKind, WireKey},
             manifest::Manifest,
             receptionist::{MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, WireGroup},
@@ -693,16 +693,16 @@ mod tests {
             const VERSION: SchemaVersion = SchemaVersion::new(1);
 
             fn decode(
-                codec: &dyn Codec,
+                codec: Codec,
                 schema_version: SchemaVersion,
                 payload: &[u8],
             ) -> Result<Self, CodecError> {
                 if schema_version == SchemaVersion::new(0) {
-                    let narrow = codec.decode_to::<u32>(payload)?;
+                    let narrow = codec.decode::<u32>(payload)?;
                     return Ok(Upcast(u64::from(narrow)));
                 }
                 if schema_version == Self::VERSION {
-                    return codec.decode_to(payload);
+                    return codec.decode(payload);
                 }
                 Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
                     schema_version,
@@ -714,7 +714,7 @@ mod tests {
         let id = ActorId::new();
         let (self_ref, mailbox) = SelfRef::<Upcast>::new(id, MailboxCapacity::Unbounded);
         registry.bind(self_ref.actor_ref());
-        let codec: &dyn Codec = &Postcard;
+        let codec = Codec::Postcard;
 
         registry
             .deliver(

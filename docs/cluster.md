@@ -3,9 +3,9 @@
 This document explains how tellus remoting (the `cluster` feature) works and which of the core
 guarantees from [actors.md](actors.md) carry over the network, which weaken, and why. The
 implementation lives in [`tellus/src/cluster`](../tellus/src/cluster). Its public API is flat for
-what every node calls, with one submodule per pluggable family (`transport`, `codec`, `downing`,
-`failure`, `formation`) and one each for the directory and the fan-out over it (`receptionist`,
-`pubsub`). [`tellus-cluster-demo`](../tellus-cluster-demo) runs five nodes of it under continuous
+what every node calls, with one submodule per pluggable family (`transport`, `downing`, `failure`,
+`formation`), one for the payload codec (`codec`) and one each for the directory and the fan-out
+over it (`receptionist`, `pubsub`). [`tellus-cluster-demo`](../tellus-cluster-demo) runs five nodes of it under continuous
 crashes, departures and partitions.
 
 ## Overview
@@ -56,10 +56,10 @@ resurrect an incarnation.
 
 With the `serde` feature `EndpointConfig`, `BootstrapConfig` and `QuicConfig` are deserializable,
 e.g. from YAML. A key left out takes its default, an unknown key is refused, and a duration is
-written like `250ms`, `10s` or `5m`. The codec, the failure detector, the downing provider and the
-formation provider are each chosen by the name of one of their provided implementations. An
-implementation without keys is given by its bare name, as in `codec: postcard` or
-`formation: majority`. One with keys maps its name to them, as in
+written like `250ms`, `10s` or `5m`. The codec is chosen by its name, as in `codec: postcard`. The
+failure detector, the downing provider and the formation provider are each chosen by the name of
+one of their provided implementations. An implementation without keys is given by its bare name,
+as in `formation: majority`. One with keys maps its name to them, as in
 `downing_provider: { keep_majority: { after: 10s } }`, where `{}` takes every default, as in
 `failure_detector: { phi_accrual: {} }`. The `deadline` detector maps its name to the deadline
 itself, as in `failure_detector: { deadline: 3s }`. A custom implementation is still assigned in
@@ -80,7 +80,7 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `outbound_capacity` | 8192 | not 0 |
 | `max_streams_per_peer` | 16 | not 0; lowered to what the transport offers, 100 for QUIC |
 | `max_frame_size` | 1048576 (1 MiB) | at least 195, the widest handshake |
-| `codec` | `postcard` | `postcard`; a custom codec's name at most 64 bytes |
+| `codec` | `postcard` | `postcard` |
 | `app_version` | none | a semantic version, at most 64 bytes rendered |
 | `heartbeat_interval` | 1s | not 0 |
 | `watch_refresh_interval` | 2s | not 0 |
@@ -838,9 +838,10 @@ per quiet window, with every mixed cluster verified.
 
 Every node of a cluster uses one codec. Its name rides every handshake, and a peer naming another
 one is refused as `CodecMismatch`, terminal like `ForeignCluster`, so switching the codec is no
-rolling upgrade. The codec name and the rendered application version are bounded to 64 bytes each,
-refused by `start_endpoint` and at the handshake alike, and the widest handshake, 195 bytes, is the
-floor of `max_frame_size`.
+rolling upgrade. The codec is one of the variants of `Codec`, so there is no custom codec. The
+rendered application version is bounded to 64 bytes, refused by `start_endpoint`. A peer's
+handshake is refused if its codec name or application version exceeds 64 bytes, and the widest
+handshake, 195 bytes, is the floor of `max_frame_size`.
 
 ## Receptionist
 
