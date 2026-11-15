@@ -53,6 +53,12 @@ pub enum LeaveError {
     #[error("remoting endpoint not started")]
     EndpointNotStarted,
 
+    /// This node has neither formed nor joined a cluster, a join in progress included, so there is
+    /// no cluster to leave. The endpoint is left as it was and can still
+    /// [form](crate::cluster::form) or [join](crate::cluster::join) one.
+    #[error("this node is a member of no cluster")]
+    NotAMember,
+
     /// This node was downed before it began to leave, so there is no departure to announce.
     #[error("this node has been downed")]
     Downed,
@@ -79,7 +85,8 @@ pub enum LeaveError {
 /// covers both. See docs/cluster.md for the race which remains.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, if this node was downed before it began to leave, if the
+/// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster
+/// when the actor system has terminated, if this node was downed before it began to leave, if the
 /// departure did not complete, or if the actor system did not terminate cleanly. In the last case
 /// the departure was announced anyway.
 pub async fn leave_on_terminated<M>(system: ActorSystem<M>) -> Result<Departure, LeaveError>
@@ -114,6 +121,11 @@ where
 /// exit. A call made while another is leaving waits for that departure and returns its report,
 /// as does leaving again afterward.
 ///
+/// An endpoint which has neither formed nor joined a cluster has nothing to leave, so leaving it
+/// fails as [NotAMember](LeaveError::NotAMember) and changes nothing: it can still
+/// [form](crate::cluster::form) or [join](crate::cluster::join) a cluster. That holds while a join
+/// is in progress, too, which may still make this node a member afterward.
+///
 /// A departure which ends without a report, e.g. since it panicked, fails safe. This node is
 /// downed and every connection severed, and only then does any caller learn of it. Every call,
 /// concurrent or later, then fails as [Incomplete](LeaveError::Incomplete).
@@ -126,8 +138,8 @@ where
 /// no live path at all, from its own failure detection, exactly as it would from a crash.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, if this node was downed before it began to leave, or if
-/// the departure did not complete.
+/// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if
+/// this node was downed before it began to leave, or if the departure did not complete.
 pub async fn leave() -> Result<Departure, LeaveError> {
     let endpoint = endpoint::get().ok_or(LeaveError::EndpointNotStarted)?;
     endpoint.leave().await

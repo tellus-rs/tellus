@@ -1018,8 +1018,12 @@ impl EndpointInner {
         // Decided under the lifecycle lock, so a down landing concurrently either precedes the
         // departure or is ignored by it.
         let mut departed_rx = self.lifecycle.coordinate(|coordinator| {
-            if coordinator.lifecycle == Lifecycle::Downed && self.departure.get().is_none() {
-                return Err(LeaveError::Downed);
+            match coordinator.lifecycle {
+                Lifecycle::Unformed => return Err(LeaveError::NotAMember),
+                Lifecycle::Downed if self.departure.get().is_none() => {
+                    return Err(LeaveError::Downed);
+                }
+                _ => {}
             }
 
             Ok(self
@@ -3424,6 +3428,7 @@ mod tests {
     async fn a_second_leave_waits_for_the_first_departure() {
         let (endpoint, dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint
             .send(NodeId::new(addr(2)), gossip())
             .expect("a lane opens");
@@ -3465,6 +3470,7 @@ mod tests {
     async fn a_departure_reports_how_each_lane_drained() {
         let (endpoint, dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
         for port in [2, 3, 4] {
             endpoint
                 .send(NodeId::new(addr(port)), gossip())
@@ -3489,6 +3495,38 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_unformed_node_cannot_leave_and_still_forms() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+
+        assert!(matches!(
+            endpoint.leave().await,
+            Err(LeaveError::NotAMember)
+        ));
+        assert_eq!(endpoint.lifecycle(), Lifecycle::Unformed);
+        assert!(!endpoint.leaving());
+
+        endpoint
+            .form_cluster()
+            .expect("a refused leave keeps the endpoint formable");
+        assert_eq!(endpoint.lifecycle(), Lifecycle::Formed);
+    }
+
+    #[tokio::test]
+    async fn a_node_still_joining_cannot_leave() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        assert!(endpoint.enter_join());
+
+        assert!(matches!(
+            endpoint.leave().await,
+            Err(LeaveError::NotAMember)
+        ));
+        assert_eq!(endpoint.lifecycle(), Lifecycle::Unformed);
+        assert!(!endpoint.leaving());
+    }
+
+    #[tokio::test]
     async fn a_downed_node_cannot_leave() {
         let (endpoint, _dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
@@ -3507,6 +3545,7 @@ mod tests {
     async fn a_panicking_departure_downs_this_node_for_every_leave() {
         let (endpoint, dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint
             .send(NodeId::new(addr(2)), gossip())
             .expect("a lane opens");
@@ -3540,6 +3579,7 @@ mod tests {
     async fn an_aborted_leave_keeps_the_departure_running() {
         let (endpoint, dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint
             .send(NodeId::new(addr(2)), gossip())
             .expect("a lane opens");
