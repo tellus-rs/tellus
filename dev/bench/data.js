@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794755640490,
+  "lastUpdate": 1794756105400,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15539,6 +15539,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 28130851,
             "range": "± 960325",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "daa91c19407e37ee2bb73ba9c3c61e0e003e579e",
+          "message": "Merge pull request #397 from tellus-rs/fix/derived-config-values\n\nfix(cluster)!: cap derived deadlines and bound oversize config values",
+          "timestamp": "2026-11-15T16:09:41+01:00",
+          "tree_id": "9b4611f1ec9f9c4fe2402f647d4b60c117c8e754",
+          "url": "https://github.com/tellus-rs/tellus/commit/daa91c19407e37ee2bb73ba9c3c61e0e003e579e"
+        },
+        "date": 1794756104578,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11075805,
+            "range": "± 844656",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 11300975,
+            "range": "± 858201",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 655486,
+            "range": "± 15734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 589748,
+            "range": "± 19339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5107203,
+            "range": "± 106138",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3436784,
+            "range": "± 24408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16752102,
+            "range": "± 357366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 17239113,
+            "range": "± 425759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16529893,
+            "range": "± 421197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16979729,
+            "range": "± 467462",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17922765,
+            "range": "± 472448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 19351706,
+            "range": "± 462342",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 24189450,
+            "range": "± 628646",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17811655,
+            "range": "± 431532",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 19035571,
+            "range": "± 330599",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 23806236,
+            "range": "± 683504",
             "unit": "ns/iter"
           }
         ]
