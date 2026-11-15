@@ -565,7 +565,15 @@ its children, hence stopping it stops them first.
 
 A `HostConfig` sets the buffer described below, 64 messages per entity by default, and the idle
 timeout. Passivation is off unless `HostConfig::with_idle_timeout` sets a timeout, and that method
-refuses zero.
+refuses zero. With the `serde` feature a `HostConfig` is deserializable like the actor
+configuration. Both fields are optional: an omitted `buffer` is 64, and an omitted `idle_timeout`
+leaves passivation off. Deserialization goes through `with_idle_timeout`, so a zero idle timeout is
+refused there as well, with `InvalidHostConfig::ZeroIdleTimeout`:
+
+```yaml
+buffer: 128
+idle_timeout: 5m
+```
 
 The host is given one function, `spawn`, returning an `ActorRef<Hosted<M>>`. It must spawn a fresh
 child through the context it is handed, on every call, e.g. via `ActorContext::spawn` or

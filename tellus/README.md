@@ -239,9 +239,9 @@ let config =
 Pass it to `ActorSystem::with_config` for the root actor or to `ActorContext::spawn_with_config`
 for a child.
 
-With the `serde` feature the configuration is deserializable, `ActorConfig` as well as the
-cluster's `EndpointConfig`, `BootstrapConfig` and `QuicConfig`, so it can be read from a config
-file, with human readable durations:
+With the `serde` feature the configuration is deserializable, `ActorConfig` and `HostConfig` as
+well as the cluster's `EndpointConfig`, `BootstrapConfig` and `QuicConfig`, so it can be read from
+a config file, with human readable durations:
 
 ```toml
 mailbox_capacity = { bounded = 100 }
