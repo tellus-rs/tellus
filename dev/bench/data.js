@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794734613023,
+  "lastUpdate": 1794734615200,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -22717,6 +22717,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 101553,
             "range": "± 4371",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7c255602b72d249aa39d00c91860915f59ae6ee2",
+          "message": "Merge pull request #388 from tellus-rs/fix/reply-tags-in-reply-frames\n\nfix(cluster): release the reply destinations of a dead-lettered reply",
+          "timestamp": "2026-11-15T10:15:48+01:00",
+          "tree_id": "368e11f14f481ff0c95c5fd3c36803b52f1b7f0c",
+          "url": "https://github.com/tellus-rs/tellus/commit/7c255602b72d249aa39d00c91860915f59ae6ee2"
+        },
+        "date": 1794734614785,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2724859,
+            "range": "± 145671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2808217,
+            "range": "± 139229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 801822,
+            "range": "± 14289",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 114810,
+            "range": "± 2415",
             "unit": "ns/iter"
           }
         ]
