@@ -79,7 +79,7 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `advertised_addr` | required | neither an unspecified IP nor port 0 |
 | `outbound_capacity` | 8192 | not 0 |
 | `max_streams_per_peer` | 16 | not 0; lowered to what the transport offers, 100 for QUIC |
-| `max_frame_size` | 1048576 (1 MiB) | at least 195, the widest handshake |
+| `max_frame_size` | 1048576 (1 MiB) | at least 205, the widest handshake; may differ per node |
 | `codec` | `postcard` | `postcard` |
 | `app_version` | none | a semantic version, at most 64 bytes rendered |
 | `heartbeat_interval` | 1s | not 0 |
@@ -500,11 +500,22 @@ acceptor answers with the body of the negotiated version. Without a version in c
 answers with its bare envelope and closes, the dialer fails the attempt as incompatible, and both
 log the two ranges. A frame or field a later version adds is sent only to a peer which negotiated
 that version. This build speaks version 2 only, whose body names the node, its intent (`Member`,
-`Join` or `Probe`), its cluster ID, if it has one, the name of its codec and the version of its
-application, if one is configured. A peer naming another codec is refused as `CodecMismatch`. The
+`Join` or `Probe`), its cluster ID, if it has one, the name of its codec, the version of its
+application, if one is configured, and its `max_frame_size`. A peer naming another codec is refused
+as `CodecMismatch`. The
 frames carrying a message, a reply or a multicast carry the schema version of their payload, see
 Rolling upgrades; nothing gates that field, since version 1, the one of tellus 0.5, is not spoken:
 a 0.5 node and this one refuse each other at the handshake.
+
+Each side sends toward a peer at the smaller of the two `max_frame_size` values, so the nodes of a
+cluster may use different values, and a rolling deployment can change it. Every frame toward the
+peer respects that smaller value: a message, a reply or a multicast beyond it fails at the send, and
+the member, reachability and registrations snapshots are chunked to it. Wherever this document
+speaks of a frame beyond `max_frame_size` on the sending side, it means that smaller value. Before
+the first handshake with a peer has completed, a send is measured against this node's own value. A
+frame queued then which turns out too large for the peer is dropped by the lane's writer as a dead
+letter, never sent. Each side still refuses a received frame beyond its own value. A handshake
+advertising a value below the floor of 205 bytes is refused like one carrying an over-long string.
 
 All frames from one node toward another ride one lane: a set of outbound queues drained by one
 connection. Sending enqueues synchronously at `tell` time; the receiving endpoint injects into local
@@ -847,7 +858,7 @@ one is refused as `CodecMismatch`, terminal like `ForeignCluster`, so switching 
 rolling upgrade. The codec is one of the variants of `Codec`, so there is no custom codec. The
 rendered application version is bounded to 64 bytes, refused by `start_endpoint`. A peer's
 handshake is refused if its codec name or application version exceeds 64 bytes, and the widest
-handshake, 195 bytes, is the floor of `max_frame_size`.
+handshake, 205 bytes, is the floor of `max_frame_size`.
 
 ## Receptionist
 
@@ -868,15 +879,16 @@ which a newer snapshot replaces. The control stream's single writer writes the s
 by chunk, back to back. So at most one snapshot is pending per peer whatever the writer's speed, and
 a snapshot is contiguous on the stream. Chunks are numbered and sized within `max_frame_size`, an
 empty set being one chunk; a key's group may be split across chunks, and a registration which cannot
-fit one frame is refused at `register` as `Oversize`. The receiver reassembles chunks per version in
-a sparse buffer local to the connection, so memory follows what is received rather than what a frame
-declares, and merges the parts of a split group. It drops a snapshot whose chunks hold more
-registrations or more bytes than a node may register. It refuses an empty group and an empty chunk
-of a snapshot of several, so the chunk count is bounded as well. It applies a snapshot once every
-chunk is present, drops an older version when a newer one begins, and keeps the highest version per
-origin; a partial snapshot dies with its connection. This node is an origin too: its own registry
-set is applied as the self replica through the same path, so local and remote registrations are one
-thing to a lookup.
+fit one frame is refused at `register` as `Oversize`. Toward a peer with a smaller `max_frame_size`,
+a registration which does not fit one of its frames is left out of its snapshot with a warning. The
+receiver reassembles chunks per version in a sparse buffer local to the connection, so memory
+follows what is received rather than what a frame declares, and merges the parts of a split group.
+It drops a snapshot whose chunks hold more registrations or more bytes than a node may register. It
+refuses an empty group and an empty chunk of a snapshot of several, so the chunk count is bounded as
+well. It applies a snapshot once every chunk is present, drops an older version when a newer one
+begins, and keeps the highest version per origin; a partial snapshot dies with its connection. This
+node is an origin too: its own registry set is applied as the self replica through the same path, so
+local and remote registrations are one thing to a lookup.
 
 Eviction is synchronous. A member's replica is removed in the node death sequence, before the
 synthesized terminated signals are flushed. Every answer is filtered against the Up members at the

@@ -117,6 +117,7 @@ const KEY_ENV: &str = "TELLUS_REMOTING_KEY";
 const ROOTS_ENV: &str = "TELLUS_REMOTING_ROOTS";
 const CLUSTER_SIZE_ENV: &str = "TELLUS_REMOTING_CLUSTER_SIZE";
 const STREAMS_ENV: &str = "TELLUS_REMOTING_STREAMS";
+const FRAME_SIZE_ENV: &str = "TELLUS_REMOTING_FRAME_SIZE";
 const FORCE_COLLISION_ENV: &str = "TELLUS_REMOTING_FORCE_COLLISION";
 const APP_VERSION_ENV: &str = "TELLUS_REMOTING_APP_VERSION";
 const STALE_REF_ENV: &str = "TELLUS_REMOTING_STALE_REF";
@@ -150,6 +151,8 @@ const BULKS: u32 = 8;
 const BULK_ACKNOWLEDGMENTS: u32 = BULKS + BULK_TARGETS as u32 - 1;
 const BULK_PAYLOAD: usize = 512 * 1_024;
 const OVERSIZE_PAYLOAD: usize = 2 * 1_024 * 1_024;
+const SMALL_FRAME_SIZE: usize = 1_024;
+const SMALL_FRAME_REGISTRATIONS: usize = 200;
 const SEVER_BULKS: u32 = 300;
 const SEVER_PAYLOAD: usize = 32 * 1_024;
 const SEVER_DELAY: Duration = Duration::from_millis(10);
@@ -1683,6 +1686,8 @@ fn client() -> anyhow::Result<()> {
 
     ask_echo.tell(Request::Stop);
     expect_exit(&mut ask_echo_process, "ask echo")?;
+
+    smaller_frame_size_scenario(&runtime).context("smaller frame size scenario")?;
 
     ask_node_death_scenario(&runtime).context("ask node death scenario")?;
     ask_down_scenario(&runtime).context("ask down scenario")?;
@@ -3254,6 +3259,81 @@ fn await_listing(
 }
 
 /// Polls a node until its receptionist resolves the given number of echoes and is settled.
+/// Two nodes whose `max_frame_size` differ stay connected, each sending at the smaller one. This
+/// node registers enough echoes that its registrations snapshot needs several frames of the
+/// smaller size, half before the small node joins and half after: the small node sees every one
+/// of them. An ask between the two sizes fails here as `TooLarge` instead of poisoning the
+/// connection, and the next ask is answered.
+fn smaller_frame_size_scenario(runtime: &Runtime) -> anyhow::Result<()> {
+    let key = Key::<Request>::new(ECHO_KEY);
+    let register = |count| {
+        (0..count)
+            .map(|_| {
+                let system = ActorSystem::new(EchoServer);
+                cluster::register(&key, system.root()).context("registering a local echo")?;
+                anyhow::Ok(system)
+            })
+            .collect::<anyhow::Result<Vec<_>>>()
+    };
+
+    let mut systems = register(SMALL_FRAME_REGISTRATIONS / 2)?;
+    let mut echo_process = KillOnDrop(spawn_small_frame_node()?);
+    let echo = resolve_ref::<Request>(&mut echo_process)?;
+    await_directory_holding(runtime, &echo, SMALL_FRAME_REGISTRATIONS / 2 + 1)?;
+    systems.extend(register(
+        SMALL_FRAME_REGISTRATIONS - SMALL_FRAME_REGISTRATIONS / 2,
+    )?);
+    await_directory_holding(runtime, &echo, SMALL_FRAME_REGISTRATIONS + 1)?;
+
+    let between = runtime.block_on(echo.ask(TIMEOUT, |reply_to| Request::AskOversize {
+        payload: vec![0; 4 * SMALL_FRAME_SIZE],
+        reply_to,
+    }));
+    if !matches!(between, Err(AskError::TooLarge { .. })) {
+        bail!("an ask between the two frame sizes resolved to {between:?}");
+    }
+    let reply = runtime
+        .block_on(echo.ask(TIMEOUT, |reply_to| Request::Ask { seq: 0, reply_to }))
+        .context("ask after one between the two frame sizes")?;
+    if reply.seq != 0 {
+        bail!("reply {} instead of 0", reply.seq);
+    }
+
+    echo.tell(Request::Stop);
+    expect_exit(&mut echo_process, "small frame echo")?;
+    for system in systems {
+        system.stop();
+        runtime
+            .block_on(timeout(TIMEOUT, system.terminated()))
+            .context("local echo termination")??;
+    }
+    Ok(())
+}
+
+/// Waits until the echo's receptionist is settled and resolves at least `echoes` echoes.
+fn await_directory_holding(
+    runtime: &Runtime,
+    echo: &ActorRef<Request>,
+    echoes: usize,
+) -> anyhow::Result<()> {
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let directory = runtime
+            .block_on(echo.ask(TIMEOUT, |reply_to| Request::Directory { reply_to }))
+            .context("directory ask")?;
+        if directory.echoes >= echoes && directory.settled {
+            return Ok(());
+        }
+        if Instant::now() >= deadline {
+            bail!(
+                "{} does not resolve {echoes} echoes: {directory:?}",
+                directory.own
+            );
+        }
+        thread::sleep(CONVERGENCE_POLL);
+    }
+}
+
 fn await_directory(
     runtime: &Runtime,
     echo: &ActorRef<Request>,
@@ -5455,6 +5535,9 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     if let Ok(streams) = env::var(STREAMS_ENV) {
         config.max_streams_per_peer = streams.parse().context("stream count")?;
     }
+    if let Ok(frame_size) = env::var(FRAME_SIZE_ENV) {
+        config.max_frame_size = frame_size.parse().context("frame size")?;
+    }
     let app_version = env::var(APP_VERSION_ENV).unwrap_or_else(|_| APP_VERSION.to_string());
     config.app_version = Some(app_version.parse().context("application version")?);
     cluster::start_endpoint(config, TimeoutTransport(transport))?;
@@ -5676,6 +5759,20 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 fn spawn_node(role: Role) -> anyhow::Result<Child> {
     spawn_node_at(role, None)
+}
+
+/// An echo node with a `max_frame_size` of [SMALL_FRAME_SIZE], far below this node's.
+fn spawn_small_frame_node() -> anyhow::Result<Child> {
+    let seed = SELF_ADDR.get().context("endpoint not started")?;
+    let mut child = Command::new(env::current_exe()?)
+        .env(ROLE_ENV, Role::Echo.as_str())
+        .env(SEEDS_ENV, seed.to_string())
+        .env(FRAME_SIZE_ENV, SMALL_FRAME_SIZE.to_string())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("small frame echo process")?;
+    await_bound(&mut child, any_port())?;
+    Ok(child)
 }
 
 /// A legacy node announces the older application version, so this node encodes the old shapes

@@ -460,6 +460,7 @@ pub(crate) struct WireGroup {
 pub(crate) struct Snapshot {
     pub(crate) version: u64,
     pub(crate) frames: Vec<Frame<'static>>,
+    pub(crate) max_frame_size: usize,
 }
 
 #[derive(Debug, Default)]
@@ -613,7 +614,41 @@ pub(crate) fn snapshot(version: u64, groups: Vec<WireGroup>, max_frame_size: usi
             groups,
         })
         .collect();
-    Snapshot { version, frames }
+    Snapshot {
+        version,
+        frames,
+        max_frame_size,
+    }
+}
+
+pub(crate) fn fit(chunked: &Arc<Snapshot>, max_frame_size: usize) -> Arc<Snapshot> {
+    if chunked.max_frame_size <= max_frame_size {
+        return chunked.clone();
+    }
+
+    let mut merged = BTreeMap::<WireKey, Vec<ActorId>>::new();
+    for frame in &chunked.frames {
+        if let Frame::Registrations { groups, .. } = frame {
+            for WireGroup { key, ids } in groups {
+                merged.entry(key.clone()).or_default().extend(ids);
+            }
+        }
+    }
+    let groups = merged
+        .into_iter()
+        .filter(|(key, _)| {
+            let len = framed_len(key);
+            if len > max_frame_size {
+                warn!(
+                    ?key,
+                    len, max_frame_size, "leaving out a registration over the peer's frame size"
+                );
+            }
+            len <= max_frame_size
+        })
+        .map(|(key, ids)| WireGroup { key, ids })
+        .collect();
+    Arc::new(snapshot(chunked.version, groups, max_frame_size))
 }
 
 pub(crate) fn framed_len(key: &WireKey) -> usize {

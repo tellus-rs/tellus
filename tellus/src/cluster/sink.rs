@@ -50,6 +50,7 @@ impl<M> RemoteSink<M> {
         encode_and_send(
             endpoint,
             self.node,
+            endpoint.frame_limit_toward(&peer),
             || (self.encode)(&message, endpoint.codec(), &peer),
             |schema_version, payload, reply_tags| Frame::Message {
                 target,
@@ -104,6 +105,7 @@ impl From<RemoteSendError> for AskError {
 pub(crate) fn encode_and_send<E, F>(
     endpoint: &EndpointInner,
     peer: NodeId,
+    max_frame_size: usize,
     encode: E,
     into_frame: F,
 ) -> Result<Vec<ReplyTag>, RemoteSendError>
@@ -112,7 +114,14 @@ where
     F: FnOnce(SchemaVersion, Vec<u8>, &[ReplyTag]) -> Frame<'static>,
 {
     let (encoded, reply_tags) = reply::record_minted(encode);
-    send_encoded(endpoint, peer, encoded, reply_tags, into_frame)
+    send_encoded(
+        endpoint,
+        peer,
+        max_frame_size,
+        encoded,
+        reply_tags,
+        into_frame,
+    )
 }
 
 /// The reply tags are the ones minted encoding the payload, discarded unless the frame is queued.
@@ -120,6 +129,7 @@ where
 pub(crate) fn send_encoded<F>(
     endpoint: &EndpointInner,
     peer: NodeId,
+    max_frame_size: usize,
     encoded: Result<(SchemaVersion, Vec<u8>), CodecError>,
     reply_tags: Vec<ReplyTag>,
     into_frame: F,
@@ -135,7 +145,7 @@ where
     let mut cancellations = endpoint.pending_replies().stamp(&reply_tags, peer, stream);
 
     let sent = frame
-        .and_then(|frame| admit_frame(frame, endpoint.config().max_frame_size.get()))
+        .and_then(|frame| admit_frame(frame, max_frame_size))
         .and_then(|frame| endpoint.send(peer, frame).map_err(RemoteSendError::from));
 
     match sent {

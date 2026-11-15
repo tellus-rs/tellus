@@ -11,7 +11,7 @@ use crate::{
         failure::{
             self, FailureDetectorFactory, Liveness, PeerLiveness, PhiAccrualFailureDetector,
         },
-        frame::{Frame, Handshake, RefusalReason},
+        frame::{Frame, Handshake, MIN_FRAME_SIZE, RefusalReason},
         lanes::{Drain, Generation, LaneError, Lanes},
         leave::{Departure, LeaveError},
         membership::{self, DownOutcome, Member, MemberState, Membership},
@@ -113,10 +113,12 @@ pub struct EndpointConfig {
     /// Defaults to [EndpointConfig::DEFAULT_MAX_STREAMS_PER_PEER].
     pub max_streams_per_peer: NonZeroUsize,
 
-    /// The maximum size of an encoded frame in bytes. An outbound frame beyond it becomes a local
-    /// dead letter before reaching the transport, and an inbound one is refused. [start_endpoint]
-    /// refuses a value too small to hold one member or one reachability record of a snapshot
-    /// chunk. Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
+    /// The maximum size of an encoded frame in bytes, announced at every handshake. A frame toward
+    /// a peer is held to the smaller of this value and the peer's, so the nodes of a cluster may
+    /// use different values. An outbound frame beyond that becomes a local dead letter before
+    /// reaching the transport, and an inbound one beyond this value is refused. [start_endpoint]
+    /// refuses a value too small to hold the widest handshake, one member or one reachability
+    /// record of a snapshot chunk. Defaults to [EndpointConfig::DEFAULT_MAX_FRAME_SIZE].
     pub max_frame_size: NonZeroUsize,
 
     /// The codec encoding and decoding message payloads, the same on every node of a cluster:
@@ -1184,19 +1186,15 @@ impl EndpointInner {
         }
     }
 
-    pub(crate) fn snapshot_frames(&self, members: Vec<Member>) -> Vec<Frame<'static>> {
-        membership::snapshot_frames(members, self.config.max_frame_size.get())
-    }
-
-    pub(crate) fn reachability_snapshot_frames(&self) -> Vec<Frame<'static>> {
+    pub(crate) fn reachability_snapshot_frames(
+        &self,
+        max_frame_size: usize,
+    ) -> Vec<Frame<'static>> {
         let up = self.membership.up_nodes();
-        reachability::snapshot_chunks(
-            self.reachability.snapshot(&up),
-            self.config.max_frame_size.get(),
-        )
-        .into_iter()
-        .map(|observations| Frame::Reachability { observations })
-        .collect()
+        reachability::snapshot_chunks(self.reachability.snapshot(&up), max_frame_size)
+            .into_iter()
+            .map(|observations| Frame::Reachability { observations })
+            .collect()
     }
 
     /// Skips a disconnected lane, whose uncounted queues would otherwise grow.
@@ -1205,19 +1203,16 @@ impl EndpointInner {
             return;
         }
 
-        let chunks = reachability::snapshot_chunks(observations, self.config.max_frame_size.get());
         for peer in self.membership.up_peers() {
             if self.lane_connected(peer.addr()) == Some(false) {
                 continue;
             }
-            if let Err(error) = chunks.iter().try_for_each(|chunk| {
-                self.send(
-                    peer,
-                    Frame::Reachability {
-                        observations: chunk.clone(),
-                    },
-                )
-            }) {
+            let chunks =
+                reachability::snapshot_chunks(observations.clone(), self.frame_limit(peer));
+            if let Err(error) = chunks
+                .into_iter()
+                .try_for_each(|observations| self.send(peer, Frame::Reachability { observations }))
+            {
                 debug!(%peer, %error, "cannot send reachability observations");
             }
         }
@@ -1253,18 +1248,42 @@ impl EndpointInner {
         read(&self.peers)
             .get(&node)
             .cloned()
-            .unwrap_or_else(|| Arc::new(Peer::new(node, None)))
+            .unwrap_or_else(|| Arc::new(Peer::new(node, None, None)))
+    }
+
+    /// The largest frame sent toward the node: the smaller of both nodes' `max_frame_size` once
+    /// a handshake with it has completed, this node's own until then.
+    pub(crate) fn frame_limit(&self, node: NodeId) -> usize {
+        read(&self.peers)
+            .get(&node)
+            .map_or(self.config.max_frame_size.get(), |peer| {
+                self.frame_limit_toward(peer)
+            })
+    }
+
+    /// [frame_limit](Self::frame_limit) toward a peer already looked up.
+    pub(crate) fn frame_limit_toward(&self, peer: &Peer) -> usize {
+        let own = self.config.max_frame_size.get();
+        peer.max_frame_size().map_or(own, |theirs| own.min(theirs))
     }
 
     /// Lock order: the peers, then `Membership::entries`. The Down check runs under the peers
     /// lock, which `flush_fenced` evicts under, so a death between the admission and this record
     /// leaves no entry behind.
-    pub(crate) fn record_peer(&self, node: NodeId, app_version: Option<AppVersion>) {
+    pub(crate) fn record_peer(
+        &self,
+        node: NodeId,
+        app_version: Option<AppVersion>,
+        max_frame_size: usize,
+    ) {
         let mut peers = write(&self.peers);
         if self.membership.is_down(node) {
             return;
         }
-        peers.insert(node, Arc::new(Peer::new(node, app_version)));
+        peers.insert(
+            node,
+            Arc::new(Peer::new(node, app_version, Some(max_frame_size))),
+        );
     }
 
     /// `None` if no lane exists; gossip skips on connectivity alone, never on suspicion.
@@ -1649,7 +1668,7 @@ impl EndpointInner {
     fn announce(&self) {
         let members = self.membership.members();
         for peer in self.membership.up_peers() {
-            for frame in self.snapshot_frames(members.clone()) {
+            for frame in membership::snapshot_frames(members.clone(), self.frame_limit(peer)) {
                 if let Err(error) = self.send(peer, frame) {
                     debug!(%peer, %error, "cannot announce the departure");
                 }
@@ -1697,7 +1716,7 @@ impl EndpointInner {
                     more: false,
                 }]
             } else {
-                self.snapshot_frames(members.clone())
+                membership::snapshot_frames(members.clone(), self.frame_limit(peer))
             };
             match frames
                 .into_iter()
@@ -1813,13 +1832,10 @@ fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
     if advertised_addr.port() == 0 {
         return Err(InvalidEndpointConfig::ZeroAdvertisedPort { advertised_addr });
     }
-    let min_frame_size = Handshake::MAX_ENCODED_LEN
-        .max(membership::MIN_FRAME_SIZE)
-        .max(reachability::MIN_FRAME_SIZE);
-    if config.max_frame_size.get() < min_frame_size {
+    if config.max_frame_size.get() < MIN_FRAME_SIZE {
         return Err(InvalidEndpointConfig::MaxFrameSizeTooSmall {
             max_frame_size: config.max_frame_size.get(),
-            min: min_frame_size,
+            min: MIN_FRAME_SIZE,
         });
     }
     let app_version_len = config
@@ -2423,30 +2439,35 @@ fn refusal_backoff(strikes: u32) -> Duration {
 
 #[cfg(test)]
 mod tests {
-    use crate::cluster::{
-        ClusterState,
-        downing::{Disconnected, Downing, DowningProvider},
-        endpoint::{
-            Coordinator, EndpointConfig, EndpointInner, FULL_GOSSIP_EVERY, ForeignClusters,
-            FormError, InvalidEndpointConfig, Lifecycle, MAX_CHANGE_CAPACITY, MAX_REFUSAL_BACKOFF,
-            REFUSAL_BACKOFF, UNREACHABLE_WARNING_INTERVAL, UnreachableWarnings, membership_loop,
-            validate,
-        },
-        failure::{Deadline, DeadlineFailureDetector},
-        frame::{Frame, Handshake, RefusalReason},
-        lanes::{Drain, LaneError},
-        leave::LeaveError,
-        membership::{self, Member, MemberState},
-        node::{ClusterId, NodeId},
-        peer::{ConnectError, DialRequest},
-        reachability::{self, Reachability, WireReachability},
-        receptionist::{PublishedChange, Settlement, SnapshotSource},
-        state::{BrokenLink, Change, ForeignCluster},
-    };
     #[cfg(feature = "serde")]
     use crate::cluster::{codec::Codec, downing::KeepMajority, failure::PhiAccrual};
+    use crate::{
+        ActorId, SchemaVersion,
+        cluster::{
+            ClusterState,
+            downing::{Disconnected, Downing, DowningProvider},
+            endpoint::{
+                Coordinator, EndpointConfig, EndpointInner, FULL_GOSSIP_EVERY, ForeignClusters,
+                FormError, InvalidEndpointConfig, Lifecycle, MAX_CHANGE_CAPACITY,
+                MAX_REFUSAL_BACKOFF, REFUSAL_BACKOFF, UNREACHABLE_WARNING_INTERVAL,
+                UnreachableWarnings, membership_loop, validate,
+            },
+            failure::{Deadline, DeadlineFailureDetector},
+            frame::{Frame, Handshake, MIN_FRAME_SIZE, RefusalReason},
+            lanes::{Drain, LaneError},
+            leave::LeaveError,
+            membership::{self, Member, MemberState},
+            node::{ClusterId, NodeId},
+            peer::{ConnectError, DialRequest},
+            reachability::{Reachability, WireReachability},
+            receptionist::{PublishedChange, Settlement, SnapshotSource},
+            sink::{self, RemoteSendError},
+            state::{BrokenLink, Change, ForeignCluster},
+        },
+    };
     use semver::Version;
     use std::{
+        borrow::Cow,
         collections::{BTreeSet, HashSet},
         net::SocketAddr,
         num::NonZeroUsize,
@@ -2718,7 +2739,7 @@ mod tests {
         });
 
         let observations = endpoint
-            .reachability_snapshot_frames()
+            .reachability_snapshot_frames(endpoint.config().max_frame_size.get())
             .into_iter()
             .flat_map(|frame| match frame {
                 Frame::Reachability { observations } => observations,
@@ -3112,6 +3133,87 @@ mod tests {
         assert_eq!(full_ticks, [0, FULL_GOSSIP_EVERY, 2 * FULL_GOSSIP_EVERY]);
     }
 
+    /// Toward a peer which advertised a frame size below this node's, a message between the two
+    /// sizes is refused at the send and never queued, and the member list and reachability
+    /// observations are chunked to the peer's size.
+    #[test]
+    fn a_peer_is_sent_frames_within_the_smaller_frame_size() {
+        let peer = NodeId::new(addr(2));
+        let mut config = EndpointConfig::new(addr(1));
+        config.max_frame_size = NonZeroUsize::new(4 * MIN_FRAME_SIZE).expect("not zero");
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        let others = (3..40)
+            .map(|port| NodeId::new(addr(port)))
+            .collect::<Vec<_>>();
+        endpoint.update(|membership, _| {
+            membership.add_up(peer);
+            for other in &others {
+                membership.add_up(*other);
+            }
+        });
+        let lane = connected_lane(endpoint, &dial_requests, peer);
+        endpoint.record_peer(peer, None, MIN_FRAME_SIZE);
+        assert_eq!(endpoint.frame_limit(peer), MIN_FRAME_SIZE);
+
+        let sent = sink::send_encoded(
+            endpoint,
+            peer,
+            endpoint.frame_limit(peer),
+            Ok((SchemaVersion::new(0), vec![0; MIN_FRAME_SIZE])),
+            Vec::new(),
+            |schema_version, payload, _| Frame::Message {
+                target: ActorId::new(),
+                reply_tags: Vec::new(),
+                schema_version,
+                payload: Cow::Owned(payload),
+            },
+        );
+        assert!(matches!(
+            sent,
+            Err(RemoteSendError::FrameTooLarge { max, .. }) if max == MIN_FRAME_SIZE
+        ));
+
+        endpoint.gossip_tick();
+        let observations = others
+            .iter()
+            .map(|subject| WireReachability {
+                observer: endpoint.node(),
+                subject: *subject,
+                version: 1,
+                reachable: false,
+            })
+            .collect::<Vec<_>>();
+        endpoint.push_reachability(observations.clone());
+
+        let frames = lane.control_rx.drain().collect::<Vec<_>>();
+        assert!(lane.data_rx.iter().all(flume::Receiver::is_empty));
+        for frame in &frames {
+            let len = frame.encoded_len().expect("frame size");
+            assert!(
+                len <= MIN_FRAME_SIZE,
+                "{len} exceeds {MIN_FRAME_SIZE}: {frame:?}"
+            );
+        }
+        let gossiped = frames
+            .iter()
+            .filter_map(|frame| match frame {
+                Frame::Gossip { members, .. } => Some(members.len()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(gossiped.len() > 1, "the member list is chunked");
+        assert_eq!(gossiped.iter().sum::<usize>(), others.len() + 2);
+        let pushed = frames
+            .iter()
+            .filter_map(|frame| match frame {
+                Frame::Reachability { observations } => Some(observations.len()),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        assert!(pushed.len() > 1, "the observations are chunked");
+        assert_eq!(pushed.iter().sum::<usize>(), observations.len());
+    }
+
     fn state_of(state: &ClusterState, node: NodeId) -> Option<MemberState> {
         state
             .members()
@@ -3158,9 +3260,7 @@ mod tests {
     #[test]
     fn an_invalid_config_is_refused() {
         let addr = "127.0.0.1:2552".parse().expect("valid address");
-        let required_min = Handshake::MAX_ENCODED_LEN
-            .max(membership::MIN_FRAME_SIZE)
-            .max(reachability::MIN_FRAME_SIZE);
+        let required_min = MIN_FRAME_SIZE;
         let mut config = EndpointConfig::new(addr);
         config.max_frame_size =
             NonZeroUsize::new(required_min - 1).expect("the minimum is above one");

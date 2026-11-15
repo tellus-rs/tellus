@@ -300,6 +300,7 @@ struct Greeting {
     cluster: Option<ClusterId>,
     codec: String,
     app_version: Option<Version>,
+    max_frame_size: usize,
 }
 
 /// Whether this node is leaving, and the peer's answer to the drain marker of its departure.
@@ -393,7 +394,9 @@ where
             cluster,
             codec,
             app_version,
+            max_frame_size,
         } = greeting;
+        let frame_limit = endpoint.config().max_frame_size.get().min(max_frame_size);
 
         let admission = admit_inbound(
             peer,
@@ -405,7 +408,7 @@ where
         );
         let (liveness, inbound) = match admission {
             Admission::Admit(liveness, inbound) => {
-                endpoint.record_peer(peer, app_version);
+                endpoint.record_peer(peer, app_version, max_frame_size);
                 (liveness, inbound)
             }
 
@@ -435,13 +438,14 @@ where
             warn!(%peer, %error, "cannot send outbound handshake");
             return None;
         }
-        for frame in endpoint.snapshot_frames(endpoint.membership().handshake_snapshot()) {
+        let members = endpoint.membership().handshake_snapshot();
+        for frame in membership::snapshot_frames(members, frame_limit) {
             if let Err(error) = send_frame(&mut frame_sender, &frame).await {
                 warn!(%peer, %error, "cannot send member snapshot");
                 return None;
             }
         }
-        for frame in endpoint.reachability_snapshot_frames() {
+        for frame in endpoint.reachability_snapshot_frames(frame_limit) {
             if let Err(error) = send_frame(&mut frame_sender, &frame).await {
                 warn!(%peer, %error, "cannot send reachability snapshot");
                 return None;
@@ -449,7 +453,8 @@ where
         }
         // A joiner stops reading after the member snapshot, so only a member gets the rest.
         if intent == HandshakeIntent::Member {
-            for frame in &endpoint.registrations_snapshot().frames {
+            let registrations = receptionist::fit(&endpoint.registrations_snapshot(), frame_limit);
+            for frame in &registrations.frames {
                 if let Err(error) = send_frame(&mut frame_sender, frame).await {
                     warn!(%peer, %error, "cannot send registrations snapshot");
                     return None;
@@ -641,6 +646,11 @@ where
                     identity: _,
                 } = connected;
                 let peer = greeting.node;
+                let frame_limit = endpoint
+                    .config()
+                    .max_frame_size
+                    .get()
+                    .min(greeting.max_frame_size);
                 let (poisoned_tx, mut poisoned_rx) = oneshot::channel();
                 let (drain_ack_tx, drain_ack_rx) = oneshot::channel();
                 let reader = task::spawn(async move {
@@ -669,12 +679,13 @@ where
                 endpoint.reset_gossiped_version(peer);
                 // The heartbeat omits the watermarks, so this is the only path carrying this
                 // side's fences to the acceptor!
-                for frame in endpoint.snapshot_frames(endpoint.membership().handshake_snapshot()) {
+                let members = endpoint.membership().handshake_snapshot();
+                for frame in membership::snapshot_frames(members, frame_limit) {
                     if let Err(error) = endpoint.send(peer, frame) {
                         warn!(%peer, %error, "cannot send member snapshot");
                     }
                 }
-                for frame in endpoint.reachability_snapshot_frames() {
+                for frame in endpoint.reachability_snapshot_frames(frame_limit) {
                     if let Err(error) = endpoint.send(peer, frame) {
                         warn!(%peer, %error, "cannot send reachability snapshot");
                     }
@@ -692,7 +703,7 @@ where
                         &outbound_rx,
                         &quota,
                         addr,
-                        endpoint.config().max_frame_size.get(),
+                        frame_limit,
                         snapshot_rx.clone(),
                         LeaveSignals {
                             leaving: endpoint.leaving_flag(),
@@ -1097,7 +1108,7 @@ async fn snapshot_changed(
 /// Every chunk goes out back to back from this one writer, else a snapshot is not contiguous.
 async fn write_snapshot<S>(
     frame_sender: &mut S,
-    snapshot: &Snapshot,
+    snapshot: &Arc<Snapshot>,
     mut buffer: Vec<u8>,
     addr: SocketAddr,
     max_frame_size: usize,
@@ -1105,6 +1116,7 @@ async fn write_snapshot<S>(
 where
     S: FrameSender,
 {
+    let snapshot = receptionist::fit(snapshot, max_frame_size);
     for frame in &snapshot.frames {
         buffer = match frame.encode_into(buffer) {
             Ok(bytes) => bytes,
@@ -1445,7 +1457,11 @@ fn admit_outbound(
         return Err(ConnectError::SelfDowned);
     }
     check_dialed(greeting, dialed, identity, endpoint)?;
-    endpoint.record_peer(greeting.node, greeting.app_version.clone());
+    endpoint.record_peer(
+        greeting.node,
+        greeting.app_version.clone(),
+        greeting.max_frame_size,
+    );
 
     Ok(endpoint.track_liveness(greeting.node))
 }
@@ -1606,7 +1622,7 @@ where
         }
     })?;
     let cluster = greeting.cluster.ok_or(ConnectError::NoClusterId)?;
-    endpoint.record_peer(peer, greeting.app_version);
+    endpoint.record_peer(peer, greeting.app_version, greeting.max_frame_size);
 
     // The answer proves a cluster admitted this node, whether or not its snapshot arrives.
     endpoint.pin_cluster(addr, cluster);
@@ -1720,6 +1736,7 @@ fn handshake(endpoint: &EndpointInner, intent: HandshakeIntent) -> HandshakeV2 {
             .app_version
             .as_ref()
             .map(ToString::to_string),
+        max_frame_size: u64::try_from(endpoint.config().max_frame_size.get()).unwrap_or(u64::MAX),
     }
 }
 
@@ -1790,6 +1807,7 @@ where
         cluster,
         codec,
         app_version,
+        max_frame_size,
     } = body;
     let app_version = app_version
         .map(|app_version| {
@@ -1803,6 +1821,7 @@ where
         cluster,
         codec,
         app_version,
+        max_frame_size: usize::try_from(max_frame_size).unwrap_or(usize::MAX),
     })
 }
 
@@ -2299,6 +2318,7 @@ mod tests {
             cluster,
             codec: "postcard".to_string(),
             app_version: None,
+            max_frame_size: EndpointConfig::DEFAULT_MAX_FRAME_SIZE.get(),
         }
     }
 
@@ -2309,6 +2329,7 @@ mod tests {
             cluster,
             codec: "postcard".to_string(),
             app_version: None,
+            max_frame_size: 1_048_576,
         }
     }
 
@@ -2796,6 +2817,99 @@ mod tests {
                 .is_ok()
         );
         assert!(recorded_rx.try_recv().is_err(), "nothing is written twice");
+    }
+
+    /// Toward a peer whose frame size is below this node's, the writer cuts a snapshot chunked
+    /// for this node's size anew for the peer's, and discards a message between the two sizes
+    /// instead of sending it.
+    #[tokio::test]
+    async fn a_writer_keeps_every_frame_within_the_peers_frame_size() {
+        let peer_limit = 256;
+        let (control_tx, control_rx) = flume::unbounded();
+        control_tx
+            .send(Frame::Message {
+                target: ActorId::new(),
+                reply_tags: Vec::new(),
+                schema_version: SchemaVersion::new(0),
+                payload: Cow::Owned(vec![0; peer_limit]),
+            })
+            .expect("queue is open");
+        control_tx
+            .send(Frame::Gossip {
+                members: Vec::new(),
+                more: false,
+            })
+            .expect("queue is open");
+        let ids = (0..20).map(|_| ActorId::new()).collect::<BTreeSet<_>>();
+        let groups = ids
+            .iter()
+            .enumerate()
+            .map(|(index, id)| WireGroup {
+                key: WireKey::new::<u64>(KeyKind::Discovery, format!("name-{index}")),
+                ids: vec![*id],
+            })
+            .collect();
+        let snapshot = Arc::new(receptionist::snapshot(1, groups, 4 * peer_limit));
+        assert!(
+            snapshot
+                .frames
+                .iter()
+                .any(|frame| frame.encoded_len().expect("frame size") > peer_limit),
+            "a chunk must exceed the peer's frame size"
+        );
+        let (_snapshot_tx, snapshot_rx) = tokio::sync::watch::channel(Some(snapshot));
+        let (recorded_tx, mut recorded_rx) = unbounded_channel();
+
+        let writer = task::spawn(write_frames(
+            ChannelSender(recorded_tx),
+            control_rx,
+            Quota::unbounded(),
+            "127.0.0.1:1234".parse().expect("valid address"),
+            peer_limit,
+            Some(snapshot_rx),
+        ));
+        drop(control_tx);
+        assert!(
+            timeout(Duration::from_secs(5), writer)
+                .await
+                .expect("writer ends")
+                .expect("writer does not panic")
+                .is_ok()
+        );
+
+        let mut registered = BTreeSet::new();
+        let mut written = Vec::new();
+        while let Ok(bytes) = recorded_rx.try_recv() {
+            assert!(
+                bytes.len() <= peer_limit,
+                "{} exceeds {peer_limit}",
+                bytes.len()
+            );
+            written.push(bytes);
+        }
+        let frames = written
+            .iter()
+            .map(|bytes| Frame::from_bytes(bytes).expect("frame decodes"))
+            .collect::<Vec<_>>();
+        let Some((Frame::Gossip { .. }, chunks)) = frames.split_last() else {
+            panic!("the gossip frame comes last, the message is not written: {frames:?}");
+        };
+        assert!(chunks.len() > 1, "the snapshot is chunked anew");
+        for (index, frame) in chunks.iter().enumerate() {
+            let Frame::Registrations {
+                version: 1,
+                chunk,
+                chunks: count,
+                groups,
+            } = frame
+            else {
+                panic!("not a registrations chunk: {frame:?}");
+            };
+            assert_eq!(*chunk as usize, index);
+            assert_eq!(*count as usize, chunks.len());
+            registered.extend(groups.iter().flat_map(|group| group.ids.iter().copied()));
+        }
+        assert_eq!(registered, ids);
     }
 
     #[tokio::test]
@@ -3748,6 +3862,7 @@ mod tests {
                 cluster: None,
                 codec: "postcard".to_string(),
                 app_version: None,
+                max_frame_size: 1_048_576,
                 appended: 7,
             }),
         ));
@@ -3829,6 +3944,7 @@ mod tests {
                 cluster: None,
                 codec: "postcard".to_string(),
                 app_version: None,
+                max_frame_size: 1_048_576,
                 appended: 7,
             }),
         ));
@@ -5738,7 +5854,11 @@ mod tests {
             Some(&Version::new(2, 0, 0))
         );
 
-        endpoint.record_peer(dialed, Some(Version::new(1, 4, 0)));
+        endpoint.record_peer(
+            dialed,
+            Some(Version::new(1, 4, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
         assert_eq!(endpoint.peer(dialed).app_version(), None);
     }
 }
