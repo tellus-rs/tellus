@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794761883837,
+  "lastUpdate": 1794762362934,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -16139,6 +16139,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 31770812,
             "range": "± 621216",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55f1d2e42c7585e15bff8c448db0cffdf1748152",
+          "message": "Merge pull request #396 from tellus-rs/refactor/config-and-codec-names\n\nrefactor(cluster)!: rename bootstrap fields, Formation and codec makers",
+          "timestamp": "2026-11-15T17:50:44+01:00",
+          "tree_id": "f04583250eb6a6c884cffbf6e77fd2b962406af1",
+          "url": "https://github.com/tellus-rs/tellus/commit/55f1d2e42c7585e15bff8c448db0cffdf1748152"
+        },
+        "date": 1794762361924,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 21985455,
+            "range": "± 2718840",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 22345438,
+            "range": "± 3409450",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1126522,
+            "range": "± 14486",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 1054734,
+            "range": "± 29041",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 9690291,
+            "range": "± 456899",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 7051683,
+            "range": "± 139209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 26355050,
+            "range": "± 544211",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 28227907,
+            "range": "± 676948",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 26509215,
+            "range": "± 366807",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 28049395,
+            "range": "± 358239",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 27337015,
+            "range": "± 341824",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 31825945,
+            "range": "± 453670",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 37715864,
+            "range": "± 1369448",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 27427973,
+            "range": "± 378647",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 31312476,
+            "range": "± 677285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 38447102,
+            "range": "± 935413",
             "unit": "ns/iter"
           }
         ]
