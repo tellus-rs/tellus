@@ -932,6 +932,73 @@ mod tests {
         );
     }
 
+    /// A frame is prefixed by its length as a big endian `u32`, in both directions: a round trip
+    /// cannot catch another width or byte order, since both halves would change at once.
+    #[tokio::test]
+    async fn a_length_prefix_matches_its_pinned_wire_bytes() {
+        let sent_bytes = [
+            0, 0, 0, 3, // length
+            1, 2, 3, // frame
+        ];
+        let received_bytes = [
+            0, 0, 0, 2, // length
+            4, 5, // frame
+        ];
+
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let server = QuicTransport::dev(loopback).expect("server transport");
+        let addr = server.local_addr().expect("local address");
+        let client = QuicTransport::dev(loopback).expect("client transport");
+
+        let accepting = tokio::spawn(async move {
+            let connection = server.accept(MAX_FRAME_SIZE).await.expect("accepts");
+            let mut raw = connection
+                .connection
+                .accept_uni()
+                .await
+                .expect("accepts a raw stream");
+            let mut sent = [0; 7];
+            raw.read_exact(&mut sent).await.expect("reads the bytes");
+
+            let mut data = connection
+                .accept_data()
+                .await
+                .expect("accepts a data stream")
+                .expect("the connection is alive");
+            let received = data.recv().await.expect("receives").map(<[u8]>::to_vec);
+            (sent, received)
+        });
+
+        let connected = client
+            .connect(addr, MAX_FRAME_SIZE)
+            .await
+            .expect("connects");
+        let _keep_alive = connected.control_rx;
+        let mut data = connected
+            .connection
+            .open_data()
+            .await
+            .expect("opens a data stream");
+        data.send(&[1, 2, 3]).await.expect("sends");
+
+        let mut raw = connected
+            .connection
+            .connection
+            .open_uni()
+            .await
+            .expect("opens a raw stream");
+        raw.write_all(&received_bytes)
+            .await
+            .expect("writes the bytes");
+
+        let (sent, received) = timeout(TIMEOUT, accepting)
+            .await
+            .expect("in time")
+            .expect("accept task");
+        assert_eq!(sent, sent_bytes);
+        assert_eq!(received, Some(vec![4, 5]));
+    }
+
     /// A frame beyond the connection's maximum is refused instead of allocating for it, which is
     /// what keeps a peer from naming an arbitrary length.
     #[tokio::test]

@@ -1374,6 +1374,28 @@ mod tests {
         );
     }
 
+    /// The order of the two versions shows only where they differ.
+    #[test]
+    fn an_envelope_of_two_versions_matches_its_pinned_wire_bytes() {
+        let bytes = [
+            0, // Frame::Handshake
+            218, 168, 177, 186, 5, // magic
+            1, // min_version
+            3, // max_version
+        ];
+
+        assert_eq!(
+            HandshakeEnvelope::decode(&bytes).expect("envelope decodes"),
+            Some(synthetic::envelope(1, 3))
+        );
+        assert_eq!(
+            synthetic::envelope(1, 3)
+                .encode()
+                .expect("envelope encodes"),
+            bytes
+        );
+    }
+
     /// The version 2 body follows the envelope: the node, the intent, the cluster ID, the codec
     /// name, the application version, the frame size. Decoding the IDs back out of hardcoded bytes
     /// catches a transposed field, which a round trip cannot.
