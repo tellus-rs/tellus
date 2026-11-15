@@ -774,7 +774,8 @@ where
         }
     }
 
-    if endpoint.remove_lane(addr, lane_id) {
+    // A downed endpoint settles nothing locally!
+    if endpoint.remove_lane(addr, lane_id) && !endpoint.downed() {
         endpoint.pending_replies().fail_addr(addr);
         watch::fail_watchers_at(endpoint, addr);
     }
@@ -5701,6 +5702,48 @@ mod tests {
 
         let dial = timeout(Duration::from_secs(60), dials.recv()).await;
         assert!(!matches!(dial, Ok(Some(_))), "the lane dialed again");
+    }
+
+    /// A downed endpoint settles nothing locally, so a lane which ends on it signals no watcher of
+    /// its member's actors and fails no ask awaiting that member.
+    #[tokio::test(start_paused = true)]
+    async fn a_lane_ending_on_a_downed_endpoint_settles_nothing() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let _acceptor = accepted_lane(endpoint, &mut dials, member).await;
+        let mut recipient = Recipient::watching(endpoint, member, ActorId::new());
+        let reply_to = ReplyTo::<u64>::new(|_| ());
+        let (request, reply_tags) = endpoint::with_current(endpoint, || {
+            reply::record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        request.expect("the destination is serialized");
+        let pending = endpoint.pending_replies();
+        pending.stamp(&reply_tags, member, None);
+        pending.confirm(&reply_tags);
+
+        endpoint.self_down();
+        eventually(|| endpoint.lane_connected(member.addr()).is_none()).await;
+
+        assert!(recipient.received().is_empty());
+        assert_eq!(pending.len(), 1);
     }
 
     /// A lane keeps dialing until the departure has ended, not beyond it: once a leave has timed
