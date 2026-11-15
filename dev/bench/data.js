@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794778082436,
+  "lastUpdate": 1794778084069,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27555,6 +27555,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5081466,
             "range": "± 341984",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4821dce29f2f6fa60b4a7e094117abb5d7d696f9",
+          "message": "Merge pull request #405 from tellus-rs/test/frame-limit-coverage\n\ntest(cluster): pin every place which sends at the peer's frame limit",
+          "timestamp": "2026-11-15T22:19:48+01:00",
+          "tree_id": "dd87341a595c61062430777c93310f0ff277e69e",
+          "url": "https://github.com/tellus-rs/tellus/commit/4821dce29f2f6fa60b4a7e094117abb5d7d696f9"
+        },
+        "date": 1794778083696,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30694054,
+            "range": "± 1030117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30821883,
+            "range": "± 1721370",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4827668,
+            "range": "± 305609",
             "unit": "ns/iter"
           }
         ]
