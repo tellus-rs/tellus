@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794762365949,
+  "lastUpdate": 1794762367643,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26925,6 +26925,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3487485,
             "range": "± 131950",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55f1d2e42c7585e15bff8c448db0cffdf1748152",
+          "message": "Merge pull request #396 from tellus-rs/refactor/config-and-codec-names\n\nrefactor(cluster)!: rename bootstrap fields, Formation and codec makers",
+          "timestamp": "2026-11-15T17:50:44+01:00",
+          "tree_id": "f04583250eb6a6c884cffbf6e77fd2b962406af1",
+          "url": "https://github.com/tellus-rs/tellus/commit/55f1d2e42c7585e15bff8c448db0cffdf1748152"
+        },
+        "date": 1794762367292,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 34691335,
+            "range": "± 1397702",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 35958797,
+            "range": "± 2409429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4999530,
+            "range": "± 401448",
             "unit": "ns/iter"
           }
         ]
