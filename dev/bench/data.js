@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794760002474,
+  "lastUpdate": 1794760005614,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26295,6 +26295,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3007217,
             "range": "± 110732",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "027113bd04ec8be9054efcba0cb76297d443bf1b",
+          "message": "Merge pull request #400 from tellus-rs/fix/leave-unformed-endpoint\n\nfix(cluster)!: refuse to leave an endpoint which never formed or joined",
+          "timestamp": "2026-11-15T17:18:21+01:00",
+          "tree_id": "035e1665e21f5d4a5191a3cfb882f355f217f08b",
+          "url": "https://github.com/tellus-rs/tellus/commit/027113bd04ec8be9054efcba0cb76297d443bf1b"
+        },
+        "date": 1794760005098,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30855730,
+            "range": "± 1408495",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31168359,
+            "range": "± 1670366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4388305,
+            "range": "± 347569",
             "unit": "ns/iter"
           }
         ]
