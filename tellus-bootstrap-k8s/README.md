@@ -41,6 +41,7 @@ let seeds = K8sSeeds::new(Pods {
     namespace: None,
     label_selector: "app=tellus".to_string(),
     port: Port::Number(NonZeroU16::new(7878).expect("7878 is not zero")),
+    list_timeout: Pods::DEFAULT_LIST_TIMEOUT,
 })
 .await?;
 timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await??;
@@ -48,7 +49,7 @@ timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await
 
 `K8sSeeds::new` takes the service account mounted into the pod, or the kubeconfig outside a
 cluster; `with_client` takes a client of your own. Both refuse a blank selector, which would match
-every pod in the namespace, as well as a blank namespace or port name.
+every pod in the namespace, as well as a blank namespace or port name and a zero list timeout.
 
 With the `serde` feature `Pods` is deserializable, so it can come from a config file next to
 tellus's own configuration:
@@ -66,11 +67,17 @@ seeds:
   label_selector: app=tellus
   port:
     name: tellus
+  list_timeout: 2s
 ```
 
 The named form takes the number of that container port from each pod's own specification, so nodes
 can advertise differing ports. Without a namespace the client's own is listed, which in a pod is
 the namespace it runs in.
+
+`list_timeout` bounds each listing and defaults to 5 seconds (`Pods::DEFAULT_LIST_TIMEOUT`). A
+listing the API server does not answer in time fails, and bootstrap retries it like any other
+resolve failure. The Kubernetes client has no response timeout of its own, so without this bound a
+connection which goes silent would stall the listing forever.
 
 A listing which yields no address at all is a resolve failure rather than an empty seed list, so
 bootstrap retries it and its settle window starts over rather than this node settling on itself.

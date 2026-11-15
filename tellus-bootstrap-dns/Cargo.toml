@@ -18,9 +18,11 @@ hickory-resolver = { workspace = true, features = [ "tokio" ] }
 serde            = { workspace = true, features = [ "derive" ], optional = true }
 thiserror        = { workspace = true }
 tellus           = { workspace = true, features = [ "cluster" ] }
+tracing          = { workspace = true }
 
 [dev-dependencies]
-anyhow         = { workspace = true }
-hickory-server = { workspace = true }
-serde_json     = { workspace = true }
-tokio          = { workspace = true, features = [ "macros", "net", "rt-multi-thread" ] }
+anyhow             = { workspace = true }
+hickory-server     = { workspace = true }
+serde_json         = { workspace = true }
+tokio              = { workspace = true, features = [ "macros", "net", "rt-multi-thread" ] }
+tracing-subscriber = { workspace = true, features = [ "fmt" ] }

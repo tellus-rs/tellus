@@ -17,7 +17,9 @@
 //! starting stays in: an unreachable seed is retried, a missing one shrinks the universe. An
 //! unparsable address and a missing or unusable named port skip that pod and are logged; a pod
 //! without an address yet is skipped silently. A listing yielding no address at all remains an
-//! error, so bootstrap does not settle on this node alone.
+//! error, so bootstrap does not settle on this node alone. A listing not answered within the
+//! configured `list_timeout` fails, so a connection which goes silent cannot stall bootstrap or its
+//! probe of foreign clusters.
 
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
@@ -27,9 +29,11 @@ use kube::{Api, Client, api::ListParams};
 use std::{
     net::{IpAddr, SocketAddr},
     num::NonZeroU16,
+    time::Duration,
 };
 use tellus::cluster::SeedDiscovery;
 use thiserror::Error;
+use tokio::time::timeout;
 use tracing::warn;
 
 /// Seed discovery via the Kubernetes API, the [SeedDiscovery] for clusters whose nodes are pods
@@ -78,7 +82,11 @@ impl SeedDiscovery for K8sSeeds {
 
     async fn resolve(&mut self) -> Result<Vec<SocketAddr>, K8sSeedsError> {
         let params = ListParams::default().labels(&self.pods.label_selector);
-        let pods = self.api.list(&params).await?;
+        let pods = timeout(self.pods.list_timeout, self.api.list(&params))
+            .await
+            .map_err(|_| K8sSeedsError::ListTimeout {
+                timeout: self.pods.list_timeout,
+            })??;
 
         let addrs = pods
             .items
@@ -97,9 +105,9 @@ impl SeedDiscovery for K8sSeeds {
     }
 }
 
-/// Which pods [K8sSeeds] lists and which port each one's address is paired with, deserializable
-/// with the `serde` feature: a config file names the selector, the port as a single key and
-/// optionally the namespace.
+/// Which pods [K8sSeeds] lists, which port each one's address is paired with and how long a listing
+/// may take, deserializable with the `serde` feature: a config file names the selector, the port
+/// as a single key and optionally the namespace and the list timeout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[cfg_attr(
     feature = "serde",
@@ -117,6 +125,15 @@ pub struct Pods {
 
     /// The port each listed pod's address is paired with.
     pub port: Port,
+
+    /// How long a listing may take before it fails, e.g. on a connection which went silent. Must
+    /// not be zero; defaults to [Pods::DEFAULT_LIST_TIMEOUT] when deserialized.
+    pub list_timeout: Duration,
+}
+
+impl Pods {
+    /// The `list_timeout` a deserialized [Pods] defaults to.
+    pub const DEFAULT_LIST_TIMEOUT: Duration = Duration::from_secs(5);
 }
 
 /// Which port a pod's address is paired with.
@@ -150,6 +167,10 @@ pub enum InvalidPods {
     /// The configured port name is blank.
     #[error("port name is blank")]
     BlankPortName,
+
+    /// The configured `list_timeout` is zero, which would fail every listing.
+    #[error("list_timeout is zero")]
+    ZeroListTimeout,
 }
 
 /// The seeds cannot be discovered. [bootstrap](tellus::cluster::bootstrap) logs and retries the
@@ -164,6 +185,13 @@ pub enum K8sSeedsError {
     /// permission to list pods.
     #[error(transparent)]
     Client(#[from] kube::Error),
+
+    /// The Kubernetes API did not answer the listing within the configured `list_timeout`.
+    #[error("listing pods timed out after {timeout:?}")]
+    ListTimeout {
+        /// The `list_timeout` which passed.
+        timeout: Duration,
+    },
 
     /// No pod contributed an address: none matched the selector, or every one is terminating or
     /// finished, has no address yet, has an unparsable one, or lacks a usable container port of the
@@ -185,6 +213,9 @@ struct UncheckedPods {
     label_selector: String,
 
     port: Port,
+
+    #[serde(default, with = "humantime_serde")]
+    list_timeout: Option<Duration>,
 }
 
 #[cfg(feature = "serde")]
@@ -196,6 +227,7 @@ impl TryFrom<UncheckedPods> for Pods {
             namespace: unchecked.namespace,
             label_selector: unchecked.label_selector,
             port: unchecked.port,
+            list_timeout: unchecked.list_timeout.unwrap_or(Self::DEFAULT_LIST_TIMEOUT),
         };
         validate(&pods)?;
 
@@ -216,6 +248,9 @@ fn validate(pods: &Pods) -> Result<(), InvalidPods> {
     }
     if matches!(&pods.port, Port::Name(name) if name.trim().is_empty()) {
         return Err(InvalidPods::BlankPortName);
+    }
+    if pods.list_timeout.is_zero() {
+        return Err(InvalidPods::ZeroListTimeout);
     }
 
     Ok(())
@@ -301,11 +336,12 @@ fn name(pod: &Pod) -> &str {
 #[cfg(all(test, feature = "serde"))]
 mod tests {
     use crate::{Pods, Port};
-    use std::num::NonZeroU16;
+    use std::{num::NonZeroU16, time::Duration};
 
     /// The documented config form, which a config file provides: either port is one key. A zero
-    /// port is unrepresentable rather than resolving to unusable addresses, and a selector
-    /// matching every pod in the namespace is refused rather than seeding from strangers.
+    /// port is unrepresentable rather than resolving to unusable addresses, a selector matching
+    /// every pod in the namespace is refused rather than seeding from strangers, and a zero list
+    /// timeout is refused rather than failing every listing.
     #[test]
     fn pods_deserialize_from_their_documented_form() {
         let pods = serde_json::from_str::<Pods>(
@@ -318,11 +354,12 @@ mod tests {
                 namespace: None,
                 label_selector: "app=tellus".to_string(),
                 port: Port::Number(NonZeroU16::new(7_878).expect("7878 is not zero")),
+                list_timeout: Pods::DEFAULT_LIST_TIMEOUT,
             }
         );
 
         let pods = serde_json::from_str::<Pods>(
-            r#"{ "namespace": "tellus", "label_selector": "app=tellus", "port": { "name": "tellus" } }"#,
+            r#"{ "namespace": "tellus", "label_selector": "app=tellus", "port": { "name": "tellus" }, "list_timeout": "2s" }"#,
         )
         .expect("the named port form deserializes");
         assert_eq!(
@@ -331,6 +368,7 @@ mod tests {
                 namespace: Some("tellus".to_string()),
                 label_selector: "app=tellus".to_string(),
                 port: Port::Name("tellus".to_string()),
+                list_timeout: Duration::from_secs(2),
             }
         );
 
@@ -355,6 +393,12 @@ mod tests {
         assert!(
             serde_json::from_str::<Pods>(
                 r#"{ "label_selector": "app=tellus", "port": { "name": "" } }"#
+            )
+            .is_err()
+        );
+        assert!(
+            serde_json::from_str::<Pods>(
+                r#"{ "label_selector": "app=tellus", "port": { "number": 7878 }, "list_timeout": "0s" }"#
             )
             .is_err()
         );

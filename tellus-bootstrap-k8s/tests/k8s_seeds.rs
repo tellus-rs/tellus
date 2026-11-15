@@ -2,10 +2,10 @@ use anyhow::Context;
 use http::{Request, Response, StatusCode};
 use kube::{Client, client::Body};
 use serde_json::{Value, json};
-use std::{net::SocketAddr, num::NonZeroU16, pin::pin};
+use std::{net::SocketAddr, num::NonZeroU16, pin::pin, time::Duration};
 use tellus::cluster::SeedDiscovery;
 use tellus_bootstrap_k8s::{InvalidPods, K8sSeeds, K8sSeedsError, Pods, Port};
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle, time::Instant};
 use tower_test::mock;
 
 const NAMESPACE: &str = "tellus";
@@ -161,26 +161,56 @@ async fn test_api_error() -> anyhow::Result<()> {
     Ok(())
 }
 
+/// A listing the API server never answers fails once `list_timeout` has passed, so a connection
+/// which goes silent cannot stall bootstrap or its probe of foreign clusters.
+#[tokio::test(start_paused = true)]
+async fn test_list_timeout() -> anyhow::Result<()> {
+    let (service, _handle) = mock::pair::<Request<Body>, Response<Body>>();
+    let list_timeout = Duration::from_secs(3);
+    let pods = Pods {
+        list_timeout,
+        ..pods_config(Port::Number(PORT), None)
+    };
+    let mut seeds = K8sSeeds::with_client(pods, Client::new(service, "default"))?;
+
+    let start = Instant::now();
+    let error = seeds
+        .resolve()
+        .await
+        .expect_err("the listing is never answered");
+
+    assert!(
+        matches!(error, K8sSeedsError::ListTimeout { timeout } if timeout == list_timeout),
+        "{error:?}"
+    );
+    assert_eq!(start.elapsed(), list_timeout);
+    Ok(())
+}
+
 /// A blank selector matches every pod in the namespace, so it is refused when the discovery is
 /// built rather than seeding the cluster from strangers; a blank namespace or port name cannot
-/// name anything either.
+/// name anything either, and a zero list timeout would fail every listing.
 #[tokio::test]
 async fn test_invalid_pods() -> anyhow::Result<()> {
     let blank_selector = Pods {
-        namespace: None,
         label_selector: " ".to_string(),
-        port: Port::Number(PORT),
+        ..pods_config(Port::Number(PORT), None)
     };
     let blank_namespace = Pods {
         namespace: Some("".to_string()),
         ..pods_config(Port::Number(PORT), None)
     };
     let blank_port_name = pods_config(Port::Name("".to_string()), None);
+    let zero_list_timeout = Pods {
+        list_timeout: Duration::ZERO,
+        ..pods_config(Port::Number(PORT), None)
+    };
 
     for (pods, expected) in [
         (blank_selector, InvalidPods::BlankLabelSelector),
         (blank_namespace, InvalidPods::BlankNamespace),
         (blank_port_name, InvalidPods::BlankPortName),
+        (zero_list_timeout, InvalidPods::ZeroListTimeout),
     ] {
         let error =
             K8sSeeds::with_client(pods, disconnected_client()).expect_err("invalid pods refused");
@@ -198,9 +228,8 @@ async fn test_invalid_pods() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_invalid_pods_before_client() -> anyhow::Result<()> {
     let pods = Pods {
-        namespace: None,
         label_selector: " ".to_string(),
-        port: Port::Number(PORT),
+        ..pods_config(Port::Number(PORT), None)
     };
 
     let error = K8sSeeds::new(pods).await.expect_err("invalid pods refused");
@@ -260,6 +289,7 @@ fn pods_config(port: Port, namespace: Option<&str>) -> Pods {
         namespace: namespace.map(ToString::to_string),
         label_selector: SELECTOR.to_string(),
         port,
+        list_timeout: Pods::DEFAULT_LIST_TIMEOUT,
     }
 }
 
