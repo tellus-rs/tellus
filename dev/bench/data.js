@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794756105400,
+  "lastUpdate": 1794756109362,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -23725,6 +23725,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 144681,
             "range": "± 8342",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "daa91c19407e37ee2bb73ba9c3c61e0e003e579e",
+          "message": "Merge pull request #397 from tellus-rs/fix/derived-config-values\n\nfix(cluster)!: cap derived deadlines and bound oversize config values",
+          "timestamp": "2026-11-15T16:09:41+01:00",
+          "tree_id": "9b4611f1ec9f9c4fe2402f647d4b60c117c8e754",
+          "url": "https://github.com/tellus-rs/tellus/commit/daa91c19407e37ee2bb73ba9c3c61e0e003e579e"
+        },
+        "date": 1794756109101,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2446169,
+            "range": "± 85917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2445264,
+            "range": "± 112716",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 888223,
+            "range": "± 13076",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 110726,
+            "range": "± 2753",
             "unit": "ns/iter"
           }
         ]
