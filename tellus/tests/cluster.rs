@@ -1659,19 +1659,40 @@ fn client() -> anyhow::Result<()> {
     pubsub_scenario(&runtime).context("pub-sub scenario")?;
     schema_evolution_scenario(&runtime).context("schema evolution scenario")?;
 
+    let keeper_started = std::time::Instant::now();
     let mut keeper_process = KillOnDrop(spawn_node(Role::Keeper)?);
     let keeper = resolve_ref::<KeeperMessage>(&mut keeper_process)?;
 
+    let scenario_started = std::time::Instant::now();
     ordered_termination_scenario(&runtime, &keeper).context("ordered termination scenario")?;
+    eprintln!("KEEPER ordered_termination_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     watch_terminated_scenario(&runtime, &keeper).context("watch terminated scenario")?;
+    eprintln!("KEEPER watch_terminated_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     unwatch_scenario(&runtime, &keeper).context("unwatch scenario")?;
+    eprintln!("KEEPER unwatch_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     two_watchers_scenario(&runtime, &keeper).context("two watchers scenario")?;
+    eprintln!("KEEPER two_watchers_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     head_of_line_scenario(&runtime, &keeper).context("head of line scenario")?;
+    eprintln!("KEEPER head_of_line_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     oversize_scenario(&runtime, &keeper).context("oversize scenario")?;
+    eprintln!("KEEPER oversize_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     sever_scenario(&runtime, &keeper).context("sever scenario")?;
+    eprintln!("KEEPER sever_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     sever_terminated_scenario(&runtime, &keeper).context("sever terminated scenario")?;
+    eprintln!("KEEPER sever_terminated_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     lost_terminated_scenario(&runtime, &keeper).context("lost terminated scenario")?;
+    eprintln!("KEEPER lost_terminated_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
+    let scenario_started = std::time::Instant::now();
     dead_target_ask_scenario(&runtime, &keeper).context("dead target ask scenario")?;
+    eprintln!("KEEPER dead_target_ask_scenario: {:.2} s, keeper alive {:.2} s", scenario_started.elapsed().as_secs_f64(), keeper_started.elapsed().as_secs_f64());
 
     keeper.tell(KeeperMessage::Stop);
     expect_exit(&mut keeper_process, "keeper")?;
@@ -5314,6 +5335,7 @@ impl Actor for LostTerminated {
     ) -> Result<Control<Self::State>, Self::Error> {
         match incoming {
             Incoming::Message(ClientEvent::Child(child)) => {
+                eprintln!("LOST {:?} child {}", std::time::SystemTime::now(), child.actor_id());
                 context.watch(&child);
                 self.keeper.tell(KeeperMessage::DropTerminated {
                     count: 1,
@@ -5323,6 +5345,7 @@ impl Actor for LostTerminated {
             }
 
             Incoming::Message(ClientEvent::Armed) => {
+                eprintln!("LOST {:?} armed", std::time::SystemTime::now());
                 if let Some(child) = &state {
                     child.tell(StreamerMessage::Go {
                         count: 0,
@@ -5333,6 +5356,7 @@ impl Actor for LostTerminated {
             }
 
             Incoming::Terminated(id) => {
+                eprintln!("LOST {:?} terminated {id}", std::time::SystemTime::now());
                 let result = match &state {
                     Some(child) if child.actor_id() == id => Ok(()),
                     _ => Err(format!("terminated signal for unexpected actor {id}")),

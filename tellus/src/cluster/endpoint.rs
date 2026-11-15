@@ -922,6 +922,7 @@ impl EndpointInner {
 
         #[cfg(feature = "cluster-dev")]
         if matches!(frame, Frame::Terminated { .. }) && self.drop_terminated() {
+            eprintln!("DIAG {} {:.3} drop terminated toward {peer}: {frame:?}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
             debug!(%peer, "dropping terminated frame, fault injection");
             return Ok(());
         }
@@ -2418,10 +2419,12 @@ async fn watch_refresh_loop(endpoint: &'static EndpointInner) {
             if endpoint.membership.is_down(peer)
                 || endpoint.lane_connected(peer.addr()) == Some(false)
             {
+                eprintln!("DIAG {} {:.3} refresh skips {peer}: down {} connected {:?}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64(), endpoint.membership.is_down(peer), endpoint.lane_connected(peer.addr()));
                 continue;
             }
 
             for (target, watcher) in endpoint.watchers.watches(peer) {
+                eprintln!("DIAG {} {:.3} refresh watch {target} by {watcher} at {peer}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
                 if let Err(error) = endpoint.send(peer, Frame::Watch { target, watcher }) {
                     debug!(%peer, actor_id = %target, %error, "cannot refresh remote watch");
                 }

@@ -300,8 +300,10 @@ pub(crate) fn on_watch(
     watcher_id: ActorId,
 ) {
     if !endpoint.wire_watches().add(peer, target, watcher_id) {
+        eprintln!("DIAG {} {:.3} on_watch {target} by {watcher_id} from {peer}: already known", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
         return;
     }
+    eprintln!("DIAG {} {:.3} on_watch {target} by {watcher_id} from {peer}: new", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
 
     let registered = endpoint
         .registry()
@@ -326,6 +328,7 @@ pub(crate) fn on_watch(
         }
 
         None => {
+            eprintln!("DIAG {} {:.3} on_watch {target}: no registry, answering", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
             let watchers = endpoint.wire_watches().take(peer, target);
             let _ = answer_terminated(endpoint, peer, target, watchers);
         }
@@ -440,6 +443,7 @@ struct WireTerminatedHandler {
 impl TerminatedHandler for WireTerminatedHandler {
     fn handle_terminated(&self, actor_id: ActorId) -> Result<(), ActorTerminated> {
         let target = actor_id;
+        eprintln!("DIAG {} {:.3} wire handler fires for {target} toward {}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64(), self.peer);
         let watch = self.endpoint.wire_watches().take(self.peer, target);
         answer_terminated(self.endpoint, self.peer, target, watch)
     }
@@ -472,6 +476,7 @@ fn answer_terminated(
     let mut answered = Ok(());
 
     for watcher in watch.map(WireWatch::into_watchers).unwrap_or_default() {
+        eprintln!("DIAG {} {:.3} answer terminated {target} to {watcher} at {peer}", std::process::id(), std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs_f64());
         if let Err(error) = endpoint.send(peer, Frame::Terminated { target, watcher }) {
             debug!(
                 %peer,
