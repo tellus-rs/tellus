@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794771123932,
+  "lastUpdate": 1794771125945,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27135,6 +27135,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4999530,
             "range": "± 401448",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "abc3f31bd980783b28049032f674b6e560ace87b",
+          "message": "Merge pull request #404 from tellus-rs/test/pin-wire-leftovers\n\ntest(cluster): pin the envelope version order, the QUIC prefix and refs",
+          "timestamp": "2026-11-15T20:23:36+01:00",
+          "tree_id": "03c2ce461736dd3e0cc6508574d774ba92fac993",
+          "url": "https://github.com/tellus-rs/tellus/commit/abc3f31bd980783b28049032f674b6e560ace87b"
+        },
+        "date": 1794771125367,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31106219,
+            "range": "± 1633736",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30200746,
+            "range": "± 2350036",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4664791,
+            "range": "± 268436",
             "unit": "ns/iter"
           }
         ]
