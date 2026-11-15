@@ -126,11 +126,20 @@ impl<R> Schema for ReplyTo<R> where R: Schema + Send + 'static {}
 pub struct Peer {
     node: NodeId,
     app_version: Option<AppVersion>,
+    max_frame_size: Option<usize>,
 }
 
 impl Peer {
-    pub(crate) fn new(node: NodeId, app_version: Option<AppVersion>) -> Self {
-        Self { node, app_version }
+    pub(crate) fn new(
+        node: NodeId,
+        app_version: Option<AppVersion>,
+        max_frame_size: Option<usize>,
+    ) -> Self {
+        Self {
+            node,
+            app_version,
+            max_frame_size,
+        }
     }
 
     /// The address the node advertises.
@@ -150,6 +159,10 @@ impl Peer {
     /// such a message is delivered in that shape.
     pub fn app_version(&self) -> Option<&AppVersion> {
         self.app_version.as_ref()
+    }
+
+    pub(crate) fn max_frame_size(&self) -> Option<usize> {
+        self.max_frame_size
     }
 }
 
@@ -265,6 +278,7 @@ mod tests {
         Peer::new(
             node,
             app_version.map(|version| version.parse().expect("a semantic version")),
+            None,
         )
     }
 

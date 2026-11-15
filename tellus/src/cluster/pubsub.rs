@@ -185,6 +185,7 @@ where
             let sent = sink::send_encoded(
                 endpoint,
                 node,
+                endpoint.frame_limit_toward(&peer),
                 encoded,
                 reply_tags,
                 |schema_version, payload, reply_tags| Frame::Message {
@@ -254,7 +255,7 @@ fn send_multicast<M>(
     schema_version: SchemaVersion,
     payload: &[u8],
 ) {
-    let max_frame_size = endpoint.config().max_frame_size.get();
+    let max_frame_size = endpoint.frame_limit(node);
     let targets_per_frame = match targets_per_frame(schema_version, payload, max_frame_size) {
         Ok(targets) => targets.max(1),
 
@@ -927,8 +928,16 @@ mod tests {
         for node in [unknown, older, newer] {
             remote_subscribers::<Shaped>(endpoint, node, "shaped", 1);
         }
-        endpoint.record_peer(older, Some(Version::new(1, 9, 0)));
-        endpoint.record_peer(newer, Some(Version::new(2, 0, 0)));
+        endpoint.record_peer(
+            older,
+            Some(Version::new(1, 9, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
+        endpoint.record_peer(
+            newer,
+            Some(Version::new(2, 0, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
 
         let told = publish_at(endpoint, &Topic::new("shaped"), Shaped(5));
 
@@ -969,7 +978,11 @@ mod tests {
 
         endpoint::with_current(endpoint, || sink.try_send_message(target, Shaped(5)))
             .expect("sends");
-        endpoint.record_peer(node, Some(Version::new(2, 0, 0)));
+        endpoint.record_peer(
+            node,
+            Some(Version::new(2, 0, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
         endpoint::with_current(endpoint, || sink.try_send_message(target, Shaped(6)))
             .expect("sends");
 
@@ -1012,8 +1025,16 @@ mod tests {
         let [target] = remote_subscribers::<GatedReply>(endpoint, newer, "gated", 1)[..] else {
             panic!("not one subscriber");
         };
-        endpoint.record_peer(older, Some(Version::new(1, 0, 0)));
-        endpoint.record_peer(newer, Some(Version::new(2, 0, 0)));
+        endpoint.record_peer(
+            older,
+            Some(Version::new(1, 0, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
+        endpoint.record_peer(
+            newer,
+            Some(Version::new(2, 0, 0)),
+            endpoint.config().max_frame_size.get(),
+        );
         let (shared, reply_rx) = SharedReply::new();
 
         let told = endpoint::with_current(endpoint, || {

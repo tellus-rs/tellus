@@ -2,9 +2,9 @@ use crate::{
     ActorId, SchemaVersion,
     cluster::{
         discovery::Nonce,
-        membership::Member,
+        membership::{self, Member},
         node::{ClusterId, NodeId},
-        reachability::WireReachability,
+        reachability::{self, WireReachability},
         receptionist::WireGroup,
         reply::ReplyTag,
     },
@@ -25,6 +25,19 @@ const PROTOCOL_MAGIC: u32 = 0x574C_545A;
 const PROTOCOL_VERSIONS: RangeInclusive<u16> = 2..=2;
 
 const HANDSHAKE_DISCRIMINANT: u8 = 0;
+
+/// The smallest `max_frame_size` a node may use or advertise: it holds the widest handshake and
+/// the smallest chunk of a member snapshot and of a reachability snapshot.
+pub(crate) const MIN_FRAME_SIZE: usize = {
+    let mut min = Handshake::MAX_ENCODED_LEN;
+    if membership::MIN_FRAME_SIZE > min {
+        min = membership::MIN_FRAME_SIZE;
+    }
+    if reachability::MIN_FRAME_SIZE > min {
+        min = reachability::MIN_FRAME_SIZE;
+    }
+    min
+};
 
 #[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum Frame<'a> {
@@ -244,8 +257,9 @@ impl Handshake {
     pub(crate) const MAX_STRING_LEN: usize = 64;
 
     /// The widest handshake a peer may send, pinned by a test: an IPv6 node at the highest port, a
-    /// cluster ID and both strings at [MAX_STRING_LEN](Handshake::MAX_STRING_LEN).
-    pub(crate) const MAX_ENCODED_LEN: usize = 195;
+    /// cluster ID, both strings at [MAX_STRING_LEN](Handshake::MAX_STRING_LEN) and the largest
+    /// frame size.
+    pub(crate) const MAX_ENCODED_LEN: usize = 205;
 
     pub(crate) fn new(body: HandshakeV2) -> Self {
         Self {
@@ -308,9 +322,9 @@ impl HandshakeEnvelope {
     }
 }
 
-/// The body of protocol version 2: version 1's node, intent and cluster ID, then the codec name
-/// and the application version. A later version's body appends to it, so this decodes the
-/// handshake of any later version.
+/// The body of protocol version 2: version 1's node, intent and cluster ID, then the codec name,
+/// the application version and the sender's `max_frame_size`. A later version's body appends to it,
+/// so this decodes the handshake of any later version.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct HandshakeV2 {
     pub(crate) node: NodeId,
@@ -318,6 +332,7 @@ pub(crate) struct HandshakeV2 {
     pub(crate) cluster: Option<ClusterId>,
     pub(crate) codec: String,
     pub(crate) app_version: Option<String>,
+    pub(crate) max_frame_size: u64,
 }
 
 impl HandshakeV2 {
@@ -337,6 +352,12 @@ impl HandshakeV2 {
             return Err(HandshakeError::StringTooLong {
                 len: longest,
                 max: Handshake::MAX_STRING_LEN,
+            });
+        }
+        if self.max_frame_size < MIN_FRAME_SIZE as u64 {
+            return Err(HandshakeError::FrameSizeTooSmall {
+                max_frame_size: self.max_frame_size,
+                min: MIN_FRAME_SIZE,
             });
         }
         Ok(())
@@ -390,6 +411,9 @@ pub(crate) enum HandshakeError {
 
     #[error("application version {0:?} is not a semantic version")]
     AppVersion(String),
+
+    #[error("max_frame_size of {max_frame_size} bytes is below the minimum of {min} bytes")]
+    FrameSizeTooSmall { max_frame_size: u64, min: usize },
 }
 
 /// The frame a handshake rides, generic over its body: `()` is the bare envelope, which is all a
@@ -425,6 +449,7 @@ pub(crate) mod synthetic {
         pub(crate) cluster: Option<ClusterId>,
         pub(crate) codec: String,
         pub(crate) app_version: Option<String>,
+        pub(crate) max_frame_size: u64,
         pub(crate) appended: u64,
     }
 
@@ -483,7 +508,7 @@ mod tests {
             discovery::{KeyKind, Nonce, WireKey},
             frame::{
                 Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
-                PROTOCOL_MAGIC, RefusalReason, StreamKey,
+                MIN_FRAME_SIZE, PROTOCOL_MAGIC, RefusalReason, StreamKey,
                 synthetic::{self, Body, HandshakeV1, HandshakeV3},
             },
             membership::{Member, MemberState},
@@ -872,6 +897,7 @@ mod tests {
                 cluster: Some(ClusterId::new()),
                 codec: "postcard".to_string(),
                 app_version: Some("1.4.0".to_string()),
+                max_frame_size: 1_048_576,
             })),
             Frame::Message {
                 target,
@@ -1208,8 +1234,8 @@ mod tests {
     }
 
     /// The version 2 body follows the envelope: the node, the intent, the cluster ID, the codec
-    /// name, the application version. Decoding the IDs back out of hardcoded bytes catches a
-    /// transposed field, which a round trip cannot.
+    /// name, the application version, the frame size. Decoding the IDs back out of hardcoded bytes
+    /// catches a transposed field, which a round trip cannot.
     #[test]
     fn a_v2_handshake_matches_its_pinned_wire_bytes() {
         const INCARNATION: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
@@ -1228,6 +1254,7 @@ mod tests {
             8, 112, 111, 115, 116, 99, 97, 114, 100, // codec "postcard"
             1,   // app_version: Some
             5, 49, 46, 52, 46, 48, // app_version "1.4.0"
+            128, 128, 64, // max_frame_size 1048576
         ];
 
         let frame = Frame::from_bytes(&bytes).expect("frame decodes");
@@ -1247,6 +1274,7 @@ mod tests {
         );
         assert_eq!(body.codec, "postcard");
         assert_eq!(body.app_version.as_deref(), Some("1.4.0"));
+        assert_eq!(body.max_frame_size, 1_048_576);
         assert_eq!(&HandshakeV2::decode(&bytes).expect("body decodes"), body);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
@@ -1262,6 +1290,7 @@ mod tests {
             bytes.push(0); // cluster: None
             bytes.extend([8, 112, 111, 115, 116, 99, 97, 114, 100]);
             bytes.push(0); // app_version: None
+            bytes.extend([128, 128, 64]);
             let body = HandshakeV2::decode(&bytes).expect("body decodes");
             assert_eq!(body.intent, intent);
             assert_eq!(body.cluster, None);
@@ -1283,6 +1312,7 @@ mod tests {
             cluster: Some(ClusterId::new()),
             codec: "c".repeat(Handshake::MAX_STRING_LEN),
             app_version: Some("v".repeat(Handshake::MAX_STRING_LEN)),
+            max_frame_size: u64::MAX,
         };
         body.validate().expect("strings at the cap are valid");
 
@@ -1303,6 +1333,34 @@ mod tests {
         assert!(matches!(
             body.validate(),
             Err(HandshakeError::StringTooLong { .. })
+        ));
+    }
+
+    /// A peer advertising a frame size below the minimum could not receive a handshake or a
+    /// snapshot chunk, so its handshake is invalid; the minimum itself is valid.
+    #[test]
+    fn a_handshake_below_the_minimum_frame_size_is_invalid() {
+        let mut body = HandshakeV2 {
+            node: NodeId::new("127.0.0.1:1234".parse().expect("valid address")),
+            intent: HandshakeIntent::Member,
+            cluster: Some(ClusterId::new()),
+            codec: "postcard".to_string(),
+            app_version: None,
+            max_frame_size: MIN_FRAME_SIZE as u64,
+        };
+        body.validate().expect("the minimum is valid");
+        assert_eq!(MIN_FRAME_SIZE, Handshake::MAX_ENCODED_LEN);
+
+        body.max_frame_size -= 1;
+        assert!(matches!(
+            body.validate(),
+            Err(HandshakeError::FrameSizeTooSmall { max_frame_size, min })
+                if max_frame_size == MIN_FRAME_SIZE as u64 - 1 && min == MIN_FRAME_SIZE
+        ));
+        body.max_frame_size = 0;
+        assert!(matches!(
+            body.validate(),
+            Err(HandshakeError::FrameSizeTooSmall { .. })
         ));
     }
 
@@ -1382,6 +1440,7 @@ mod tests {
             cluster,
             codec: "postcard".to_string(),
             app_version: None,
+            max_frame_size: 1_048_576,
             appended: 7,
         };
         let v2 = HandshakeV2 {
@@ -1390,6 +1449,7 @@ mod tests {
             cluster,
             codec: "postcard".to_string(),
             app_version: None,
+            max_frame_size: 1_048_576,
         };
         let v1 = HandshakeV1 {
             node,

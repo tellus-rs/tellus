@@ -860,6 +860,7 @@ where
     encode_and_send(
         endpoint,
         origin,
+        endpoint.frame_limit_toward(&peer),
         || {
             schema::catch_panic_and_log::<R, _, _>(
                 "reply encode panicked",
