@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794754691333,
+  "lastUpdate": 1794755149743,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15299,6 +15299,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 28032610,
             "range": "± 722722",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ba202eea8c758f94c87a713c23d0e2ea528107d",
+          "message": "Merge pull request #391 from tellus-rs/fix/inspect-event-ids\n\nfix(inspect): clamp resumed event IDs, make InspectConfig deserializable",
+          "timestamp": "2026-11-15T15:57:38+01:00",
+          "tree_id": "865dd7d2fc6bbeb82d23df32f5c5a6547c65af1c",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ba202eea8c758f94c87a713c23d0e2ea528107d"
+        },
+        "date": 1794755148980,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11731341,
+            "range": "± 745796",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 11373176,
+            "range": "± 493566",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 728657,
+            "range": "± 69234",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 601808,
+            "range": "± 6062",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5115869,
+            "range": "± 159238",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3447150,
+            "range": "± 107910",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16240243,
+            "range": "± 503581",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16315033,
+            "range": "± 519348",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16127073,
+            "range": "± 370975",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16542734,
+            "range": "± 376561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17284201,
+            "range": "± 349820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18649621,
+            "range": "± 317821",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 23301655,
+            "range": "± 750080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17216103,
+            "range": "± 347196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 18801800,
+            "range": "± 455518",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 23513900,
+            "range": "± 853026",
             "unit": "ns/iter"
           }
         ]
