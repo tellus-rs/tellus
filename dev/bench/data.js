@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794735733298,
+  "lastUpdate": 1794735735284,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -24825,6 +24825,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3699239,
             "range": "± 137651",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "101dc7057a7aa071c916a8f944e154917582f2df",
+          "message": "Merge pull request #389 from tellus-rs/fix/frame-size-in-handshake\n\nfix(cluster): send toward a peer at the smaller frame limit of both",
+          "timestamp": "2026-11-15T10:33:54+01:00",
+          "tree_id": "cd195c2bc66472f84469dbecf248943ed4563a2e",
+          "url": "https://github.com/tellus-rs/tellus/commit/101dc7057a7aa071c916a8f944e154917582f2df"
+        },
+        "date": 1794735734742,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30485625,
+            "range": "± 2765591",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 29362900,
+            "range": "± 1509057",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4596002,
+            "range": "± 384212",
             "unit": "ns/iter"
           }
         ]
