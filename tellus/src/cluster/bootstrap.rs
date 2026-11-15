@@ -1,11 +1,14 @@
 #[cfg(feature = "serde")]
 use crate::cluster::formation::FormationProviderConfig;
-use crate::cluster::{
-    endpoint::{self, EndpointInner, FormError},
-    formation::{
-        Decision, Declined, Formation, FormationProvider, FormationProviderFactory, Majority,
+use crate::{
+    cluster::{
+        endpoint::{self, EndpointInner, FormError},
+        formation::{
+            Decision, Declined, Formation, FormationProvider, FormationProviderFactory, Majority,
+        },
+        membership::{JoinRound, join_round},
     },
-    membership::{JoinRound, join_round},
+    timers,
 };
 use derive_more::Debug;
 use std::{
@@ -68,6 +71,8 @@ impl SeedDiscovery for FixedSeeds {
 /// Configuration for [bootstrap], deserializable with the `serde` feature: every field falls
 /// back to its value in [BootstrapConfig::new], and the formation provider is chosen by name, see
 /// docs/cluster.md.
+///
+/// A duration the clock cannot represent, e.g. `Duration::MAX`, is capped at about thirty years.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "serde",
@@ -526,7 +531,7 @@ async fn probe_foreign_clusters<D>(
     ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
 
     loop {
-        let deadline = ticks.tick().await + probe_interval;
+        let deadline = timers::deadline(ticks.tick().await, probe_interval);
         if endpoint.downed() {
             debug!("foreign cluster probe stopped, this node is downed");
             return;
@@ -964,6 +969,33 @@ mod tests {
             .await
             .expect("the probe stops once this node is downed")
             .expect("the probe does not panic");
+    }
+
+    /// A probe interval of `Duration::MAX` probes once and waits for the next round rather than
+    /// ending the probe task.
+    #[tokio::test(start_paused = true)]
+    async fn a_probe_interval_of_duration_max_probes_once_and_keeps_running() {
+        let (endpoint, _lane_dials, _join_requests, probe_requests) =
+            EndpointInner::for_tests_with_probes(EndpointConfig::new(addr(1)), 0);
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let other = ClusterId::new();
+        let seeds = FixedSeeds::new(vec![addr(1), addr(2)]);
+        let probe = task::spawn(probe_foreign_clusters(endpoint, seeds, Duration::MAX));
+
+        let request = timeout(RESOLVE_INTERVAL, probe_requests.recv_async())
+            .await
+            .expect("a first probe at once")
+            .expect("the probe task requests probes");
+        assert_eq!(request.addr, addr(2));
+        assert!(request.result_tx.send(Ok(Some(other))).is_ok());
+        sleep(RESOLVE_INTERVAL).await;
+
+        assert_eq!(
+            endpoint.state_rx().borrow().foreign_clusters(),
+            [ForeignCluster::new(addr(2), other)]
+        );
+        assert!(!probe.is_finished());
+        probe.abort();
     }
 
     /// A zero resolve interval would poll discovery in a busy loop, and a zero probe interval

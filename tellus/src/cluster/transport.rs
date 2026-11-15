@@ -40,9 +40,9 @@ where
     /// connection.
     ///
     /// Must bound itself: a silent address which never resolves stalls the join attempt holding
-    /// it, and joins run one at a time per endpoint. [QuicTransport]
-    /// inherits QUIC's handshake timeout, tens of seconds, which a deployment wanting a seed list
-    /// walked briskly wraps in a shorter one.
+    /// it, and joins run one at a time per endpoint. [QuicTransport] bounds a handshake by its
+    /// idle timeout, 30 s by default, which a deployment wanting a seed list walked briskly
+    /// lowers in [QuicTransport::new] or wraps in a shorter one.
     ///
     /// # Errors
     /// Implementations fail if the connection or its control stream cannot be established within

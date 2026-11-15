@@ -6,6 +6,7 @@
 use crate::{
     cluster::node::NodeId,
     sync::{lock, read, write},
+    timers,
 };
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -212,6 +213,10 @@ impl PhiAccrual {
     /// window pins the detector to its warmup deadline forever.
     pub const MIN_MAX_SAMPLE_SIZE: usize = 2;
 
+    /// The largest window: every inbound frame adds an interval, so on a busy link a larger one
+    /// spans no longer a time, while it holds eight bytes per interval and peer.
+    pub const MAX_MAX_SAMPLE_SIZE: usize = 10_000;
+
     /// Replace the threshold phi must stay below: 8 means roughly a one in `10^8` chance that
     /// the learned distribution produced the silence which is declared a failure.
     ///
@@ -229,13 +234,17 @@ impl PhiAccrual {
     /// Replace the number of inter-arrival intervals the sliding window holds.
     ///
     /// # Errors
-    /// Fails if `max_sample_size` is below [PhiAccrual::MIN_MAX_SAMPLE_SIZE].
+    /// Fails if `max_sample_size` is below [PhiAccrual::MIN_MAX_SAMPLE_SIZE] or above
+    /// [PhiAccrual::MAX_MAX_SAMPLE_SIZE].
     pub fn with_max_sample_size(
         mut self,
         max_sample_size: usize,
     ) -> Result<Self, InvalidPhiAccrual> {
         if max_sample_size < Self::MIN_MAX_SAMPLE_SIZE {
             return Err(InvalidPhiAccrual::MaxSampleSize(max_sample_size));
+        }
+        if max_sample_size > Self::MAX_MAX_SAMPLE_SIZE {
+            return Err(InvalidPhiAccrual::MaxSampleSizeTooLarge(max_sample_size));
         }
 
         self.max_sample_size = max_sample_size;
@@ -335,6 +344,10 @@ pub enum InvalidPhiAccrual {
     /// The sliding window is below [PhiAccrual::MIN_MAX_SAMPLE_SIZE].
     #[error("max sample size {0} below 2")]
     MaxSampleSize(usize),
+
+    /// The sliding window is above [PhiAccrual::MAX_MAX_SAMPLE_SIZE].
+    #[error("max sample size {0} above 10000")]
+    MaxSampleSizeTooLarge(usize),
 
     /// The minimum standard deviation is zero.
     #[error("min std deviation is zero")]
@@ -545,7 +558,7 @@ pub(crate) fn tolerates_silence(factory: &FailureDetectorFactory, silence: Durat
     for _ in 0..BURST {
         detector.record_heartbeat(at);
     }
-    detector.is_available(at + silence)
+    detector.is_available(timers::deadline(at.into(), silence).into_std())
 }
 
 struct Shared {
@@ -565,6 +578,7 @@ mod tests {
         failure::{
             Deadline, DeadlineFailureDetector, FailureDetector, FailureDetectorFactory,
             InvalidDeadline, InvalidPhiAccrual, Liveness, PhiAccrual, PhiAccrualFailureDetector,
+            tolerates_silence,
         },
         node::NodeId,
     };
@@ -773,6 +787,20 @@ mod tests {
             Err(InvalidPhiAccrual::MaxSampleSize(0))
         ));
         assert!(PhiAccrual::default().with_max_sample_size(2).is_ok());
+        assert!(matches!(
+            PhiAccrual::default().with_max_sample_size(PhiAccrual::MAX_MAX_SAMPLE_SIZE + 1),
+            Err(InvalidPhiAccrual::MaxSampleSizeTooLarge(size))
+                if size == PhiAccrual::MAX_MAX_SAMPLE_SIZE + 1
+        ));
+        assert!(matches!(
+            PhiAccrual::default().with_max_sample_size(usize::MAX),
+            Err(InvalidPhiAccrual::MaxSampleSizeTooLarge(usize::MAX))
+        ));
+        assert!(
+            PhiAccrual::default()
+                .with_max_sample_size(PhiAccrual::MAX_MAX_SAMPLE_SIZE)
+                .is_ok()
+        );
 
         assert!(matches!(
             PhiAccrual::default().with_threshold(f64::NAN),
@@ -797,6 +825,22 @@ mod tests {
             PhiAccrual::default().with_warmup_deadline(Duration::ZERO),
             Err(InvalidPhiAccrual::WarmupDeadline)
         ));
+    }
+
+    /// A silence the clock cannot represent is judged as one of about thirty years instead of
+    /// overflowing the instant it is added to.
+    #[test]
+    fn a_silence_of_duration_max_is_judged() {
+        let phi_accrual: FailureDetectorFactory =
+            Arc::new(|| Box::new(PhiAccrualFailureDetector::default()));
+        assert!(!tolerates_silence(&phi_accrual, Duration::MAX));
+
+        let unbounded: FailureDetectorFactory = Arc::new(|| {
+            Box::new(DeadlineFailureDetector::new(
+                Deadline::new(Duration::MAX).expect("Duration::MAX is not zero"),
+            ))
+        });
+        assert!(tolerates_silence(&unbounded, Duration::MAX));
     }
 
     /// A zero deadline would declare a peer unavailable one tick after it was heard from, which
@@ -869,6 +913,9 @@ mod tests {
             "\"warmup_deadline\": \"0s\"",
         );
         assert!(serde_json::from_str::<PhiAccrual>(&zero_warmup).is_err());
+
+        let too_large = json.replace("\"max_sample_size\": 500", "\"max_sample_size\": 10001");
+        assert!(serde_json::from_str::<PhiAccrual>(&too_large).is_err());
 
         let json = json.replace("\"max_sample_size\": 500", "\"max_sample_size\": 1");
         assert!(serde_json::from_str::<PhiAccrual>(&json).is_err());

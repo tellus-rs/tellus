@@ -30,6 +30,7 @@ use crate::{
         watch::{WatcherTable, WireWatchTable},
     },
     sync::{lock, read, write},
+    timers,
 };
 use derive_more::Debug;
 use flume::Sender;
@@ -54,8 +55,8 @@ use tokio::{
 };
 use tracing::{debug, error, info, warn};
 
-/// Above this tokio's broadcast channel panics rather than rounding up.
-const MAX_CHANGE_CAPACITY: usize = usize::MAX / 2;
+/// The channel allocates every slot at start, each holding a cluster state of about 200 bytes.
+const MAX_CHANGE_CAPACITY: usize = 1 << 16;
 
 const REFUSAL_BACKOFF: Duration = Duration::from_secs(10);
 const MAX_REFUSAL_BACKOFF: Duration = Duration::from_secs(10 * 60);
@@ -80,6 +81,8 @@ thread_local! {
 /// Configuration for [start_endpoint], deserializable with the `serde` feature: the advertised
 /// address is required, every other field falls back to its value in [EndpointConfig::new], and
 /// the pluggable families are chosen by name, see docs/cluster.md.
+///
+/// A duration the clock cannot represent, e.g. `Duration::MAX`, is capped at about thirty years.
 #[derive(Debug)]
 #[cfg_attr(
     feature = "serde",
@@ -237,8 +240,8 @@ pub struct EndpointConfig {
 
     /// How many changes a subscriber of [changes](crate::cluster::changes) may fall behind
     /// before it is told of a gap and handed the current state and verdict; a buffer, not a
-    /// history, holding one cluster state per version. A power of two no larger than half the
-    /// address space, since the channel rounds up to one. Defaults to
+    /// history, holding one cluster state per version. A power of two, since the channel rounds
+    /// up to one, and at most 65536, since the channel allocates every entry at start. Defaults to
     /// [EndpointConfig::DEFAULT_CHANGE_CAPACITY].
     pub change_capacity: NonZeroUsize,
 }
@@ -378,7 +381,7 @@ pub enum InvalidEndpointConfig {
     #[error("ambiguous_join_bound is zero")]
     ZeroAmbiguousJoinBound,
 
-    /// The configured `change_capacity` is not a power of two, or too large for the channel.
+    /// The configured `change_capacity` is not a power of two, or above 65536.
     #[error("change_capacity of {change_capacity} is not a power of two up to {max}")]
     ChangeCapacity {
         /// The configured capacity.
@@ -1114,7 +1117,7 @@ impl EndpointInner {
     /// Recorded while the attempt still holds the join permit, so no formation slips in before.
     pub(crate) fn record_ambiguous_join(&self, addr: SocketAddr) {
         let bound = self.config.ambiguous_join_bound;
-        let until = tokio_time::Instant::now() + bound;
+        let until = timers::deadline(tokio_time::Instant::now(), bound);
         if self
             .lifecycle
             .coordinate(|coordinator| coordinator.record_ambiguous_join(addr, until))
@@ -1356,7 +1359,7 @@ impl EndpointInner {
         node: NodeId,
         was_up: bool,
     ) -> bool {
-        let deadline = tokio_time::Instant::now() + self.config.leave_timeout;
+        let deadline = timers::deadline(tokio_time::Instant::now(), self.config.leave_timeout);
         let deferral = departures.deferred.entry(node).or_insert(Deferral {
             deadline,
             awaited: false,
@@ -1642,7 +1645,7 @@ impl EndpointInner {
             panic!("departure bug");
         }
 
-        let deadline = tokio_time::Instant::now() + self.config.leave_timeout;
+        let deadline = timers::deadline(tokio_time::Instant::now(), self.config.leave_timeout);
         let mut departure = Departure::default();
         for (addr, lane_done) in lanes_done {
             match timeout_at(deadline, lane_done).await {
@@ -2218,7 +2221,7 @@ impl ForeignClusters {
         let retention = self.retention;
         let sightings = self.sightings.len();
         self.sightings
-            .retain(|_, sighting| now < sighting.confirmed_at + retention);
+            .retain(|_, sighting| now < timers::deadline(sighting.confirmed_at, retention));
         self.sightings.len() != sightings
     }
 
@@ -2452,7 +2455,7 @@ mod tests {
                 MAX_REFUSAL_BACKOFF, REFUSAL_BACKOFF, UNREACHABLE_WARNING_INTERVAL,
                 UnreachableWarnings, membership_loop, validate,
             },
-            failure::{Deadline, DeadlineFailureDetector},
+            failure::{Deadline, DeadlineFailureDetector, FailureDetectorFactory},
             frame::{Frame, Handshake, MIN_FRAME_SIZE, RefusalReason},
             lanes::{Drain, LaneError},
             leave::LeaveError,
@@ -3310,7 +3313,7 @@ mod tests {
         ));
 
         config.ambiguous_join_bound = EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND;
-        for rejected in [3, 1 << (usize::BITS - 1)] {
+        for rejected in [3, MAX_CHANGE_CAPACITY * 2, 1 << 62, 1 << (usize::BITS - 1)] {
             config.change_capacity = NonZeroUsize::new(rejected).expect("not zero");
             assert!(matches!(
                 validate(&config),
@@ -3318,10 +3321,21 @@ mod tests {
                     if change_capacity == rejected && max == MAX_CHANGE_CAPACITY
             ));
         }
-        for accepted in [1, 1_024] {
+        for accepted in [1, 1_024, MAX_CHANGE_CAPACITY] {
             config.change_capacity = NonZeroUsize::new(accepted).expect("not zero");
             assert!(validate(&config).is_ok());
         }
+    }
+
+    /// The largest accepted `change_capacity` is a channel the endpoint can allocate.
+    #[test]
+    fn the_largest_change_capacity_is_allocated() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.change_capacity = NonZeroUsize::new(MAX_CHANGE_CAPACITY).expect("not zero");
+        assert!(validate(&config).is_ok());
+
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        assert!(endpoint.form_cluster().is_ok());
     }
 
     /// An unspecified IP or a zero port cannot be dialed by other nodes, yet the advertised
@@ -3590,6 +3604,113 @@ mod tests {
         assert!(validate(&config).is_ok());
     }
 
+    /// An interval of `Duration::MAX` is judged as a silence of about thirty years: the default
+    /// detector refuses it, a detector without a limit accepts it.
+    #[test]
+    fn an_interval_of_duration_max_is_judged() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.heartbeat_interval = Duration::MAX;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::FailureDetectorTooEager { silence })
+                if silence == Duration::MAX
+        ));
+
+        config.heartbeat_interval = EndpointConfig::DEFAULT_HEARTBEAT_INTERVAL;
+        config.watch_refresh_interval = Duration::MAX;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidEndpointConfig::FailureDetectorTooEager { silence })
+                if silence == Duration::MAX
+        ));
+
+        config.heartbeat_interval = Duration::MAX;
+        config.failure_detector = unbounded_detector();
+        assert!(validate(&config).is_ok());
+    }
+
+    /// A `leave_timeout` of `Duration::MAX` waits for the lanes as long as they take.
+    #[tokio::test]
+    async fn a_leave_timeout_of_duration_max_departs() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.leave_timeout = Duration::MAX;
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("a fresh endpoint forms");
+        endpoint
+            .send(NodeId::new(addr(2)), gossip())
+            .expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+
+        let departure = leaving
+            .await
+            .expect("the leave completes")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        assert!(endpoint.downed());
+    }
+
+    /// With a `leave_timeout` of `Duration::MAX` the departure of another member is deferred
+    /// rather than killing the gossip which carries it.
+    #[test]
+    fn a_leave_timeout_of_duration_max_defers_a_departure() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.leave_timeout = Duration::MAX;
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("a fresh endpoint forms");
+        let leaver = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(leaver));
+
+        membership::on_gossip(endpoint, &[Member::new(leaver, MemberState::Left)]);
+
+        assert_eq!(endpoint.membership().state(leaver), Some(MemberState::Left));
+        assert!(endpoint.departures().deferred.contains_key(&leaver));
+    }
+
+    /// An `ambiguous_join_bound` of `Duration::MAX` records the ambiguous join.
+    #[test]
+    fn an_ambiguous_join_bound_of_duration_max_blocks_forming() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.ambiguous_join_bound = Duration::MAX;
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(config);
+
+        endpoint.record_ambiguous_join(addr(2));
+
+        assert!(matches!(
+            endpoint.form_cluster(),
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == addr(2)
+        ));
+    }
+
+    /// A sighting retained for `Duration::MAX` survives the sweep of every membership tick.
+    #[tokio::test(start_paused = true)]
+    async fn a_sighting_retained_for_duration_max_is_kept() {
+        let (endpoint, _lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let other = ClusterId::new();
+        endpoint.retain_foreign_clusters_for(Duration::MAX);
+        endpoint.sight_cluster(addr(2), Some(other));
+
+        tokio_time::advance(Duration::from_secs(60 * 60)).await;
+        endpoint.sweep_foreign_clusters(tokio_time::Instant::now());
+
+        assert_eq!(
+            endpoint.state_rx().borrow().foreign_clusters(),
+            [ForeignCluster::new(addr(2), other)]
+        );
+    }
+
+    fn unbounded_detector() -> FailureDetectorFactory {
+        let deadline = Deadline::new(Duration::MAX).expect("Duration::MAX is not zero");
+        Arc::new(move || Box::new(DeadlineFailureDetector::new(deadline)))
+    }
+
     /// Every version reaches a subscriber which keeps up, each followed by its verdict, and a
     /// change nothing can observe sends nothing.
     #[tokio::test]
@@ -3848,6 +3969,15 @@ mod tests {
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "leave_timeout": "0s" }"#;
+        assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
+
+        let json = r#"{
+            "advertised_addr": "127.0.0.1:2552",
+            "watch_refresh_interval": "500000000000years"
+        }"#;
+        assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
+
+        let json = r#"{ "advertised_addr": "127.0.0.1:2552", "change_capacity": 131072 }"#;
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 
         let json = r#"{ "advertised_addr": "127.0.0.1:2552", "max_frame_size": 1 }"#;

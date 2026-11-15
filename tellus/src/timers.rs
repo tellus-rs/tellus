@@ -249,7 +249,7 @@ impl<M> TimerTable<M> {
         delay: Duration,
         now: Instant,
     ) -> Option<M> {
-        let deadline = now.checked_add(delay).unwrap_or_else(|| now + FAR_FUTURE);
+        let deadline = deadline(now, delay);
         // Before the table changes: without the time driver, creating the sleep panics.
         self.arm(deadline);
 
@@ -493,6 +493,10 @@ impl TimerId {
     fn slot(self) -> usize {
         usize::try_from(self.slot).expect("a u32 fits a usize")
     }
+}
+
+pub(crate) fn deadline(now: Instant, delay: Duration) -> Instant {
+    now.checked_add(delay).unwrap_or_else(|| now + FAR_FUTURE)
 }
 
 // Deliverable once `deliver_at` items have been received since the table was created.
