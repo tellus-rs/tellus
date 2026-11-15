@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794728191469,
+  "lastUpdate": 1794728192910,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -24405,6 +24405,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4147999,
             "range": "± 288006",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f6def0f0c1791fed5bebcf8156e538ede3b40886",
+          "message": "Merge pull request #383 from tellus-rs/fix/reply-names-its-asker\n\nfix(cluster): name the asking incarnation in reply frames",
+          "timestamp": "2026-11-15T08:28:32+01:00",
+          "tree_id": "b2c8e78ace0fda08c905a8fe7caa5d93fd3b4170",
+          "url": "https://github.com/tellus-rs/tellus/commit/f6def0f0c1791fed5bebcf8156e538ede3b40886"
+        },
+        "date": 1794728192545,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25385252,
+            "range": "± 1230700",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 25088851,
+            "range": "± 1361235",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3587698,
+            "range": "± 181356",
             "unit": "ns/iter"
           }
         ]
