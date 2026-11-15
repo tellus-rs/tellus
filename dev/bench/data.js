@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794771993073,
+  "lastUpdate": 1794771995848,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27345,6 +27345,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4664791,
             "range": "± 268436",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f03985219fb6ec6d3aa3b7d3dcf3be38b9b0d3d6",
+          "message": "Merge pull request #403 from tellus-rs/docs/reply-destination-release\n\ndocs(cluster): say what releases a dead-lettered reply's destinations",
+          "timestamp": "2026-11-15T20:38:57+01:00",
+          "tree_id": "ac43b3249d2df5599f4b30363fc2a0c3d315238a",
+          "url": "https://github.com/tellus-rs/tellus/commit/f03985219fb6ec6d3aa3b7d3dcf3be38b9b0d3d6"
+        },
+        "date": 1794771995468,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31992476,
+            "range": "± 1393004",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31284888,
+            "range": "± 1293029",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5081466,
+            "range": "± 341984",
             "unit": "ns/iter"
           }
         ]
