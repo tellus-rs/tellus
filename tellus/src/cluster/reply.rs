@@ -1686,27 +1686,55 @@ mod tests {
         assert_reply_dropped(&dial_requests, responder, embedded);
     }
 
+    /// A reply for the asker's current incarnation which carries a reply destination of its
+    /// responder's is dead-lettered there and answered with a `ReplyDropped`, which releases the
+    /// responder's entry for that destination.
     #[test]
-    fn a_reply_for_another_incarnation_releases_its_reply_destinations() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
-            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+    fn a_dead_lettered_reply_releases_its_reply_destinations_at_the_responder() {
+        let (responder, responder_dials, _responder_joins) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.2:1".parse().expect("valid address")),
         );
-        let predecessor = NodeId::new(endpoint.node().addr());
-        let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
-        let embedded = tag(Nonce::first());
-        let payload = endpoint.codec().encode(&1_u64).expect("encodes");
+        let (asker, asker_dials, _asker_joins) = EndpointInner::for_tests(EndpointConfig::new(
+            "127.0.0.1:1".parse().expect("valid address"),
+        ));
 
-        on_reply(
-            endpoint,
+        let (reply_dropped_asker, nonce) = dead_lettered_reply(
             responder,
-            predecessor,
-            Nonce::first(),
-            &[embedded],
-            SchemaVersion::new(0),
-            &payload,
+            &responder_dials,
+            asker,
+            &asker_dials,
+            asker.node(),
         );
+        assert_eq!(responder.pending_replies().len(), 1);
 
-        assert_reply_dropped(&dial_requests, responder, embedded);
+        on_reply_dropped(responder, asker.node(), reply_dropped_asker, nonce);
+        assert_eq!(responder.pending_replies().len(), 0);
+    }
+
+    /// The `ReplyDropped` answering a reply for the predecessor at the asker's address comes from
+    /// the current incarnation, not the one the responder's entry is stamped with. So the frame
+    /// leaves the entry, and fencing the predecessor removes it.
+    #[test]
+    fn a_dead_lettered_reply_for_the_predecessor_leaves_its_reply_destinations_to_the_fence() {
+        let predecessor = NodeId::new("127.0.0.1:1".parse().expect("valid address"));
+        let (responder, responder_dials, _responder_joins) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.2:1".parse().expect("valid address")),
+        );
+        let (asker, asker_dials, _asker_joins) =
+            EndpointInner::for_tests(EndpointConfig::new(predecessor.addr()));
+
+        let (reply_dropped_asker, nonce) = dead_lettered_reply(
+            responder,
+            &responder_dials,
+            asker,
+            &asker_dials,
+            predecessor,
+        );
+        on_reply_dropped(responder, asker.node(), reply_dropped_asker, nonce);
+        assert_eq!(responder.pending_replies().len(), 1);
+
+        responder.pending_replies().fail_fenced(predecessor);
+        assert_eq!(responder.pending_replies().len(), 0);
     }
 
     #[test]
@@ -1754,6 +1782,56 @@ mod tests {
             })
         );
         assert!(lane.control_rx.is_empty());
+    }
+
+    fn dead_lettered_reply(
+        responder: &'static EndpointInner,
+        responder_dials: &flume::Receiver<DialRequest>,
+        asker: &'static EndpointInner,
+        asker_dials: &flume::Receiver<DialRequest>,
+        origin: NodeId,
+    ) -> (NodeId, Nonce) {
+        let proxy =
+            remote_proxy::<ReplyTo<u64>>(responder.pending_replies(), origin, Nonce::first(), None);
+        endpoint::with_current(responder, || proxy.reply(ReplyTo::new(|_| ())));
+        let lane = responder_dials
+            .try_recv()
+            .expect("the asker's address is dialed");
+        let Ok(Frame::Reply {
+            asker: reply_asker,
+            nonce,
+            reply_tags,
+            schema_version,
+            payload,
+            ..
+        }) = lane.control_rx.try_recv()
+        else {
+            panic!("not a reply frame");
+        };
+        let [embedded] = reply_tags[..] else {
+            panic!("not one reply tag: {reply_tags:?}");
+        };
+
+        on_reply(
+            asker,
+            responder.node(),
+            reply_asker,
+            nonce,
+            &reply_tags,
+            schema_version,
+            &payload,
+        );
+        let lane = asker_dials.try_recv().expect("the responder is dialed");
+        let Ok(Frame::ReplyDropped {
+            asker: reply_dropped_asker,
+            nonce,
+            ..
+        }) = lane.control_rx.try_recv()
+        else {
+            panic!("not a reply-dropped frame");
+        };
+        assert_eq!(nonce, embedded.nonce);
+        (reply_dropped_asker, nonce)
     }
 
     fn deliver_nothing(

@@ -723,15 +723,19 @@ way.
   with `ReplyDropped` for each of them, and such an ask resolves as `NoReply` rather than by its
   timeout. A reply the asker's node dead-letters is answered the same way, whether it arrives after
   its ask ended, names another incarnation or fails to decode. A reply destination carried in a
-  reply is hence released at the responder rather than kept until the responding actor terminates.
-  A request this node itself drops, one whose framed size exceeds `max_frame_size` or one lost with
-  its connection, releases the same destinations locally, since such a frame never reaches its peer
-  as a whole. Only the peer a request was sent to settles it. A pending entry is stamped with that
-  peer before its frame is queued. A `Reply` frame naming a nonce stamped with anybody else is
-  dropped as a dead letter, and a `ReplyDropped` frame naming one is ignored. Nonces are unique to
-  one process only, since every process counts from zero. So both frames also name the incarnation
-  which asked. One naming another incarnation of this node, such as its predecessor at the same
-  address, is dropped or ignored the same way and settles nothing here.
+  reply for the asker's current incarnation is hence released at the responder by that
+  `ReplyDropped`, rather than kept until the responding actor terminates. One carried in a reply for
+  a predecessor at the asker's address is not released by the frame. The responder stamped its entry
+  with the predecessor, while the `ReplyDropped` comes from the current incarnation, so the
+  responder ignores it, as described below. The responder releases that entry once it fences the
+  predecessor as Left or Down. A request or reply this node itself drops, one whose framed size
+  exceeds `max_frame_size` or one lost with its connection, releases the same destinations locally,
+  since such a frame never reaches its peer as a whole. Only the peer a request was sent to settles
+  it. A pending entry is stamped with that peer before its frame is queued. A `Reply` frame naming a
+  nonce stamped with anybody else is dropped as a dead letter, and a `ReplyDropped` frame naming one
+  is ignored. Nonces are unique to one process only, since every process counts from zero. So both
+  frames also name the incarnation which asked. One naming another incarnation of this node, such as
+  its predecessor at the same address, is dropped or ignored the same way and settles nothing here.
 
   An ask which ends without its reply, by its timeout or by its future being dropped, releases its
   own reply destination, the one no actor awaits. So an ask which nothing answers costs its entry

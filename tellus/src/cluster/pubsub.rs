@@ -171,7 +171,7 @@ where
 
 /// Encodes once per destination node, since the shape may differ per peer, and decides per
 /// encoding: serializing a [ReplyTo](crate::ReplyTo) moves its destination away and mints reply
-/// tags, which only a message frame carries.
+/// tags, which a multicast frame cannot carry.
 fn multicast<M>(endpoint: &EndpointInner, subscribers: &[(NodeId, ActorRef<M>)], message: M)
 where
     M: Clone + Schema + Send + 'static,
