@@ -1182,9 +1182,9 @@ impl Schema for Job {
         if schema_version == Self::VERSION {
             return codec.decode(payload);
         }
-        Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
-            schema_version,
-        )))
+        Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+            Self,
+        >(schema_version)))
     }
 }
 
@@ -1258,9 +1258,9 @@ impl Schema for Total {
         if schema_version == Self::VERSION {
             return codec.decode(payload);
         }
-        Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
-            schema_version,
-        )))
+        Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+            Self,
+        >(schema_version)))
     }
 }
 
@@ -5605,7 +5605,7 @@ fn parse_addrs(addrs: &str) -> anyhow::Result<Vec<SocketAddr>> {
 /// long after its nodes exited.
 async fn bootstrap_cluster(seeds: Vec<SocketAddr>) -> anyhow::Result<()> {
     let config = BootstrapConfig {
-        min_peers: NonZeroUsize::new(seeds.len()).expect("the seed list is not empty"),
+        min_nodes: NonZeroUsize::new(seeds.len()).expect("the seed list is not empty"),
         settle: Duration::from_millis(500),
         resolve_interval: Duration::from_millis(100),
         probe_interval: None,

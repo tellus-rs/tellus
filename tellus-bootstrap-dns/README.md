@@ -101,7 +101,7 @@ Two of the service's settings must be exactly as shown:
   node could ever settle: bootstrap would be waiting for itself.
 - `ipFamilyPolicy: SingleStack` with `ipFamilies: [ IPv4 ]`, because a dual stack service answers
   both A and AAAA for every pod. Bootstrap counts addresses, so each node would count twice toward
-  `min_peers` and toward the formation provider's majority, and only one of the two addresses is the
+  `min_nodes` and toward the formation provider's majority, and only one of the two addresses is the
   one the node advertises; a peer dialed at any other address is refused.
 
 The address a node advertises comes from the downward API, paired with the same port:
@@ -122,7 +122,7 @@ address with an IPv6 host parses. The variable name is the one
 [configured](https://github.com/hseeberger/configured) reads for `EndpointConfig::advertised_addr`;
 another loader wants its own.
 
-Size `bootstrap.min_peers` to the replica count for a fixed size cluster and lower for an elastic
+Size `bootstrap.min_nodes` to the replica count for a fixed size cluster and lower for an elastic
 one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what
 each choice costs. Whether the pods come from a StatefulSet or a Deployment makes no difference to
 discovery.

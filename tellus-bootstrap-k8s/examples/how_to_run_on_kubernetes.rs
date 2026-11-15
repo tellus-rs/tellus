@@ -88,7 +88,7 @@ async fn main() -> anyhow::Result<()> {
     .await
     .context("Kubernetes seed discovery")?;
     let bootstrap_config = BootstrapConfig {
-        min_peers: REPLICAS,
+        min_nodes: REPLICAS,
         ..BootstrapConfig::new()
     };
     timeout(

@@ -1,8 +1,8 @@
 //! Deciding whether this node forms a new cluster when a [bootstrap](fn@crate::cluster::bootstrap)
 //! round found none. [FormationProvider] is what
-//! [BootstrapConfig::formation](crate::cluster::BootstrapConfig::formation) takes, and the default
-//! is [Majority]. Its majority rule stops a downed minority from re-forming inside a partition,
-//! and its lowest-address rule makes the forming node unique.
+//! [BootstrapConfig::formation_provider](crate::cluster::BootstrapConfig::formation_provider)
+//! takes, and the default is [Majority]. Its majority rule stops a downed minority from re-forming
+//! inside a partition, and its lowest-address rule makes the forming node unique.
 
 use std::{
     borrow::Cow,
@@ -18,7 +18,7 @@ pub type FormationProviderFactory = Arc<dyn Fn() -> Box<dyn FormationProvider> +
 
 /// Decides whether this node forms a new cluster, asked by
 /// [bootstrap](fn@crate::cluster::bootstrap) once a round of join attempts over a settled universe
-/// of at least [min_peers](crate::cluster::BootstrapConfig::min_peers) addresses has been admitted
+/// of at least [min_nodes](crate::cluster::BootstrapConfig::min_nodes) addresses has been admitted
 /// nowhere; the default is [Majority].
 ///
 /// A started endpoint is not a cluster, so forming one is a decision, and the wrong one splits
@@ -34,15 +34,15 @@ where
     /// view which has not settled or one a cluster answered by holding back joins. On a round
     /// which is a formation decision, it is called before [form](FormationProvider::form). Does
     /// nothing by default.
-    fn observe(&mut self, _: &Formation) {}
+    fn observe(&mut self, _: &FormationView) {}
 
     /// Whether this node forms a cluster now, and if not, why not. Bootstrap calls this only on a
     /// round over a settled universe of at least
-    /// [min_peers](crate::cluster::BootstrapConfig::min_peers) addresses which no seed admitted,
+    /// [min_nodes](crate::cluster::BootstrapConfig::min_nodes) addresses which no seed admitted,
     /// after [observe](FormationProvider::observe) for the same round. Bootstrap logs a decline
     /// at warn level when it or the universe differs from the previous decline, at debug level
     /// otherwise.
-    fn form(&mut self, formation: &Formation) -> Decision;
+    fn form(&mut self, formation: &FormationView) -> Decision;
 }
 
 /// The answer of a [FormationProvider].
@@ -118,7 +118,7 @@ impl Display for Declined {
 
 /// What one round of join attempts saw, next to the addresses it was taken over.
 #[derive(Debug, Clone)]
-pub struct Formation {
+pub struct FormationView {
     /// Every address discovery resolved, this node's own included: the denominator of any
     /// counting rule and the set the lowest address is taken from. Deciding on the universe
     /// rather than on who answered is what keeps a partitioned node from forming.
@@ -137,7 +137,7 @@ pub struct Formation {
     pub now: Instant,
 }
 
-impl Formation {
+impl FormationView {
     /// Whether this node holds the lowest address of the universe.
     pub fn is_lowest(&self) -> bool {
         self.universe.first() == Some(&self.self_addr)
@@ -201,7 +201,7 @@ pub enum JoinOutcome {
 pub struct Majority;
 
 impl FormationProvider for Majority {
-    fn form(&mut self, formation: &Formation) -> Decision {
+    fn form(&mut self, formation: &FormationView) -> Decision {
         if let Some(declined) = formation.lowest_decline() {
             return Decision::Decline(declined);
         }
@@ -260,7 +260,7 @@ impl MajorityWithFallback {
 }
 
 impl FormationProvider for MajorityWithFallback {
-    fn observe(&mut self, formation: &Formation) {
+    fn observe(&mut self, formation: &FormationView) {
         let unavailable = formation
             .outcomes
             .iter()
@@ -276,7 +276,7 @@ impl FormationProvider for MajorityWithFallback {
         }
     }
 
-    fn form(&mut self, formation: &Formation) -> Decision {
+    fn form(&mut self, formation: &FormationView) -> Decision {
         let lowest =
             formation.universe.iter().copied().find(|addr| {
                 *addr == formation.self_addr || !self.passed_over(*addr, formation.now)
@@ -301,7 +301,7 @@ impl FormationProvider for MajorityWithFallback {
 pub struct Unanimous;
 
 impl FormationProvider for Unanimous {
-    fn form(&mut self, formation: &Formation) -> Decision {
+    fn form(&mut self, formation: &FormationView) -> Decision {
         if let Some(declined) = formation.lowest_decline() {
             return Decision::Decline(declined);
         }
@@ -319,7 +319,7 @@ impl FormationProvider for Unanimous {
 pub struct Explicit;
 
 impl FormationProvider for Explicit {
-    fn form(&mut self, _: &Formation) -> Decision {
+    fn form(&mut self, _: &FormationView) -> Decision {
         Decision::Decline(Declined::Explicit)
     }
 }
@@ -357,7 +357,7 @@ mod tests {
     #[cfg(feature = "serde")]
     use crate::cluster::formation::FormationProviderConfig;
     use crate::cluster::formation::{
-        Decision, Declined, Explicit, Formation, FormationProvider, JoinOutcome, Majority,
+        Decision, Declined, Explicit, FormationProvider, FormationView, JoinOutcome, Majority,
         MajorityWithFallback, Unanimous,
     };
     use std::{
@@ -372,7 +372,7 @@ mod tests {
         format!("127.0.0.1:{port}").parse().expect("valid address")
     }
 
-    fn formation(self_port: u16, ports: &[u16], outcomes: &[(u16, JoinOutcome)]) -> Formation {
+    fn formation(self_port: u16, ports: &[u16], outcomes: &[(u16, JoinOutcome)]) -> FormationView {
         formation_at(self_port, ports, outcomes, Instant::now())
     }
 
@@ -381,14 +381,14 @@ mod tests {
         ports: &[u16],
         outcomes: &[(u16, JoinOutcome)],
         now: Instant,
-    ) -> Formation {
+    ) -> FormationView {
         let mut universe = ports
             .iter()
             .map(|port| addr(*port))
             .collect::<BTreeSet<_>>();
         universe.insert(addr(self_port));
 
-        Formation {
+        FormationView {
             universe,
             self_addr: addr(self_port),
             outcomes: outcomes
@@ -399,7 +399,10 @@ mod tests {
         }
     }
 
-    fn observed_decision(provider: &mut dyn FormationProvider, formation: &Formation) -> Decision {
+    fn observed_decision(
+        provider: &mut dyn FormationProvider,
+        formation: &FormationView,
+    ) -> Decision {
         provider.observe(formation);
         provider.form(formation)
     }

@@ -23,7 +23,7 @@ A Deployment gives random pod names and no per-pod DNS, so all three would have 
 through the API on every use. `tellus-0.tellus` through `tellus-4.tellus` cost one field.
 
 `podManagementPolicy: Parallel` is deliberate: the default starts pods one at a time, and with
-`min_peers` at five every node waits for the last one anyway, so ordering would only delay
+`min_nodes` at five every node waits for the last one anyway, so ordering would only delay
 formation and hide the simultaneous start bootstrap is meant to survive.
 
 ## Why no Caddy

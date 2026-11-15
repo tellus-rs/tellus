@@ -36,7 +36,7 @@ impl Codec {
         T: Serialize + ?Sized,
     {
         match self {
-            Self::Postcard => postcard::to_stdvec(message).map_err(CodecError::encoding),
+            Self::Postcard => postcard::to_stdvec(message).map_err(CodecError::make_encoding),
         }
     }
 
@@ -51,11 +51,11 @@ impl Codec {
         match self {
             Self::Postcard => {
                 let (message, rest) =
-                    postcard::take_from_bytes(payload).map_err(CodecError::decoding)?;
+                    postcard::take_from_bytes(payload).map_err(CodecError::make_decoding)?;
                 if rest.is_empty() {
                     Ok(message)
                 } else {
-                    Err(CodecError::decoding("trailing payload bytes"))
+                    Err(CodecError::make_decoding("trailing payload bytes"))
                 }
             }
         }
@@ -76,7 +76,7 @@ pub enum CodecError {
 
 impl CodecError {
     /// Wrap any error as an encoding failure.
-    pub fn encoding<E>(error: E) -> Self
+    pub fn make_encoding<E>(error: E) -> Self
     where
         E: Into<Box<dyn Error + Send + Sync>>,
     {
@@ -84,7 +84,7 @@ impl CodecError {
     }
 
     /// Wrap any error as a decoding failure.
-    pub fn decoding<E>(error: E) -> Self
+    pub fn make_decoding<E>(error: E) -> Self
     where
         E: Into<Box<dyn Error + Send + Sync>>,
     {

@@ -264,7 +264,7 @@ fn send_multicast<M>(
         Ok(targets) => targets.max(1),
 
         Err(error) => {
-            let error = RemoteSendError::Codec(CodecError::encoding(error));
+            let error = RemoteSendError::Codec(CodecError::make_encoding(error));
             for subscriber in subscribers {
                 subscriber.dead_letter(&error);
             }

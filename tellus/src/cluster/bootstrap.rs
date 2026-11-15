@@ -4,7 +4,8 @@ use crate::{
     cluster::{
         endpoint::{self, EndpointInner, FormError},
         formation::{
-            Decision, Declined, Formation, FormationProvider, FormationProviderFactory, Majority,
+            Decision, Declined, FormationProvider, FormationProviderFactory, FormationView,
+            Majority,
         },
         membership::{JoinRound, join_round},
     },
@@ -87,8 +88,8 @@ pub struct BootstrapConfig {
     /// views with different lowest addresses can form separate clusters, see [bootstrap]; a
     /// higher minimum shrinks that window.
     ///
-    /// Defaults to [BootstrapConfig::DEFAULT_MIN_PEERS].
-    pub min_peers: NonZeroUsize,
+    /// Defaults to [BootstrapConfig::DEFAULT_MIN_NODES].
+    pub min_nodes: NonZeroUsize,
 
     /// How long the resolved address set must stay unchanged before the formation decision is
     /// taken; joins are attempted on every resolution regardless. A new set is never settled, so
@@ -103,7 +104,7 @@ pub struct BootstrapConfig {
     /// Creates the [FormationProvider] deciding whether this node forms a new cluster when no
     /// discovered address is a member of one; the default is [Majority].
     #[debug(skip)]
-    pub formation: FormationProviderFactory,
+    pub formation_provider: FormationProviderFactory,
 
     /// The interval at which, once this node is a member, the discovery is resolved again and
     /// every resolved address which is neither this node nor an Up member is probed for the
@@ -115,8 +116,8 @@ pub struct BootstrapConfig {
 }
 
 impl BootstrapConfig {
-    /// The `min_peers` of [BootstrapConfig::new].
-    pub const DEFAULT_MIN_PEERS: NonZeroUsize = NonZeroUsize::new(2).expect("2 is not zero");
+    /// The `min_nodes` of [BootstrapConfig::new].
+    pub const DEFAULT_MIN_NODES: NonZeroUsize = NonZeroUsize::new(2).expect("2 is not zero");
 
     /// The `settle` of [BootstrapConfig::new].
     pub const DEFAULT_SETTLE: Duration = Duration::from_secs(3);
@@ -131,10 +132,10 @@ impl BootstrapConfig {
     /// [Majority].
     pub fn new() -> Self {
         Self {
-            min_peers: Self::DEFAULT_MIN_PEERS,
+            min_nodes: Self::DEFAULT_MIN_NODES,
             settle: Self::DEFAULT_SETTLE,
             resolve_interval: Self::DEFAULT_RESOLVE_INTERVAL,
-            formation: Arc::new(|| Box::new(Majority)),
+            formation_provider: Arc::new(|| Box::new(Majority)),
             probe_interval: Some(Self::DEFAULT_PROBE_INTERVAL),
         }
     }
@@ -163,7 +164,7 @@ pub enum InvalidBootstrapConfig {
 #[serde(deny_unknown_fields)]
 struct UncheckedBootstrapConfig {
     #[serde(default)]
-    min_peers: Option<NonZeroUsize>,
+    min_nodes: Option<NonZeroUsize>,
 
     #[serde(default, with = "humantime_serde")]
     settle: Option<Duration>,
@@ -172,7 +173,7 @@ struct UncheckedBootstrapConfig {
     resolve_interval: Option<Duration>,
 
     #[serde(default)]
-    formation: Option<FormationProviderConfig>,
+    formation_provider: Option<FormationProviderConfig>,
 
     #[serde(default, deserialize_with = "deserialize_probe_interval")]
     probe_interval: Option<Option<Duration>>,
@@ -186,14 +187,15 @@ impl TryFrom<UncheckedBootstrapConfig> for BootstrapConfig {
         let defaults = Self::new();
 
         let config = Self {
-            min_peers: unchecked.min_peers.unwrap_or(defaults.min_peers),
+            min_nodes: unchecked.min_nodes.unwrap_or(defaults.min_nodes),
             settle: unchecked.settle.unwrap_or(defaults.settle),
             resolve_interval: unchecked
                 .resolve_interval
                 .unwrap_or(defaults.resolve_interval),
-            formation: unchecked
-                .formation
-                .map_or(defaults.formation, FormationProviderConfig::factory),
+            formation_provider: unchecked.formation_provider.map_or(
+                defaults.formation_provider,
+                FormationProviderConfig::factory,
+            ),
             probe_interval: unchecked.probe_interval.unwrap_or(defaults.probe_interval),
         };
         validate(&config)?;
@@ -225,11 +227,11 @@ pub enum BootstrapError {
 /// through every resolved address but this node's own on every resolution. A started endpoint is
 /// no cluster and refuses joins, so nodes starting together admit each other nowhere. Only the
 /// formation decision waits for the view to settle: the resolved set, this node's own address
-/// included, must have held at least [min_peers](BootstrapConfig::min_peers) addresses unchanged
+/// included, must have held at least [min_nodes](BootstrapConfig::min_nodes) addresses unchanged
 /// for [settle](BootstrapConfig::settle). When no address of a settled view is a member of a
 /// cluster, the [FormationProvider] decides whether this node forms one. By default it forms at
 /// the lowest address of the universe once a majority of it is known to be no cluster. Requiring a
-/// majority keeps a partitioned node from coming back as a cluster of its own. With `min_peers` of
+/// majority keeps a partitioned node from coming back as a cluster of its own. With `min_nodes` of
 /// one, a resolved set holding nothing but this node's own address forms a cluster of one under
 /// [Majority]. A provider's decline is logged at warn level when it or the universe differs from
 /// the previous decline, at debug level otherwise. A formation the endpoint refuses since a join
@@ -242,12 +244,12 @@ pub enum BootstrapError {
 /// it belongs to, until this node is downed. [BootstrapError::Downed] means the caller should
 /// exit so a restart mints the fresh incarnation. A resolve failure is logged and retried, like a
 /// seed which is not a member yet, and restarts the settle window, since nothing was observed
-/// during it. A settled view holding fewer than `min_peers` addresses is logged at warn level on
+/// during it. A settled view holding fewer than `min_nodes` addresses is logged at warn level on
 /// every resolution, since it blocks the formation decision and would otherwise be silent. There
 /// is no internal timeout, so wrap the call in [timeout](tokio::time::timeout) to bound
 /// bootstrap. Nodes deciding on discovery views with different lowest addresses can still form
-/// separate clusters, which never merge on their own; the settle window and the `min_peers` floor
-/// are the guard, so size `min_peers` to the deployment when possible.
+/// separate clusters, which never merge on their own; the settle window and the `min_nodes` floor
+/// are the guard, so size `min_nodes` to the deployment when possible.
 ///
 /// # Errors
 /// Fails if the configuration is invalid, if the endpoint is not started, or if this node has
@@ -302,7 +304,7 @@ where
 {
     let self_addr = endpoint.node().addr();
     let mut settle = Settle::new(config.settle);
-    let mut formation = (config.formation)();
+    let mut formation_provider = (config.formation_provider)();
     let mut declines = Declines::default();
     loop {
         if endpoint.downed() {
@@ -317,16 +319,16 @@ where
             Ok(resolved) => {
                 let universe = universe(resolved, self_addr);
                 let settled = settle.settled(&universe, now());
-                let enough_peers = universe.len() >= config.min_peers.get();
+                let enough_nodes = universe.len() >= config.min_nodes.get();
 
-                if settled && !enough_peers {
+                if settled && !enough_nodes {
                     warn!(
                         universe = universe.len(),
-                        min_peers = config.min_peers.get(),
+                        min_nodes = config.min_nodes.get(),
                         "waiting for discovery to resolve more addresses"
                     );
                 }
-                let decides = settled && enough_peers;
+                let decides = settled && enough_nodes;
                 if decides {
                     release_gone(endpoint, &universe);
                 }
@@ -338,11 +340,17 @@ where
 
                     Step::Downed => return Err(BootstrapError::Downed),
 
-                    Step::Observe(observed) => formation.observe(&observed),
+                    Step::Observe(observed) => formation_provider.observe(&observed),
 
                     Step::Decide(decision) => {
-                        formation.observe(&decision);
-                        if decides && decide(endpoint, formation.as_mut(), decision, &mut declines)?
+                        formation_provider.observe(&decision);
+                        if decides
+                            && decide(
+                                endpoint,
+                                formation_provider.as_mut(),
+                                decision,
+                                &mut declines,
+                            )?
                         {
                             return Ok(());
                         }
@@ -415,8 +423,8 @@ fn release_gone(endpoint: &'static EndpointInner, universe: &BTreeSet<SocketAddr
 enum Step {
     Joined,
     Downed,
-    Observe(Formation),
-    Decide(Formation),
+    Observe(FormationView),
+    Decide(FormationView),
 }
 
 fn step(
@@ -425,7 +433,7 @@ fn step(
     self_addr: SocketAddr,
     now: Instant,
 ) -> Step {
-    let formation = |outcomes| Formation {
+    let formation = |outcomes| FormationView {
         universe,
         self_addr,
         outcomes,
@@ -464,7 +472,7 @@ fn step(
 fn decide(
     endpoint: &'static EndpointInner,
     provider: &mut dyn FormationProvider,
-    formation: Formation,
+    formation: FormationView,
     declines: &mut Declines,
 ) -> Result<bool, BootstrapError> {
     let declined = match provider.form(&formation) {
@@ -584,7 +592,7 @@ mod tests {
     #[cfg(feature = "serde")]
     use crate::cluster::{
         bootstrap::SeedDiscovery,
-        formation::{Decision, Formation},
+        formation::{Decision, FormationView},
     };
     use crate::cluster::{
         bootstrap::{
@@ -614,7 +622,7 @@ mod tests {
     const RESOLVE_INTERVAL: Duration = Duration::from_secs(1);
 
     /// A discovery omitting this node's own address still yields the full universe, so a
-    /// `min_peers` sized to the deployment is met either way.
+    /// `min_nodes` sized to the deployment is met either way.
     #[test]
     fn the_universe_adds_this_node_whether_or_not_discovery_resolved_it() {
         let one = addr(1);
@@ -815,7 +823,7 @@ mod tests {
         let start = tokio_time::Instant::now();
         let mut config = config();
         config.settle = Duration::ZERO;
-        config.formation = Arc::new(|| Box::new(MajorityWithFallback::new(AFTER)));
+        config.formation_provider = Arc::new(|| Box::new(MajorityWithFallback::new(AFTER)));
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3)], config);
 
         let mut unavailable_again = None;
@@ -1034,34 +1042,34 @@ mod tests {
     fn a_config_deserializes_from_its_documented_form() {
         let config = serde_json::from_str::<BootstrapConfig>(
             r#"{
-                "min_peers": 5,
+                "min_nodes": 5,
                 "settle": "500ms",
                 "resolve_interval": "100ms",
-                "formation": "explicit",
+                "formation_provider": "explicit",
                 "probe_interval": "10s"
             }"#,
         )
         .expect("the documented config form deserializes");
 
-        assert_eq!(config.min_peers.get(), 5);
+        assert_eq!(config.min_nodes.get(), 5);
         assert_eq!(config.settle, Duration::from_millis(500));
         assert_eq!(config.resolve_interval, Duration::from_millis(100));
         assert_eq!(config.probe_interval, Some(Duration::from_secs(10)));
 
-        let alone = Formation {
+        let alone = FormationView {
             universe: BTreeSet::from([addr(1)]),
             self_addr: addr(1),
             outcomes: vec![(addr(2), JoinOutcome::NoCluster)],
             now: Instant::now(),
         };
         assert_eq!(
-            (config.formation)().form(&alone),
+            (config.formation_provider)().form(&alone),
             Decision::Decline(Declined::Explicit),
             "the explicit provider never forms"
         );
 
         let defaults = serde_json::from_str::<BootstrapConfig>("{}").expect("every field defaults");
-        assert_eq!(defaults.min_peers, BootstrapConfig::DEFAULT_MIN_PEERS);
+        assert_eq!(defaults.min_nodes, BootstrapConfig::DEFAULT_MIN_NODES);
         assert_eq!(defaults.settle, BootstrapConfig::DEFAULT_SETTLE);
         assert_eq!(
             defaults.resolve_interval,
@@ -1072,7 +1080,7 @@ mod tests {
             Some(BootstrapConfig::DEFAULT_PROBE_INTERVAL)
         );
         assert_eq!(
-            (defaults.formation)().form(&alone),
+            (defaults.formation_provider)().form(&alone),
             Decision::Form,
             "the default majority provider forms at the lowest address of the universe"
         );

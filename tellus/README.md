@@ -305,9 +305,9 @@ endpoint:
     max: 3s
 
 bootstrap:
-  min_peers: 5
+  min_nodes: 5
   settle: 3s
-  formation: majority
+  formation_provider: majority
   probe_interval: 30s
 
 transport:

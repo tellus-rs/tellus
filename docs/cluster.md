@@ -59,7 +59,7 @@ e.g. from YAML. A key left out takes its default, an unknown key is refused, and
 written like `250ms`, `10s` or `5m`. The codec is chosen by its name, as in `codec: postcard`. The
 failure detector, the downing provider and the formation provider are each chosen by the name of
 one of their provided implementations. An implementation without keys is given by its bare name,
-as in `formation: majority`. One with keys maps its name to them, as in
+as in `formation_provider: majority`. One with keys maps its name to them, as in
 `downing_provider: { keep_majority: { after: 10s } }`, where `{}` takes every default, as in
 `failure_detector: { phi_accrual: {} }`. The `deadline` detector maps its name to the deadline
 itself, as in `failure_detector: { deadline: 3s }`. A custom implementation is still assigned in
@@ -112,11 +112,11 @@ after a burst of traffic, see [Failure detection](#failure-detection-and-node-de
 
 | Key | Default | Constraint |
 | --- | --- | --- |
-| `min_peers` | 2 | not 0 |
+| `min_nodes` | 2 | not 0 |
 | `settle` | 3s | 0 decides on the second resolution seeing the same addresses |
 | `resolve_interval` | 1s | not 0 |
-| `formation` | `majority` | `majority`, `majority_with_fallback`, `unanimous` or `explicit` |
-| `formation.majority_with_fallback.after` | none | 0 passes over on the first unavailable round |
+| `formation_provider` | `majority` | `majority`, `majority_with_fallback`, `unanimous` or `explicit` |
+| `formation_provider.majority_with_fallback.after` | none | 0 passes over on the first unavailable round |
 | `probe_interval` | 30s | not 0; `null` turns the probe off |
 
 `QuicConfig`:
@@ -239,13 +239,13 @@ lowest address of the universe. The lowest-address condition ensures that only o
 shared universe. The majority stops a partitioned minority from re-forming. Both conditions are on
 the universe rather than on who answered, so a node which cannot reach the lowest address forms
 nothing. Formation liveness is hence a requirement on discovery, which must stop resolving nodes
-that are gone. A reduced view must still satisfy `min_peers` for the next-lowest address to inherit
+that are gone. A reduced view must still satisfy `min_nodes` for the next-lowest address to inherit
 the role. `Unanimous` forms only once every address of the universe is known to be no cluster, again
 at the lowest, so any one unreachable address blocks a cold start. `Explicit` never forms: the
 deployment calls `cluster::form` on one node, and bootstrap only ever joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
-gone (`formation: { majority_with_fallback: { after: 60s } }`). It keeps the strict majority. The
+gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict majority. The
 address which may form, though, is the lowest of the universe minus every address which has answered
 nothing but unavailable for at least `after`. An address's timer starts with the first round it is
 unavailable in; any other answer, and any round which did not attempt it, resets the timer. The
@@ -263,12 +263,12 @@ the [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s) crate. The *universe* is t
 united with this node's own address. Bootstrap resolves every `resolve_interval` and attempts to
 join through every resolved address but this node's own, lowest first, on every resolution, so a
 node finds an existing cluster at once. Only the formation decision waits for the view to settle. It
-is taken on a round over a universe which has held at least `min_peers` addresses unchanged for the
+is taken on a round over a universe which has held at least `min_nodes` addresses unchanged for the
 settle window (`settle`), and only when none of them admitted this node. A settled view holding
-fewer than `min_peers` addresses blocks that decision, so it is logged at warn level on every
+fewer than `min_nodes` addresses blocks that decision, so it is logged at warn level on every
 resolution. A round held back by a seed (`JoinsHeld`) is only observed and never asked to `form`.
 Bootstrap returns as soon as this node is a member, its own formation included, and at once when it
-already is. Membership owns failure detection and downing from then on. `min_peers` counts the
+already is. Membership owns failure detection and downing from then on. `min_nodes` counts the
 universe while the formation provider counts what its addresses answered. That distinction keeps a
 restarted node from re-forming inside a partition: discovery is unaffected by a partition,
 reachability is not. Resolve failures are retried and restart the settle window, since nothing was
@@ -276,8 +276,8 @@ observed during them. There is no internal timeout, so the call is bounded by th
 `Downed` is fatal per process and means the caller should exit, letting the restart mint the fresh
 incarnation. What does this not prevent? Nodes deciding on views with *different lowest addresses*
 can still form separate clusters, which never merge on their own, since the formation rule is only
-as good as the universe it is taken over. The settle window and the `min_peers` floor make that less
-likely, so size `min_peers` to the deployment when possible (see Limitations).
+as good as the universe it is taken over. The settle window and the `min_nodes` floor make that less
+likely, so size `min_nodes` to the deployment when possible (see Limitations).
 
 *Foreign cluster probe*: once bootstrap has made this node a member, it spawns a task which keeps
 the discovery and resolves it again every `probe_interval` (see [Configuration](#configuration);
@@ -1246,7 +1246,7 @@ swap is added.
 - **Bootstrap decides from what discovery shows.** Under `Majority`, two nodes form separate
   clusters only when their views have different lowest addresses, e.g. when discovery shows each of
   them a different subset of the deployment. Take a deployment of N nodes whose discovery resolves
-  no other address. With `min_peers > N/2`, every two settled views share an address. That rules out
+  no other address. With `min_nodes > N/2`, every two settled views share an address. That rules out
   disjoint views, but not overlapping ones whose lowest addresses differ. A view missing an address
   throughout the settle window is what the majority is computed against. Formation fails closed,
   which costs liveness: while the lowest address of the universe does not answer, nothing forms. A

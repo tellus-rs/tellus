@@ -76,9 +76,9 @@ where
         if schema_version == Self::VERSION {
             codec.decode(payload)
         } else {
-            Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
-                schema_version,
-            )))
+            Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+                Self,
+            >(schema_version)))
         }
     }
 }
@@ -265,7 +265,7 @@ mod tests {
             if schema_version == Self::VERSION {
                 return codec.decode(payload);
             }
-            Err(CodecError::decoding(
+            Err(CodecError::make_decoding(
                 super::UnsupportedSchemaVersion::new::<Self>(schema_version),
             ))
         }
@@ -362,11 +362,12 @@ mod tests {
     /// caller chooses.
     #[test]
     fn a_panic_is_answered_as_the_given_failure() {
-        let error =
-            catch_panic_and_log::<Notes, Notes, _>("decode panicked", CodecError::decoding, || {
-                panic!("a bug in a decode")
-            })
-            .expect_err("a panic is a failure");
+        let error = catch_panic_and_log::<Notes, Notes, _>(
+            "decode panicked",
+            CodecError::make_decoding,
+            || panic!("a bug in a decode"),
+        )
+        .expect_err("a panic is a failure");
         assert!(matches!(error, CodecError::Decode(_)));
         assert_eq!(
             error.source().expect("the failure").to_string(),
@@ -375,7 +376,7 @@ mod tests {
 
         let error = catch_panic_and_log::<Notes, (SchemaVersion, Vec<u8>), _>(
             "encode panicked",
-            CodecError::encoding,
+            CodecError::make_encoding,
             || panic!("a bug in an encode"),
         )
         .expect_err("a panic is a failure");
@@ -392,13 +393,13 @@ mod tests {
         let payload = Codec::Postcard.encode(&7_u64).expect("encodes");
 
         let decoded =
-            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::decoding, || {
+            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::make_decoding, || {
                 u64::decode(CODEC, SchemaVersion::new(0), &payload)
             });
         assert_eq!(decoded.expect("decodes"), 7);
 
         let error =
-            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::decoding, || {
+            catch_panic_and_log::<u64, _, _>("decode panicked", CodecError::make_decoding, || {
                 u64::decode(CODEC, SchemaVersion::new(1), &payload)
             })
             .expect_err("version 1 is not decodable");

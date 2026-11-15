@@ -182,7 +182,7 @@ which was never told how to find the others.
 
 The relevant settings are:
 
-- `bootstrap.min_peers` (5): how many addresses, the resolved ones plus the node's own, must
+- `bootstrap.min_nodes` (5): how many addresses, the resolved ones plus the node's own, must
   stay unchanged for the settle window before a node may form a new cluster. Joins do not wait
   for it: on every resolution, a node joins through the resolved addresses, so a restarting node
   rejoins as soon as discovery resolves one member. Sizing it to the deployment keeps five

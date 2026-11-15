@@ -10,7 +10,7 @@
 //!
 //! A pod contributes exactly one address, the primary one Kubernetes reports as `status.podIP`
 //! and repeats as the first entry of `status.podIPs`. Bootstrap counts addresses, so a dual stack
-//! pod counted twice would inflate both `min_peers` and the majority a
+//! pod counted twice would inflate both `min_nodes` and the majority a
 //! [FormationProvider](tellus::cluster::formation::FormationProvider) counts. And only the primary
 //! address is the one a node advertises, hence the one it is admitted at. Terminating and finished
 //! pods are left out, since they would inflate that count as well. A pod which is merely still
