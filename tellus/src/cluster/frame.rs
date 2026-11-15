@@ -750,6 +750,43 @@ mod tests {
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
 
         let bytes = [
+            1, // Frame::Message
+            16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // target
+            2,  // two reply tags
+            7,  // reply tag nonce
+            1,  // reply tag recipient: Some
+            16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+            31, // reply tag recipient
+            128, 2, // reply tag nonce
+            0, // reply tag recipient: None
+            2, // schema version
+            3, 1, 2, 3, // payload
+        ];
+
+        let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+        let Frame::Message {
+            target, reply_tags, ..
+        } = &frame
+        else {
+            panic!("not a message frame");
+        };
+        assert_eq!(target.to_string(), TARGET);
+        let [first, second] = reply_tags.as_slice() else {
+            panic!("not two reply tags");
+        };
+        assert_eq!(first.nonce.as_u64(), 7);
+        assert_eq!(
+            first
+                .recipient
+                .expect("the first reply tag names a recipient")
+                .to_string(),
+            RECIPIENT
+        );
+        assert_eq!(second.nonce.as_u64(), 256);
+        assert_eq!(second.recipient, None);
+        assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
+
+        let bytes = [
             4, // Frame::Terminated
             16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // target
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // watcher
@@ -850,6 +887,91 @@ mod tests {
         );
         assert_eq!(*schema_version, SchemaVersion::new(0));
         assert_eq!(payload.as_ref(), &[4, 5][..]);
+        assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
+
+        let mut bytes = vec![6]; // Frame::ReplyDropped
+        bytes.extend(postcard::to_allocvec(&asker).expect("node encodes")); // asker
+        bytes.extend([
+            7, // nonce
+            1, // recipient: Some
+            16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // recipient
+        ]);
+
+        let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+        let Frame::ReplyDropped {
+            asker: decoded_asker,
+            nonce,
+            recipient,
+        } = &frame
+        else {
+            panic!("not a reply-dropped frame");
+        };
+        assert_eq!(*decoded_asker, asker);
+        assert_eq!(nonce.as_u64(), 7);
+        assert_eq!(
+            recipient
+                .expect("the notification names a recipient")
+                .to_string(),
+            RECIPIENT
+        );
+        assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
+    }
+
+    /// The watch frames and a reachability observation are pinned to hardcoded wire bytes like
+    /// the delivered ones. `Watch` and `Unwatch` share their layout, so only their discriminants
+    /// and the decoded IDs tell a swapped variant or a transposed `target` and `watcher` apart.
+    #[test]
+    fn watch_and_reachability_frames_match_their_pinned_wire_bytes() {
+        const TARGET: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+        const WATCHER: &str = "10111213-1415-1617-1819-1a1b1c1d1e1f";
+        let ids = [
+            16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // target
+            16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // watcher
+        ];
+
+        for discriminant in [2, 3] {
+            let mut bytes = vec![discriminant];
+            bytes.extend(ids);
+
+            let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+            let (target, watcher) = match (&frame, discriminant) {
+                (Frame::Watch { target, watcher }, 2) | (Frame::Unwatch { target, watcher }, 3) => {
+                    (target, watcher)
+                }
+
+                _ => panic!("discriminant {discriminant} decoded into {frame:?}"),
+            };
+            assert_eq!(target.to_string(), TARGET);
+            assert_eq!(watcher.to_string(), WATCHER);
+            assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
+        }
+
+        let observer = NodeId::new("127.0.0.1:2552".parse().expect("valid address"));
+        let subject = NodeId::new("127.0.0.1:2553".parse().expect("valid address"));
+        let mut bytes = vec![
+            9, // Frame::Reachability
+            1, // one observation
+        ];
+        bytes.extend(postcard::to_allocvec(&observer).expect("node encodes")); // observer
+        bytes.extend(postcard::to_allocvec(&subject).expect("node encodes")); // subject
+        bytes.extend([
+            172, 2, // version 300
+            0, // reachable: false
+        ]);
+
+        let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+        let Frame::Reachability { observations } = &frame else {
+            panic!("not a reachability frame");
+        };
+        assert_eq!(
+            observations.as_slice(),
+            [WireReachability {
+                observer,
+                subject,
+                version: 300,
+                reachable: false,
+            }]
+        );
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
     }
 
@@ -1144,6 +1266,25 @@ mod tests {
                 bytes
             );
         }
+
+        let bytes = [
+            11, // Frame::ReplyCanceled
+            0,  // nonce
+            1,  // stream: Some
+            0,  // StreamKey::Actor
+            16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // actor
+        ];
+        let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+        let Frame::ReplyCanceled {
+            nonce,
+            stream: Some(StreamKey::Actor(actor)),
+        } = &frame
+        else {
+            panic!("not a reply cancellation keyed on an actor: {frame:?}");
+        };
+        assert_eq!(*nonce, Nonce::first());
+        assert_eq!(actor.to_string(), "00010203-0405-0607-0809-0a0b0c0d0e0f");
+        assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
     }
 
     /// The multicast was appended at discriminant 12: its targets in order, then the schema
