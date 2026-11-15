@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794755149743,
+  "lastUpdate": 1794755151883,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -23389,6 +23389,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 140014,
             "range": "± 4565",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ba202eea8c758f94c87a713c23d0e2ea528107d",
+          "message": "Merge pull request #391 from tellus-rs/fix/inspect-event-ids\n\nfix(inspect): clamp resumed event IDs, make InspectConfig deserializable",
+          "timestamp": "2026-11-15T15:57:38+01:00",
+          "tree_id": "865dd7d2fc6bbeb82d23df32f5c5a6547c65af1c",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ba202eea8c758f94c87a713c23d0e2ea528107d"
+        },
+        "date": 1794755151636,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2557131,
+            "range": "± 142668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2434887,
+            "range": "± 66770",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 884412,
+            "range": "± 4946",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109568,
+            "range": "± 2660",
             "unit": "ns/iter"
           }
         ]
