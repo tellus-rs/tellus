@@ -8,7 +8,7 @@ sees a pod as soon as it has an address, so a readiness probe may gate on cluste
 
 A pod contributes exactly one address, the primary one Kubernetes reports as `status.podIP` and
 repeats as the first entry of `status.podIPs`. Bootstrap counts addresses, so a dual stack pod
-counted twice would inflate both `min_peers` and the majority the formation provider counts, and
+counted twice would inflate both `min_nodes` and the majority the formation provider counts, and
 only the primary address is the one a node advertises and is hence admitted at. Terminating and
 finished pods are left out, since they would inflate that count as well, while a pod which is merely
 still starting stays in: an unreachable seed is retried, a missing one shrinks the universe. A pod
@@ -152,7 +152,7 @@ address with an IPv6 host parses. The variable name is the one
 [configured](https://github.com/hseeberger/configured) reads for `EndpointConfig::advertised_addr`;
 another loader wants its own.
 
-Size `bootstrap.min_peers` to the replica count for a fixed size cluster and lower for an elastic
+Size `bootstrap.min_nodes` to the replica count for a fixed size cluster and lower for an elastic
 one. Whether the pods come from a StatefulSet or a Deployment makes no difference to discovery.
 
 ## A working deployment

@@ -331,9 +331,9 @@ impl Schema for Pong {
         if schema_version == Self::VERSION {
             return codec.decode(payload);
         }
-        Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
-            schema_version,
-        )))
+        Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+            Self,
+        >(schema_version)))
     }
 }
 
@@ -983,7 +983,7 @@ mod tests {
         assert_eq!(config.node_name, "node1");
         assert_eq!(config.endpoint.advertised_addr, addr());
         assert_eq!(config.endpoint.app_version, Some(AppVersion::new(1, 0, 0)));
-        assert_eq!(config.bootstrap.min_peers.get(), 5);
+        assert_eq!(config.bootstrap.min_nodes.get(), 5);
         let Seeds::Dns(query) = config.seeds else {
             panic!("the dns overlay yields DNS discovery")
         };

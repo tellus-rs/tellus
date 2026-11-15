@@ -531,7 +531,7 @@ cross-file invariants:
   (`bootstrap.rs`) turns seeds into discovery: `cluster::bootstrap` (a thin wrapper around the
   unit-testable `run`) polls a `SeedDiscovery` and joins through every resolved address but its own,
   lowest first (a connected join graph), on every resolution; only the formation decision waits
-  until the resolved set has held `min_peers` addresses through the settle window. It returns once
+  until the resolved set has held `min_nodes` addresses through the settle window. It returns once
   this node is a member, and `Downed` means the process must exit and restart. With a
   `probe_interval` it leaves a task behind which keeps the discovery and probes every resolved
   address that is neither this node nor an Up member with a `Probe` handshake; another cluster found

@@ -36,7 +36,7 @@ async fn test_number_port() -> anyhow::Result<()> {
 }
 
 /// A pod contributes its primary address only: a dual stack pod counted twice would inflate
-/// `min_peers` and the formation majority, and only the primary address is the one the node
+/// `min_nodes` and the formation majority, and only the primary address is the one the node
 /// advertises. Without `podIP` the first `podIPs` entry is that primary address.
 #[tokio::test]
 async fn test_primary_address_only() -> anyhow::Result<()> {

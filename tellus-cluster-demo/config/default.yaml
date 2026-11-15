@@ -1,5 +1,5 @@
 bootstrap:
-  min_peers: 5
+  min_nodes: 5
 
 endpoint:
   app_version: "1.0.0"

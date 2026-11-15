@@ -755,7 +755,7 @@ where
         .expect("the entry was added with this reply type's sink");
     let reply = schema::catch_panic_and_log::<R, _, _>(
         "reply decode panicked",
-        CodecError::decoding,
+        CodecError::make_decoding,
         || R::decode(codec, schema_version, payload),
     )?;
     send_reply(reply);
@@ -864,7 +864,7 @@ where
         || {
             schema::catch_panic_and_log::<R, _, _>(
                 "reply encode panicked",
-                CodecError::encoding,
+                CodecError::make_encoding,
                 || reply.encode(endpoint.codec(), &peer),
             )
         },

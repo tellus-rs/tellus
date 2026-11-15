@@ -169,7 +169,7 @@ pub(crate) fn admit_frame(
 ) -> Result<Frame<'static>, RemoteSendError> {
     let len = frame
         .encoded_len()
-        .map_err(CodecError::encoding)
+        .map_err(CodecError::make_encoding)
         .map_err(RemoteSendError::Codec)?;
     if len > max_frame_size {
         return Err(RemoteSendError::FrameTooLarge {

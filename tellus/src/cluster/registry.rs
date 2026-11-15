@@ -328,7 +328,7 @@ where
     ) -> Result<(), CodecError> {
         let message = schema::catch_panic_and_log::<M, _, _>(
             "message decode panicked",
-            CodecError::decoding,
+            CodecError::make_decoding,
             || M::decode(codec, schema_version, payload),
         )?;
         self.actor_ref.tell(message);
@@ -704,9 +704,9 @@ mod tests {
                 if schema_version == Self::VERSION {
                     return codec.decode(payload);
                 }
-                Err(CodecError::decoding(UnsupportedSchemaVersion::new::<Self>(
-                    schema_version,
-                )))
+                Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+                    Self,
+                >(schema_version)))
             }
         }
 
