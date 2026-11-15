@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794779588978,
+  "lastUpdate": 1794779593453,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25237,6 +25237,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 135872,
             "range": "± 4830",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cbf5df373cdc27677637066272301a6bb7c06d31",
+          "message": "Merge pull request #406 from tellus-rs/docs/reply-destination-leftovers\n\ndocs(cluster): limit the release of a lost frame to one not yet sent",
+          "timestamp": "2026-11-15T22:45:32+01:00",
+          "tree_id": "9773ebdc9fdbe49e612b7c2c253b8611ec0efcba",
+          "url": "https://github.com/tellus-rs/tellus/commit/cbf5df373cdc27677637066272301a6bb7c06d31"
+        },
+        "date": 1794779592914,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3007492,
+            "range": "± 184364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2891125,
+            "range": "± 242749",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 990031,
+            "range": "± 8870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 120663,
+            "range": "± 3166",
             "unit": "ns/iter"
           }
         ]
