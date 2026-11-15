@@ -869,6 +869,14 @@ this node included, without sending a frame. `receptionist::subscribe(&key)` ret
 The key is the `Key<M>` of discovery, so a name registered on an Up member only for other message
 types is refused as `TypeMismatch` by `lookup` and `current` alike, never answered as an empty set.
 
+Once this node's own entry is Left or Down, because it left, was downed or downed itself, `lookup`,
+`lookup_at` and `current` fail as `NoLongerMember`. Every answer lists Up members only, so an answer
+would leave out this node's own registrations and read like a cluster where nobody registered. A
+node which is leaving answers as usual until its entry is Left, which is the first step of `leave`.
+A node which never formed or joined a cluster has an Up entry of its own and answers its own
+registrations. `subscribe`, `settled` and `settlement` answer from no resolved set and still
+answer; a `Subscription` taken earlier fails on its next `current`.
+
 Every node replicates the full set of its own registrations as one versioned snapshot per origin
 incarnation, grouped by key: each key (kind, name, manifest) once, followed by the IDs of the actors
 registered under it. It goes out on every connection setup, in both directions, on every change of
@@ -953,7 +961,9 @@ There is no unsubscribe, exactly as there is no `cluster::unregister`: a subscri
 as its actor, and an actor which leaves a topic while running subscribes a child it can stop
 instead. The type rule is the receptionist's: a publish is refused as `TypeMismatch` only when the
 name is held on Up members for other message types and for none of the topic's. Subscribers of the
-matching type are told whatever else the name is held for.
+matching type are told whatever else the name is held for. Likewise, a publish on a node whose own
+entry is Left or Down tells nobody and fails as `NoLongerMember`, rather than answer `0` as if the
+topic had no subscribers.
 
 The guarantee is the `tell` contract restated for a set of recipients, and nothing beyond it.
 Delivery is at-most-once per subscriber. Sequential publishes from one node reach one subscriber in

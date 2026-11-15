@@ -105,9 +105,13 @@ where
 /// a first snapshot at all. A later registration still in transit is invisible to it and to this
 /// answer alike.
 ///
+/// Once this node's own entry is Left or Down, a publish tells nobody and fails rather than
+/// answer `0`, since its own subscribers are no longer listed. A node which is leaving publishes
+/// as usual until its entry is Left.
+///
 /// # Errors
-/// Fails if the endpoint is not started, or if no Up member has the topic subscribed for `M` but
-/// one has it subscribed for another message type.
+/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if no Up
+/// member has the topic subscribed for `M` but one has it subscribed for another message type.
 ///
 /// [ActorRef::tell]: crate::ActorRef::tell
 /// [receptionist::settled]: crate::cluster::receptionist::settled
@@ -339,7 +343,7 @@ mod tests {
             manifest::Manifest,
             node::NodeId,
             peer::DialRequest,
-            pubsub::{Topic, publish_at},
+            pubsub::{Topic, publish, publish_at},
             receptionist::{ReceptionistError, WireGroup},
             reply,
             schema::{Peer, Schema},
@@ -360,6 +364,7 @@ mod tests {
         net::SocketAddr,
         num::NonZeroUsize,
         sync::{Arc, Mutex, mpsc},
+        time::Instant,
     };
 
     thread_local! {
@@ -543,6 +548,29 @@ mod tests {
             .collect()
     }
 
+    fn own_and_remote_subscribers() -> (&'static EndpointInner, Mailbox<u64>, Receiver<DialRequest>)
+    {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let (_, local) = subscriber::<u64>(endpoint, "notes");
+        remote_subscribers::<u64>(endpoint, NodeId::new(addr(2)), "notes", 1);
+        let told = endpoint::with_current(endpoint, || publish(&Topic::<u64>::new("notes"), 42));
+        assert_eq!(told.expect("resolves"), 2);
+        assert_eq!(queued(&dial_requests).len(), 1);
+        (endpoint, local, dial_requests)
+    }
+
+    fn assert_publish_fails(
+        endpoint: &'static EndpointInner,
+        local: Mailbox<u64>,
+        dial_requests: &Receiver<DialRequest>,
+    ) {
+        let told = endpoint::with_current(endpoint, || publish(&Topic::<u64>::new("notes"), 43));
+        assert!(matches!(told, Err(ReceptionistError::NoLongerMember)));
+        assert_eq!(received(local), vec![42]);
+        assert!(queued(dial_requests).is_empty());
+    }
+
     /// Every subscriber is told once, and the count is what the publisher resolved.
     #[test]
     fn a_publish_tells_every_subscriber_once() {
@@ -582,6 +610,28 @@ mod tests {
             1
         );
         assert_eq!(received(mailbox), vec![42]);
+    }
+
+    /// Once this node's own entry is Left, a publish tells nobody and fails instead of answering
+    /// as if the topic had no subscribers.
+    #[test]
+    fn a_publish_fails_once_this_node_has_left() {
+        let (endpoint, local, remote_lane) = own_and_remote_subscribers();
+
+        endpoint.update(|membership, _| membership.leave(endpoint.node(), Instant::now()));
+
+        assert_publish_fails(endpoint, local, &remote_lane);
+    }
+
+    /// Once this node's own entry is Down, a publish tells nobody and fails instead of answering
+    /// as if the topic had no subscribers.
+    #[test]
+    fn a_publish_fails_once_this_node_is_down() {
+        let (endpoint, local, remote_lane) = own_and_remote_subscribers();
+
+        endpoint.update(|membership, _| membership.down(endpoint.node(), Instant::now()));
+
+        assert_publish_fails(endpoint, local, &remote_lane);
     }
 
     /// An actor registered for discovery under the topic's name is no subscriber.

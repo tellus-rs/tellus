@@ -43,11 +43,13 @@ pub(crate) const MAX_SNAPSHOT_BYTES: usize = 64 << 20;
 /// frame is sent, and a member's registrations are visible once its snapshot has arrived here,
 /// never before and never after that member is Left or Down. An empty answer means that no
 /// registration under the key has reached this node yet, which [settled] tells apart from a
-/// complete answer.
+/// complete answer. Once this node's own entry is Left or Down there is no answer: the lookup
+/// fails rather than answer without this node's own registrations. A node which is leaving
+/// answers as usual until its entry is Left.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, or if no Up member has the name registered for `M` but
-/// one has it registered for another message type.
+/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if no Up
+/// member has the name registered for `M` but one has it registered for another message type.
 pub fn lookup<M>(key: &Key<M>) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
     M: Manifest + Send + 'static,
@@ -62,11 +64,12 @@ where
 /// set. [settled] only says that a snapshot from every Up member has arrived, not that it is
 /// current. A registration or termination after that snapshot shows up with the next
 /// replication, so a caller waiting for a specific actor polls this or uses [subscribe]. This
-/// node's own address answers its own registrations.
+/// node's own address answers its own registrations. Like [lookup], it fails once this node's own
+/// entry is Left or Down, whichever address it asks for.
 ///
 /// # Errors
-/// Fails if the endpoint is not started, or if the name is registered at that address only for
-/// other message types.
+/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if the name
+/// is registered at that address only for other message types.
 pub fn lookup_at<M>(key: &Key<M>, addr: SocketAddr) -> Result<Vec<ActorRef<M>>, ReceptionistError>
 where
     M: Manifest + Send + 'static,
@@ -159,8 +162,8 @@ impl<M> Subscription<M> {
     /// the set as seen, so [changed](Subscription::changed) waits for the next change.
     ///
     /// # Errors
-    /// Fails if no Up member has the name registered for `M` but one has it registered for
-    /// another message type.
+    /// Fails if this node's own entry is Left or Down, or if no Up member has the name registered
+    /// for `M` but one has it registered for another message type.
     pub fn current(&mut self) -> Result<Vec<ActorRef<M>>, ReceptionistError>
     where
         M: Manifest + Send + 'static,
@@ -192,6 +195,12 @@ pub enum ReceptionistError {
     /// registered for another.
     #[error("name registered for another message type")]
     TypeMismatch,
+
+    /// This node's own member entry is Left or Down: it has left the cluster, or it was downed
+    /// or downed itself. The directory lists the registrations of Up members only, so it would
+    /// answer without this node's own.
+    #[error("this node has left the cluster or been downed")]
+    NoLongerMember,
 }
 
 /// The replicas lock is never held across an update, a registry lock or the cluster state watch.
@@ -743,6 +752,9 @@ where
     M: Schema + Send + 'static,
 {
     let up = endpoint.membership().up_nodes();
+    if !up.contains(&endpoint.node()) {
+        return Err(ReceptionistError::NoLongerMember);
+    }
     let refs = listing
         .entries
         .iter()
@@ -892,14 +904,15 @@ mod tests {
         actor_ref::SelfRef,
         cluster::{
             discovery::{Key, KeyKind, WireKey},
-            endpoint::{EndpointConfig, EndpointInner},
+            endpoint::{self, EndpointConfig, EndpointInner},
             frame::Frame,
             manifest::Manifest,
             node::NodeId,
             receptionist::{
                 Assembler, MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, PublishedChange,
-                ReceptionistError, Registration, Settlement, SnapshotSource, WireGroup,
-                on_registrations, resolve_key, resolve_key_at, settled_at, snapshot, subscribe_at,
+                ReceptionistError, Registration, Settlement, SnapshotSource, Subscription,
+                WireGroup, lookup, lookup_at, on_registrations, resolve_key, resolve_key_at,
+                settled_at, snapshot, subscribe, subscribe_at,
             },
             schema::Schema,
         },
@@ -1908,5 +1921,92 @@ mod tests {
         let refs =
             resolve_key_at(endpoint, &Key::<u64>::new("pool"), own.addr()).expect("resolves");
         assert_eq!(refs, vec![self_ref.actor_ref().clone()]);
+    }
+
+    /// Once this node's own entry is Left, every read of the directory fails instead of
+    /// answering without this node's own registrations, a subscription taken earlier included.
+    #[test]
+    fn reads_fail_once_this_node_has_left() {
+        let (endpoint, mut subscription) = own_and_remote_pool();
+
+        endpoint.update(|membership, _| membership.leave(endpoint.node(), Instant::now()));
+
+        assert_no_longer_member(endpoint, &mut subscription);
+    }
+
+    /// Once this node's own entry is Down, and after that entry is swept, every read of the
+    /// directory fails instead of answering without this node's own registrations.
+    #[test]
+    fn reads_fail_once_this_node_is_down() {
+        let (endpoint, mut subscription) = own_and_remote_pool();
+
+        endpoint.update(|membership, _| membership.down(endpoint.node(), Instant::now()));
+        assert_no_longer_member(endpoint, &mut subscription);
+
+        let swept = Instant::now() + endpoint.config().down_retention;
+        endpoint.update(|membership, _| membership.sweep(swept));
+        assert!(
+            endpoint
+                .membership()
+                .members()
+                .iter()
+                .all(|member| member.node() != endpoint.node())
+        );
+        assert_no_longer_member(endpoint, &mut subscription);
+    }
+
+    fn own_and_remote_pool() -> (&'static EndpointInner, Subscription<u64>) {
+        let endpoint = endpoint();
+        let own = ActorId::new();
+        let (self_ref, _mailbox) = SelfRef::<u64>::new(own, MailboxCapacity::Unbounded);
+        endpoint.registry().bind(self_ref.actor_ref());
+        assert!(apply(
+            endpoint,
+            endpoint.node(),
+            1,
+            vec![group::<u64>("pool", own)]
+        ));
+        let (_, remote) = up_with_pool::<u64>(endpoint, 2);
+        let key = Key::<u64>::new("pool");
+
+        let (all, at_own, subscription) = endpoint::with_current(endpoint, || {
+            let all = lookup(&key).expect("resolves").len();
+            let at_own = lookup_at(&key, endpoint.node().addr())
+                .expect("resolves")
+                .len();
+            (all, at_own, subscribe(&key).expect("subscribes"))
+        });
+        assert_eq!((all, at_own), (2, 1));
+        assert_eq!(pool_at::<u64>(endpoint, 2).expect("resolves"), vec![remote]);
+        (endpoint, subscription)
+    }
+
+    fn assert_no_longer_member(
+        endpoint: &'static EndpointInner,
+        subscription: &mut Subscription<u64>,
+    ) {
+        let key = Key::<u64>::new("pool");
+        endpoint::with_current(endpoint, || {
+            assert!(matches!(
+                lookup(&key),
+                Err(ReceptionistError::NoLongerMember)
+            ));
+            assert!(matches!(
+                lookup_at(&key, endpoint.node().addr()),
+                Err(ReceptionistError::NoLongerMember)
+            ));
+            assert!(matches!(
+                lookup_at(&key, addr(2)),
+                Err(ReceptionistError::NoLongerMember)
+            ));
+            assert!(matches!(
+                subscribe(&key).expect("subscribes").current(),
+                Err(ReceptionistError::NoLongerMember)
+            ));
+        });
+        assert!(matches!(
+            subscription.current(),
+            Err(ReceptionistError::NoLongerMember)
+        ));
     }
 }
