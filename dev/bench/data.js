@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794754689955,
+  "lastUpdate": 1794754691333,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25245,6 +25245,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4385482,
             "range": "± 328065",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7334428b60b3a7aedb21e38a33c4b993c7780a16",
+          "message": "Merge pull request #392 from tellus-rs/feat/host-config-serde\n\nfeat(host): make HostConfig deserializable",
+          "timestamp": "2026-11-15T15:49:59+01:00",
+          "tree_id": "0e50a0c0962359682f32c9c434eed358bb6e91c1",
+          "url": "https://github.com/tellus-rs/tellus/commit/7334428b60b3a7aedb21e38a33c4b993c7780a16"
+        },
+        "date": 1794754691075,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30159728,
+            "range": "± 1710285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30866073,
+            "range": "± 1632598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4773937,
+            "range": "± 351562",
             "unit": "ns/iter"
           }
         ]
