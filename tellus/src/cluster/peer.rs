@@ -1242,16 +1242,18 @@ where
             }
 
             Frame::Reply {
+                asker,
                 nonce,
                 recipient: _,
                 schema_version,
                 payload,
-            } => reply::on_reply(endpoint, peer, nonce, schema_version, &payload),
+            } => reply::on_reply(endpoint, peer, asker, nonce, schema_version, &payload),
 
             Frame::ReplyDropped {
+                asker,
                 nonce,
                 recipient: _,
-            } => reply::on_reply_dropped(endpoint, peer, nonce),
+            } => reply::on_reply_dropped(endpoint, peer, asker, nonce),
 
             Frame::ReplyCanceled { nonce, stream: _ } => {
                 reply::on_reply_canceled(endpoint, peer, nonce)

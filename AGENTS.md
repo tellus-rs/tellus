@@ -473,8 +473,9 @@ cross-file invariants:
   the messages it must stay behind. Request-response crosses nodes via a nonce-keyed pending-replies
   table (`reply.rs`): serializing a `ReplyTo` moves its sink into the table, the far side gets a
   proxy whose `Reply` frame names the actor it is delivered to and hence rides that actor's queue,
-  keying on its nonce when no actor awaits it (a dropped proxy sends `ReplyDropped` instead);
-  downing a member evicts the entries stamped with it, and a terminating recipient the entries
+  keying on its nonce when no actor awaits it (a dropped proxy sends `ReplyDropped` instead), and
+  naming the incarnation which asked, since every process counts its nonces from zero; downing a
+  member evicts the entries stamped with it, and a terminating recipient the entries
   awaiting it. Membership (`membership.rs`) is always on: a started endpoint is *not* a cluster and
   refuses joins (`RefusalReason::NoCluster`), `form` (`endpoint.rs`) makes it a cluster of one and
   `join` makes it a member through a seed's member snapshot, applied as one snapshot once its last

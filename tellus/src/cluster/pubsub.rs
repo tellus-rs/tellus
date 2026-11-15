@@ -795,6 +795,7 @@ mod tests {
         reply::on_reply(
             endpoint,
             first_node,
+            endpoint.node(),
             tag.nonce,
             SchemaVersion::new(0),
             &reply,
@@ -1046,7 +1047,14 @@ mod tests {
         };
 
         let reply = endpoint.codec().encode(&7_u64).expect("encodes");
-        reply::on_reply(endpoint, newer, tag.nonce, SchemaVersion::new(0), &reply);
+        reply::on_reply(
+            endpoint,
+            newer,
+            endpoint.node(),
+            tag.nonce,
+            SchemaVersion::new(0),
+            &reply,
+        );
         assert_eq!(reply_rx.try_recv(), Ok(7));
         assert_eq!(endpoint.pending_replies().len(), 0);
     }
@@ -1075,7 +1083,14 @@ mod tests {
         };
 
         let reply = endpoint.codec().encode(&7_u64).expect("encodes");
-        reply::on_reply(endpoint, node, tag.nonce, SchemaVersion::new(3), &reply);
+        reply::on_reply(
+            endpoint,
+            node,
+            endpoint.node(),
+            tag.nonce,
+            SchemaVersion::new(3),
+            &reply,
+        );
         assert_eq!(reply_rx.try_recv(), Err(mpsc::TryRecvError::Disconnected));
         assert_eq!(endpoint.pending_replies().len(), 0);
     }
