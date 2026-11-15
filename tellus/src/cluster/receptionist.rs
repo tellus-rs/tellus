@@ -911,8 +911,8 @@ mod tests {
             receptionist::{
                 Assembler, MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, PublishedChange,
                 ReceptionistError, Registration, Settlement, SnapshotSource, Subscription,
-                WireGroup, lookup, lookup_at, on_registrations, resolve_key, resolve_key_at,
-                settled_at, snapshot, subscribe, subscribe_at,
+                WireGroup, fit, framed_len, lookup, lookup_at, on_registrations, resolve_key,
+                resolve_key_at, settled_at, snapshot, subscribe, subscribe_at,
             },
             schema::Schema,
         },
@@ -921,7 +921,7 @@ mod tests {
     use std::{
         fmt,
         net::SocketAddr,
-        sync::mpsc,
+        sync::{Arc, mpsc},
         thread,
         time::{Duration, Instant},
     };
@@ -1467,6 +1467,35 @@ mod tests {
         }
 
         assert_eq!(completed, Some(input));
+    }
+
+    /// Fitting a snapshot to a smaller frame size chunks it anew within that size and leaves out
+    /// a key whose single registration exceeds it.
+    #[test]
+    fn a_fitted_snapshot_leaves_out_a_registration_over_the_frame_size() {
+        let max_frame_size = 200;
+        let oversize = group::<u64>(&"x".repeat(max_frame_size), ActorId::new());
+        assert!(framed_len(&oversize.key) > max_frame_size);
+        let fitting = (0..10)
+            .map(|index| group::<u64>(&format!("name-{index}"), ActorId::new()))
+            .collect::<Vec<_>>();
+        let mut input = fitting.clone();
+        input.push(oversize);
+        let chunked = Arc::new(snapshot(1, input, 4 * max_frame_size));
+
+        let fitted = fit(&chunked, max_frame_size);
+
+        let origin = NodeId::new(addr(2));
+        let mut assembler = Assembler::default();
+        let mut completed = None;
+        for frame in &fitted.frames {
+            assert!(frame.encoded_len().expect("frame encodes") <= max_frame_size);
+            let (chunk, chunks, groups) = groups(frame);
+            completed = assembler.push(origin, 1, chunk, chunks, groups, |_| false);
+        }
+        let mut expected = fitting;
+        expected.sort_by(|left, right| left.key.cmp(&right.key));
+        assert_eq!(completed, Some(expected));
     }
 
     /// Matching is by manifest, never by Rust type: another type naming the registered manifest

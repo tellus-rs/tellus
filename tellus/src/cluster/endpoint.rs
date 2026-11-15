@@ -3141,8 +3141,8 @@ mod tests {
     }
 
     /// Toward a peer which advertised a frame size below this node's, a message between the two
-    /// sizes is refused at the send and never queued, and the member list and reachability
-    /// observations are chunked to the peer's size.
+    /// sizes is refused at the send and never queued, and the member list, gossiped or announced
+    /// at a departure, and the reachability observations are chunked to the peer's size.
     #[test]
     fn a_peer_is_sent_frames_within_the_smaller_frame_size() {
         let peer = NodeId::new(addr(2));
@@ -3219,6 +3219,25 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(pushed.len() > 1, "the observations are chunked");
         assert_eq!(pushed.iter().sum::<usize>(), observations.len());
+
+        endpoint.announce();
+        let announced = lane
+            .control_rx
+            .drain()
+            .map(|frame| {
+                let len = frame.encoded_len().expect("frame size");
+                assert!(
+                    len <= MIN_FRAME_SIZE,
+                    "{len} exceeds {MIN_FRAME_SIZE}: {frame:?}"
+                );
+                match frame {
+                    Frame::Gossip { members, .. } => members.len(),
+                    frame => panic!("an announcement holds no {frame:?}"),
+                }
+            })
+            .collect::<Vec<_>>();
+        assert!(announced.len() > 1, "the departure is chunked");
+        assert_eq!(announced.iter().sum::<usize>(), others.len() + 2);
     }
 
     fn state_of(state: &ClusterState, node: NodeId) -> Option<MemberState> {

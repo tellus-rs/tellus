@@ -3259,7 +3259,6 @@ fn await_listing(
         .context("awaiting a receptionist listing")?
 }
 
-/// Polls a node until its receptionist resolves the given number of echoes and is settled.
 /// Two nodes whose `max_frame_size` differ stay connected, each sending at the smaller one. This
 /// node registers enough echoes that its registrations snapshot needs several frames of the
 /// smaller size, half before the small node joins and half after: the small node sees every one
@@ -3335,6 +3334,7 @@ fn await_directory_holding(
     }
 }
 
+/// Polls a node until its receptionist resolves the given number of echoes and is settled.
 fn await_directory(
     runtime: &Runtime,
     echo: &ActorRef<Request>,

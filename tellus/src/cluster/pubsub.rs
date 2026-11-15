@@ -733,38 +733,45 @@ mod tests {
         }
     }
 
-    /// Subscribers too many for one frame are split over several, filled to the maximum frame
-    /// size and queued in resolution order on one stream.
+    /// Subscribers too many for one frame are split over several, filled to the smaller of this
+    /// node's and the destination's frame size and queued in resolution order on one stream.
     #[test]
     fn a_publish_splits_its_frames_at_the_maximum_frame_size() {
-        let mut config = EndpointConfig::new(addr(1));
         // Discriminant, target count, payload length and the payload, plus 17 bytes per target:
         // two targets fit, three do not.
-        config.max_frame_size = NonZeroUsize::new(4 + 2 * 17 + 16).expect("not zero");
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
-        let ids = remote_subscribers::<u64>(endpoint, NodeId::new(addr(2)), "notes", 5);
+        let max_frame_size = NonZeroUsize::new(4 + 2 * 17 + 16).expect("not zero");
+        for peer_limited in [false, true] {
+            let mut config = EndpointConfig::new(addr(1));
+            if !peer_limited {
+                config.max_frame_size = max_frame_size;
+            }
+            let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+            let node = NodeId::new(addr(2));
+            let ids = remote_subscribers::<u64>(endpoint, node, "notes", 5);
+            if peer_limited {
+                endpoint.record_peer(node, None, max_frame_size.get());
+            }
 
-        assert_eq!(
-            publish_at(endpoint, &Topic::<u64>::new("notes"), 42).expect("resolves"),
-            5
-        );
-
-        let frames = queued(&dial_requests);
-        let mut told = Vec::new();
-        let mut sizes = Vec::new();
-        for (_, stream, frame) in frames {
-            assert_eq!(stream, None);
-            assert!(
-                frame.encoded_len().expect("frame size") <= endpoint.config().max_frame_size.get()
+            assert_eq!(
+                publish_at(endpoint, &Topic::<u64>::new("notes"), 42).expect("resolves"),
+                5
             );
-            let Frame::Multicast { targets, .. } = frame else {
-                panic!("not a multicast frame: {frame:?}");
-            };
-            sizes.push(targets.len());
-            told.extend(targets);
+
+            let frames = queued(&dial_requests);
+            let mut told = Vec::new();
+            let mut sizes = Vec::new();
+            for (_, stream, frame) in frames {
+                assert_eq!(stream, None);
+                assert!(frame.encoded_len().expect("frame size") <= max_frame_size.get());
+                let Frame::Multicast { targets, .. } = frame else {
+                    panic!("not a multicast frame: {frame:?}");
+                };
+                sizes.push(targets.len());
+                told.extend(targets);
+            }
+            assert_eq!(sizes, [2, 2, 1], "peer limited: {peer_limited}");
+            assert_eq!(told, ids);
         }
-        assert_eq!(sizes, [2, 2, 1]);
-        assert_eq!(told, ids);
     }
 
     /// Neither an empty topic nor one with subscribers on this node only serializes the message,
@@ -875,18 +882,27 @@ mod tests {
         assert!(queued(&dial_requests).is_empty());
     }
 
-    /// Reply tags minted for a frame refused at admission or at the lane are discarded too.
+    /// Reply tags minted for a frame refused at admission, over this node's frame size or the
+    /// destination's, or at the lane are discarded too.
     #[test]
     fn a_failed_send_leaves_no_pending_reply() {
         let mut oversize = EndpointConfig::new(addr(1));
         oversize.max_frame_size = NonZeroUsize::new(16).expect("not zero");
+        let peer_oversize = EndpointConfig::new(addr(1));
         let refusing = EndpointConfig::new(addr(1));
 
-        for (config, refuse) in [(oversize, false), (refusing, true)] {
+        for (config, peer_limit, refuse) in [
+            (oversize, None, false),
+            (peer_oversize, Some(16), false),
+            (refusing, None, true),
+        ] {
             let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
             let first_node = NodeId::new(addr(2));
             remote_subscribers::<SharedReply>(endpoint, first_node, "replies", 1);
             remote_subscribers::<SharedReply>(endpoint, NodeId::new(addr(3)), "replies", 1);
+            if let Some(peer_limit) = peer_limit {
+                endpoint.record_peer(first_node, None, peer_limit);
+            }
             if refuse {
                 endpoint.refuse(first_node.addr());
             }
