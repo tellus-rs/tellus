@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794761878919,
+  "lastUpdate": 1794761881644,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -24397,6 +24397,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 140565,
             "range": "± 3885",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b60e17d928071ff9c28e4f1f147da45cea251283",
+          "message": "Merge pull request #395 from tellus-rs/fix/seq-no-overflow\n\nfix(persistence)!: refuse a sequence number overflow instead of saturating",
+          "timestamp": "2026-11-15T17:50:34+01:00",
+          "tree_id": "827747c55c42e3a797dfb9ddb7ed2cb79872df27",
+          "url": "https://github.com/tellus-rs/tellus/commit/b60e17d928071ff9c28e4f1f147da45cea251283"
+        },
+        "date": 1794761881443,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2496511,
+            "range": "± 49389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2426712,
+            "range": "± 37077",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 765355,
+            "range": "± 25252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 101382,
+            "range": "± 10743",
             "unit": "ns/iter"
           }
         ]
