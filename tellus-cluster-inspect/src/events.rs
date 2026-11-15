@@ -53,6 +53,9 @@ where
     }
 
     /// Stamps and appends the event, forgetting the oldest one if the log is full.
+    ///
+    /// # Panics
+    /// Panics if the system clock is before the Unix epoch.
     pub fn push(&self, event: E) -> Cursor {
         self.push_stamped(Stamped {
             at: now_millis(),
@@ -89,7 +92,7 @@ where
         let resumed = after.is_some_and(|cursor| {
             cursor.started_at == self.started_at
                 && cursor.seq <= anchor
-                && oldest.is_none_or(|oldest| cursor.seq + 1 >= oldest)
+                && oldest.is_none_or(|oldest| cursor.seq >= oldest - 1)
         });
         let after_seq = if resumed {
             after.map(|cursor| cursor.seq).unwrap_or_default()
@@ -110,8 +113,9 @@ where
         }
     }
 
-    /// Every event pushed after the sequence number. Ends if that position falls out of the log,
-    /// which a reconnect answers with a fresh replay.
+    /// Every event pushed after the sequence number, or after the latest event if the sequence
+    /// number lies beyond it. Ends if that position falls out of the log, which a reconnect answers
+    /// with a fresh replay.
     pub fn follow_from(
         self: &Arc<Self>,
         seq: u64,
@@ -121,6 +125,7 @@ where
     {
         // Subscribed before the first read, so a push between a read and the wait wakes it.
         let latest_rx = self.latest.subscribe();
+        let seq = seq.min(*latest_rx.borrow());
         let follower = Follower {
             log: self.clone(),
             latest_rx,
@@ -156,7 +161,7 @@ where
         if ring
             .entries
             .front()
-            .is_some_and(|(oldest, _)| seq + 1 < *oldest)
+            .is_some_and(|(oldest, _)| seq < *oldest - 1)
         {
             return None;
         }
@@ -256,10 +261,15 @@ pub fn last_event_id(headers: &HeaderMap) -> Option<Cursor> {
 }
 
 /// The stream a `GET /events` answers: the stamped hello, then `items` (each with its id, if it
-/// has one), then every event pushed after `anchor`, each with its cursor as id, kept alive by
-/// comments. The stream ends once `shutdown` resolves, so a server which shuts down gracefully on
-/// the same signal does not wait for the client following it. If `shutdown` has resolved already,
-/// the stream ends at once, with no event.
+/// has one), then every event pushed after `anchor`, or after the latest event if `anchor` lies
+/// beyond it, each with its cursor as id, kept alive by comments. The stream ends once `shutdown`
+/// resolves, so a server which shuts down gracefully on the same signal does not wait for the
+/// client following it. If `shutdown` has resolved already, the stream ends at once, with no
+/// event.
+///
+/// # Panics
+/// Panics if the system clock is before the Unix epoch. The stream panics if an event fails to
+/// serialize as JSON.
 pub fn sse<E, F>(
     log: &Arc<EventLog<E>>,
     items: Vec<(Option<Cursor>, Stamped<E>)>,
@@ -288,6 +298,9 @@ where
 }
 
 /// Unix milliseconds now.
+///
+/// # Panics
+/// Panics if the system clock is before the Unix epoch.
 pub fn now_millis() -> u64 {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -494,6 +507,33 @@ mod tests {
         }
 
         assert!(events.next().await.is_none());
+    }
+
+    #[tokio::test]
+    async fn following_from_beyond_the_latest_yields_what_is_pushed_then() {
+        let log = log(8);
+        log.push(10);
+        let mut events = Box::pin(log.follow_from(u64::MAX));
+
+        let pending = timeout(Duration::from_millis(50), events.next()).await;
+        assert!(pending.is_err(), "nothing to yield yet");
+
+        log.push(20);
+        let (cursor_2, second) = timeout(Duration::from_secs(5), events.next())
+            .await
+            .expect("in time")
+            .expect("an event");
+        assert_eq!((cursor_2, second.event), (cursor(2), 20));
+    }
+
+    #[test]
+    fn the_largest_cursor_gets_the_whole_history() {
+        let log = log(8);
+        log.push(10);
+
+        let replay = log.replay(Some(cursor(u64::MAX)));
+        assert!(!replay.resumed);
+        assert_eq!(events(&replay), vec![(1, 10)]);
     }
 
     #[tokio::test]

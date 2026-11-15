@@ -72,7 +72,15 @@ Its reconnect then gets `resumed: false` and a recovery.
 ## Configuration
 
 `InspectConfig` has one field, `events_kept`, the size of the log. It is not part of the node's
-`EndpointConfig`, since it is a property of this router, not of the endpoint.
+`EndpointConfig`, since it is a property of this router, not of the endpoint. It implements
+`Deserialize`, so it can come from the same configuration file, for example in YAML:
+
+```yaml
+events_kept: 256
+```
+
+A missing field falls back to its default, and an unknown field or an `events_kept` of zero is
+refused.
 
 ## Events module
 

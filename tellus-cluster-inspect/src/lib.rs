@@ -44,8 +44,10 @@ use std::{num::NonZeroUsize, sync::Arc};
 use tellus::cluster::{self, Change, ClusterState, Lifecycle, receptionist::Settlement};
 use thiserror::Error;
 
-/// How the router behaves.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How the router behaves, deserializable from a config such as `{ "events_kept": 256 }`: a
+/// missing field falls back to its value in [InspectConfig::default], an unknown one is refused.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub struct InspectConfig {
     /// How many events the log retains for replay and resumption. Defaults to
     /// [InspectConfig::DEFAULT_EVENTS_KEPT].
@@ -129,6 +131,9 @@ pub struct Snapshot {
 ///
 /// # Errors
 /// Fails if the endpoint is not started.
+///
+/// # Panics
+/// Panics if the system clock is before the Unix epoch.
 pub fn router<F>(config: InspectConfig, shutdown: F) -> Result<Router, InspectError>
 where
     F: Future<Output = ()> + Send + 'static,
@@ -551,6 +556,22 @@ mod tests {
         timeout(Duration::from_secs(5), changes_tx.closed())
             .await
             .expect("the recorder task still holds the changes");
+    }
+
+    #[test]
+    fn a_config_deserializes_with_defaults_for_missing_fields() {
+        let config = serde_json::from_str::<InspectConfig>(r#"{ "events_kept": 256 }"#)
+            .expect("a config deserializes");
+        assert_eq!(config.events_kept.get(), 256);
+
+        let config = serde_json::from_str::<InspectConfig>("{}").expect("a config deserializes");
+        assert_eq!(config, InspectConfig::default());
+    }
+
+    #[test]
+    fn a_config_with_an_invalid_value_or_an_unknown_field_is_refused() {
+        assert!(serde_json::from_str::<InspectConfig>(r#"{ "events_kept": 0 }"#).is_err());
+        assert!(serde_json::from_str::<InspectConfig>(r#"{ "events_kpet": 256 }"#).is_err());
     }
 
     #[tokio::test]
