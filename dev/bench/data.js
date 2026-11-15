@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794758846538,
+  "lastUpdate": 1794758848805,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26085,6 +26085,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3960596,
             "range": "± 303949",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e9161a65eebef155122dee355a6caa65c1a84b13",
+          "message": "Merge pull request #399 from tellus-rs/fix/self-down-settles-nothing\n\nfix(cluster): keep a self-down from settling watchers and asks",
+          "timestamp": "2026-11-15T16:59:47+01:00",
+          "tree_id": "0607e29a05711909a5338bd29a20d745d331ab20",
+          "url": "https://github.com/tellus-rs/tellus/commit/e9161a65eebef155122dee355a6caa65c1a84b13"
+        },
+        "date": 1794758848422,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 22756136,
+            "range": "± 723165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 21809920,
+            "range": "± 1591362",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3007217,
+            "range": "± 110732",
             "unit": "ns/iter"
           }
         ]
