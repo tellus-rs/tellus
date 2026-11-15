@@ -797,6 +797,7 @@ mod tests {
             first_node,
             endpoint.node(),
             tag.nonce,
+            &[],
             SchemaVersion::new(0),
             &reply,
         );
@@ -1052,6 +1053,7 @@ mod tests {
             newer,
             endpoint.node(),
             tag.nonce,
+            &[],
             SchemaVersion::new(0),
             &reply,
         );
@@ -1088,6 +1090,7 @@ mod tests {
             node,
             endpoint.node(),
             tag.nonce,
+            &[],
             SchemaVersion::new(3),
             &reply,
         );
