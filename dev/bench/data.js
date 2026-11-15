@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794752429088,
+  "lastUpdate": 1794752432573,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -23053,6 +23053,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 133504,
             "range": "± 4385",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "98fef354797645375f540754c47168c63343048d",
+          "message": "Merge pull request #390 from tellus-rs/test/pin-every-frame\n\ntest(cluster): pin the wire bytes of every frame",
+          "timestamp": "2026-11-15T15:12:26+01:00",
+          "tree_id": "97f0e1734ca2c541056bb0ffca5e4a3b3e4d1618",
+          "url": "https://github.com/tellus-rs/tellus/commit/98fef354797645375f540754c47168c63343048d"
+        },
+        "date": 1794752432114,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2790118,
+            "range": "± 103586",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2761189,
+            "range": "± 210820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1089670,
+            "range": "± 7837",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 137558,
+            "range": "± 3789",
             "unit": "ns/iter"
           }
         ]
