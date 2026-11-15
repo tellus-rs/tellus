@@ -376,7 +376,10 @@ the connection ended first or a stream failed (each logged as a warning), and th
 answered when `leave_timeout` passed. Concurrent calls share the one departure and its report, which
 runs in a task of its own. So none severs the connections another is still waiting on, and a caller
 which is canceled only stops waiting. Leaving again after the departure has ended returns its report
-as well. A node downed before it began to leave fails with `LeaveError::Downed`. A departure which
+as well. A node downed before it began to leave fails with `LeaveError::Downed`. An endpoint which
+has neither formed nor joined a cluster has nothing to leave. It fails with `LeaveError::NotAMember`
+and stays as it was, so it can still form or join one. A join in progress does not count as a
+membership: it may still make this node a member after the refused leave. A departure which
 ends without a report, e.g. since its task panicked, fails safe. A supervisor awaiting that task
 then latches this node Downed and severs every connection. Only after that does it publish the
 failure, so every caller, concurrent or later, gets `LeaveError::Incomplete` and never a report
@@ -483,7 +486,8 @@ member advertises the address, which is worth retrying while gossip converges. I
 `cluster::leave_on_terminated` in place of `ActorSystem::terminated`: waiting for the tree first is
 what puts the departure behind every terminated signal the tree owes remote watchers. When the actor
 system did not terminate cleanly, it still announces the departure and then fails with
-`LeaveError::Terminated`.
+`LeaveError::Terminated`. On an endpoint which has neither formed nor joined a cluster, it fails
+with `LeaveError::NotAMember` once the actor system has terminated.
 
 [`examples/cluster.rs`](../tellus/examples/cluster.rs) runs all of this in four processes. It joins
 through one seed address and converges on a member list nothing was configured with. Every survivor
