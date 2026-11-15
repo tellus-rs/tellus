@@ -71,6 +71,8 @@ An invalid `EndpointConfig` or `BootstrapConfig` is refused by deserialization j
 one on `down_watermarks`, which relates the values of different nodes. A `QuicConfig` is plain data:
 its server name and the PEM files its paths name are validated by `QuicTransport::from_config`,
 which reads them. Deserializing one is hence not yet a check that the node can present an identity.
+A duration the clock cannot represent, e.g. `Duration::MAX` in code, is capped at about thirty
+years, as a timer's delay is.
 
 `EndpointConfig`:
 
@@ -86,7 +88,7 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `watch_refresh_interval` | 2s | not 0 |
 | `failure_detector` | `phi_accrual` | `phi_accrual` or `deadline`, see below |
 | `failure_detector.phi_accrual.threshold` | 8.0 | finite and positive |
-| `failure_detector.phi_accrual.max_sample_size` | 200 | at least 2 |
+| `failure_detector.phi_accrual.max_sample_size` | 200 | at least 2, at most 10000 |
 | `failure_detector.phi_accrual.min_std_deviation` | 100ms | not 0 |
 | `failure_detector.phi_accrual.acceptable_pause` | 3s | 0 adds no pause; the margin left must cover the intervals, see below |
 | `failure_detector.phi_accrual.warmup_deadline` | 5s | not 0 |
@@ -101,7 +103,7 @@ which reads them. Deserializing one is hence not yet a check that the node can p
 | `reconnect_backoff.max` | 3s | not below `min`; required once `reconnect_backoff` is given |
 | `max_connect_attempts` | 8 | not 0 |
 | `ambiguous_join_bound` | 30s | not 0 |
-| `change_capacity` | 256 | a power of two, at most half the address space |
+| `change_capacity` | 256 | a power of two, at most 65536 |
 
 The failure detector must tolerate the longer of `heartbeat_interval` and `watch_refresh_interval`
 after a burst of traffic, see [Failure detection](#failure-detection-and-node-death).
@@ -555,7 +557,9 @@ data stream every frame rides the control stream, which is one ordered lane per 
 everything. The guarantees hold there by the same argument rather than as a special case, which
 keeps the abstraction implementable over a stream-less transport such as TCP. `Transport::connect`
 must bound itself, since a silent address would stall the join attempt holding it, and joins run one
-at a time per endpoint. `QuicTransport` inherits QUIC's handshake timeout of tens of seconds.
+at a time per endpoint. `QuicTransport` bounds a handshake by its idle timeout, which
+`QuicTransport::new` takes and refuses unless it is above the 10 s keep-alive, and which the other
+constructors set to `QuicTransport::DEFAULT_IDLE_TIMEOUT` (30 s).
 
 How much a larger pool buys was measured with `just bench-streams <streams>`, which sets
 `max_streams_per_peer` on every node. One node keeps 64 asks of 64 KiB outstanding toward one actor

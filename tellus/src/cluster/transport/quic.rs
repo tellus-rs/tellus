@@ -5,8 +5,8 @@ use crate::cluster::transport::{
     TransportError,
 };
 use quinn::{
-    ClientConfig, ConnectionError, Endpoint, RecvStream, SendStream, ServerConfig, TransportConfig,
-    VarInt,
+    ClientConfig, ConnectionError, Endpoint, IdleTimeout, RecvStream, SendStream, ServerConfig,
+    TransportConfig, VarInt, VarIntBoundsExceeded,
     crypto::rustls::{NoInitialCipherSuite, QuicClientConfig, QuicServerConfig},
 };
 #[cfg(feature = "cluster-dev")]
@@ -41,7 +41,8 @@ use x509_parser::prelude::{FromDer, GeneralName, X509Certificate};
 #[cfg(feature = "cluster-dev")]
 const DEV_SERVER_NAME: &str = "tellus";
 
-/// Must stay below quinn's default 30 s idle timeout, else idle connections die between pings.
+/// Must stay below every idle timeout [QuicTransport::new] accepts, else idle connections die
+/// between pings.
 const KEEP_ALIVE_INTERVAL: Duration = Duration::from_secs(10);
 
 /// Beyond this size the copy into one assembled write outweighs the saved write call.
@@ -63,27 +64,48 @@ impl QuicTransport {
     /// never opens more than a peer configured the same way admits.
     pub const DATA_STREAMS: NonZeroUsize = NonZeroUsize::new(100).expect("100 is not zero");
 
+    /// The idle timeout of [QuicTransport::mutual_tls], [QuicTransport::from_config] and
+    /// `QuicTransport::dev`, quinn's own default.
+    pub const DEFAULT_IDLE_TIMEOUT: Duration = Duration::from_secs(30);
+
     /// A transport bound to the given address with the given TLS configurations, validating the
     /// certificates of the nodes it connects to against `server_name`, which hence must be the
     /// name those certificates are issued for. A server config without client certificate
     /// verification accepts every dialer; see [QuicTransport::mutual_tls] and docs/cluster.md
     /// on what an unauthenticated dialer can do.
     ///
-    /// The transport config is used for both directions. A keep-alive below QUIC's default idle
-    /// timeout is set on it, so a lane between tellus nodes is not silently closed between
-    /// messages, and so is a concurrent unidirectional stream limit of
-    /// [QuicTransport::DATA_STREAMS].
+    /// The transport config is used for both directions. `idle_timeout` is set on it, replacing
+    /// whatever it held: it closes a connection which has been silent that long and bounds a
+    /// handshake toward a silent address, see [Transport::connect]. A keep-alive of 10 s is set on
+    /// it too, so a lane between tellus nodes is not silently closed between messages, and so is
+    /// a concurrent unidirectional stream limit of [QuicTransport::DATA_STREAMS].
     ///
     /// # Errors
-    /// Fails if `server_name` is neither a valid DNS name nor an IP address, if the UDP socket
-    /// cannot be bound to `bind_addr`, or if no Tokio runtime is running.
+    /// Fails if `idle_timeout` is not at least one whole millisecond above the 10 s keep-alive, if
+    /// it exceeds what QUIC can encode, 2^62 milliseconds, if `server_name` is neither a valid DNS
+    /// name nor an IP address, if the UDP socket cannot be bound to `bind_addr`, or if no Tokio
+    /// runtime is running.
     pub fn new(
         bind_addr: SocketAddr,
         mut server_config: ServerConfig,
         mut client_config: ClientConfig,
         server_name: impl Into<String>,
         mut transport_config: TransportConfig,
+        idle_timeout: Duration,
     ) -> Result<Self, QuicTransportError> {
+        // In whole milliseconds, as quinn keeps it!
+        if idle_timeout.as_millis() <= KEEP_ALIVE_INTERVAL.as_millis() {
+            return Err(QuicTransportError::IdleTimeoutTooShort {
+                idle_timeout,
+                keep_alive: KEEP_ALIVE_INTERVAL,
+            });
+        }
+        let quic_idle_timeout = IdleTimeout::try_from(idle_timeout).map_err(|source| {
+            QuicTransportError::IdleTimeoutTooLong {
+                idle_timeout,
+                source,
+            }
+        })?;
         let server_name = server_name.into();
         ServerName::try_from(server_name.as_str()).map_err(|source| {
             QuicTransportError::ServerName {
@@ -92,6 +114,7 @@ impl QuicTransport {
             }
         })?;
 
+        transport_config.max_idle_timeout(Some(quic_idle_timeout));
         // A keep-alive from either side resets the idle timers of both sides!
         transport_config.keep_alive_interval(Some(KEEP_ALIVE_INTERVAL));
         transport_config.max_concurrent_uni_streams(VarInt::from_u32(
@@ -202,6 +225,7 @@ impl QuicTransport {
             client_config,
             server_name,
             TransportConfig::default(),
+            Self::DEFAULT_IDLE_TIMEOUT,
         )
     }
 
@@ -246,6 +270,7 @@ impl QuicTransport {
             client_config,
             DEV_SERVER_NAME,
             TransportConfig::default(),
+            Self::DEFAULT_IDLE_TIMEOUT,
         )
     }
 
@@ -394,6 +419,29 @@ pub enum QuicTransportError {
 
         /// The read failure.
         source: pem::Error,
+    },
+
+    /// The idle timeout given to [QuicTransport::new] is not at least one whole millisecond above
+    /// the keep-alive, the precision QUIC keeps it in, so an idle connection would close between
+    /// two keep-alives.
+    #[error("idle timeout of {idle_timeout:?} is not above the keep-alive of {keep_alive:?}")]
+    IdleTimeoutTooShort {
+        /// The given idle timeout.
+        idle_timeout: Duration,
+
+        /// The keep-alive interval the idle timeout must exceed.
+        keep_alive: Duration,
+    },
+
+    /// The idle timeout given to [QuicTransport::new] exceeds what QUIC can encode, 2^62
+    /// milliseconds.
+    #[error("idle timeout of {idle_timeout:?} exceeds what QUIC can encode")]
+    IdleTimeoutTooLong {
+        /// The given idle timeout.
+        idle_timeout: Duration,
+
+        /// Why QUIC cannot encode it.
+        source: VarIntBoundsExceeded,
     },
 
     /// The self signed development certificate cannot be generated.
@@ -693,10 +741,11 @@ mod tests {
     use crate::cluster::transport::{
         Connection, FrameReceiver, FrameSender, Transport,
         quic::{
-            ASSEMBLED_WRITE_LIMIT, QuicConfig, QuicTransport, QuicTransportError, certs,
-            parse_identity,
+            ASSEMBLED_WRITE_LIMIT, KEEP_ALIVE_INTERVAL, QuicConfig, QuicTransport,
+            QuicTransportError, certs, parse_identity,
         },
     };
+    use quinn::{ClientConfig, ServerConfig, TransportConfig};
     use rustls::{
         RootCertStore,
         crypto::CryptoProvider,
@@ -706,6 +755,7 @@ mod tests {
         fs,
         net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
         path::Path,
+        sync::Arc,
         time::Duration,
     };
     use tokio::{net::UdpSocket, time::timeout};
@@ -1201,6 +1251,60 @@ mod tests {
             QuicTransport::mutual_tls(config.bind_addr, cert_chain, key, roots, "not a name"),
             Err(QuicTransportError::ServerName { name, .. }) if name == "not a name"
         ));
+    }
+
+    /// An idle timeout not above the keep-alive would close an idle connection between two
+    /// keep-alives, and one QUIC cannot encode cannot be set, so both are refused; the default and
+    /// anything just above the keep-alive build.
+    #[tokio::test]
+    async fn the_idle_timeout_must_exceed_the_keep_alive() {
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let transport = |idle_timeout| {
+            let (server_config, client_config) = tls_configs();
+            QuicTransport::new(
+                loopback,
+                server_config,
+                client_config,
+                "tellus",
+                TransportConfig::default(),
+                idle_timeout,
+            )
+        };
+
+        for too_short in [
+            Duration::from_secs(1),
+            KEEP_ALIVE_INTERVAL,
+            KEEP_ALIVE_INTERVAL + Duration::from_nanos(1),
+            KEEP_ALIVE_INTERVAL + Duration::from_nanos(999_999),
+        ] {
+            assert!(matches!(
+                transport(too_short),
+                Err(QuicTransportError::IdleTimeoutTooShort { idle_timeout, keep_alive })
+                    if idle_timeout == too_short && keep_alive == KEEP_ALIVE_INTERVAL
+            ));
+        }
+        assert!(matches!(
+            transport(Duration::MAX),
+            Err(QuicTransportError::IdleTimeoutTooLong { idle_timeout, .. })
+                if idle_timeout == Duration::MAX
+        ));
+
+        assert!(transport(QuicTransport::DEFAULT_IDLE_TIMEOUT).is_ok());
+        assert!(transport(KEEP_ALIVE_INTERVAL + Duration::from_millis(1)).is_ok());
+    }
+
+    fn tls_configs() -> (ServerConfig, ClientConfig) {
+        let certified_key = rcgen::generate_simple_self_signed(vec!["tellus".to_string()])
+            .expect("a self signed certificate");
+        let cert = certified_key.cert.der().clone();
+        let key = PrivateKeyDer::Pkcs8(certified_key.signing_key.serialize_der().into());
+        let server_config =
+            ServerConfig::with_single_cert(vec![cert.clone()], key).expect("a server config");
+        let mut roots = RootCertStore::empty();
+        roots.add(cert).expect("adds the certificate");
+        let client_config =
+            ClientConfig::with_root_certificates(Arc::new(roots)).expect("a client config");
+        (server_config, client_config)
     }
 
     /// The documented config form, which a config file provides.
