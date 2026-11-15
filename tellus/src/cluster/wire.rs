@@ -168,7 +168,17 @@ struct WireRef {
 
 #[cfg(test)]
 mod tests {
-    use crate::cluster::{codec::Codec, wire::WireRef};
+    use crate::{
+        actor_ref::Sink,
+        cluster::{
+            codec::Codec,
+            endpoint::{self, EndpointConfig, EndpointInner},
+            manifest::Manifest,
+            schema::Schema,
+            wire::{WireRef, deserialize_ref, serialize_ref},
+        },
+    };
+    use serde::{Deserialize, Serialize};
 
     /// The bytes the trait object codec this one replaced encoded a manifest and a [WireRef]
     /// into.
@@ -198,5 +208,50 @@ mod tests {
                 .expect("encodes"),
             WIRE_REF_PAYLOAD
         );
+    }
+
+    /// The manifest precedes the reference, and the node precedes the actor ID: decoding a
+    /// remote reference out of hardcoded bytes catches a transposition, which a round trip cannot.
+    #[test]
+    fn a_serialized_ref_matches_its_pinned_wire_bytes() {
+        const INCARNATION: &str = "00010203-0405-0607-0809-0a0b0c0d0e0f";
+        const ACTOR: &str = "10111213-1415-1617-1819-1a1b1c1d1e1f";
+
+        let bytes = [
+            18, 116, 101, 108, 108, 117, 115, 46, 116, 101, 115, 116, 46, 80, 105, 110, 110, 101,
+            100, // manifest "tellus.test.Pinned"
+            0, 127, 0, 0, 1, 248, 19, // node address 127.0.0.1:2552
+            16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // node incarnation
+            16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // actor ID
+        ];
+
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        endpoint::with_current(endpoint, || {
+            let actor_ref = deserialize_ref::<Pinned>(&bytes).expect("reference resolves");
+            let Sink::Remote(sink) = actor_ref.sink() else {
+                panic!("not a remote reference");
+            };
+            assert_eq!(
+                sink.node().addr(),
+                "127.0.0.1:2552".parse().expect("an address")
+            );
+            assert_eq!(sink.node().incarnation().to_string(), INCARNATION);
+            assert_eq!(actor_ref.actor_id().to_string(), ACTOR);
+            assert_eq!(
+                serialize_ref(&actor_ref).expect("reference serializes"),
+                bytes
+            );
+        });
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Pinned;
+
+    impl Schema for Pinned {}
+
+    impl Manifest for Pinned {
+        const MANIFEST: &'static str = "tellus.test.Pinned";
     }
 }
