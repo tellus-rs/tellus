@@ -186,6 +186,11 @@ replay resumes, the fencing expectation is the position the next append claims, 
 the given position inclusively. No position is ever converted between a position replay resumes at
 and one it resumes after.
 
+The last position is `u64::MAX`, and `SeqNo::succ` and `SeqNo::advanced_by` answer `None` beyond it.
+A command whose events would advance a stream beyond it fails the actor under its supervision, and
+nothing is appended. Replay fails recovery at a stored event at the last position, since no position
+is left to resume at. `InMemoryStore` refuses such an append with `SeqNoOverflow`.
+
 ## Schema evolution
 
 Events outlive the code that wrote them, so the stored representation carries what evolution needs.

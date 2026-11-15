@@ -1,6 +1,6 @@
 use crate::persistence::{
     persistence_id::PersistenceId,
-    seq_no::SeqNo,
+    seq_no::{SeqNo, SeqNoOverflow},
     store::{
         AppendError, EncodedEvent, EncodedSnapshot, EventStore, SnapshotStore, StoredEvent,
         StoredSnapshot,
@@ -14,8 +14,9 @@ use std::{
 };
 
 /// An in-memory [EventStore] and [SnapshotStore] for testing event-sourced actors: clones share
-/// the same streams and snapshots, which are lost with the process. Neither store fails, hence
-/// [Infallible], but a poisoned lock panics.
+/// the same streams and snapshots, which are lost with the process. An append fails only with
+/// [SeqNoOverflow], the snapshot store never fails, hence [Infallible], and a poisoned lock
+/// panics.
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryStore {
     streams: Arc<Mutex<HashMap<PersistenceId, Vec<StoredEvent>>>>,
@@ -44,7 +45,7 @@ impl InMemoryStore {
 }
 
 impl EventStore for InMemoryStore {
-    type Error = Infallible;
+    type Error = SeqNoOverflow;
 
     async fn append(
         &self,
@@ -58,11 +59,17 @@ impl EventStore for InMemoryStore {
             return Err(AppendError::Conflict);
         }
 
-        for (n, event) in events.into_iter().enumerate() {
-            stream.push(StoredEvent {
-                seq_no: next_seq_no.advanced_by(n),
-                event,
-            });
+        let count = events.len();
+        let Some(head) = next_seq_no.advanced_by(count) else {
+            return Err(AppendError::Store(SeqNoOverflow {
+                seq_no: next_seq_no,
+                count,
+            }));
+        };
+
+        let seq_nos = (next_seq_no.as_u64()..head.as_u64()).map(SeqNo::new);
+        for (seq_no, event) in seq_nos.zip(events) {
+            stream.push(StoredEvent { seq_no, event });
         }
 
         Ok(())
@@ -128,8 +135,8 @@ impl SnapshotStore for InMemoryStore {
 #[cfg(test)]
 mod tests {
     use crate::{
-        EncodedEvent, EncodedSnapshot, EventStore, PersistenceId, SchemaVersion, SeqNo,
-        SnapshotStore, persistence::in_memory_store::InMemoryStore,
+        AppendError, EncodedEvent, EncodedSnapshot, EventStore, PersistenceId, SchemaVersion,
+        SeqNo, SnapshotStore, persistence::in_memory_store::InMemoryStore,
     };
 
     #[tokio::test]
@@ -149,6 +156,19 @@ mod tests {
         assert_eq!(events[0].event, event(1));
         assert_eq!(events[1].seq_no, SeqNo::new(1));
         assert_eq!(events[1].event, event(2));
+    }
+
+    #[tokio::test]
+    async fn an_append_at_the_last_position_of_an_empty_stream_is_a_conflict() {
+        let store = InMemoryStore::default();
+        let id = persistence_id("overflow");
+
+        let appended = store
+            .append(&id, SeqNo::new(u64::MAX), vec![event(1)])
+            .await;
+
+        assert!(matches!(appended, Err(AppendError::Conflict)));
+        assert!(store.events(&id).is_empty());
     }
 
     #[tokio::test]
