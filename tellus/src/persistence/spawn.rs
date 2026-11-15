@@ -13,7 +13,7 @@ use crate::{
         effect::Effect,
         event_sourced::EventSourced,
         persistence_id::PersistenceId,
-        seq_no::SeqNo,
+        seq_no::{SeqNo, SeqNoOverflow},
         store::{
             AppendError, EncodedEvent, EncodedSnapshot, EventStore, SnapshotStore, StoredEvent,
             StoredSnapshot,
@@ -170,6 +170,9 @@ enum ReplayError {
 
     #[error("event stream gap: sequence number {seq_no}, expected {expected}")]
     Gap { seq_no: SeqNo, expected: SeqNo },
+
+    #[error(transparent)]
+    Overflow(#[from] SeqNoOverflow),
 }
 
 #[derive(Debug, Error)]
@@ -627,6 +630,16 @@ where
     let appended = !events.is_empty();
 
     if appended {
+        let count = events.len();
+        let head = next_seq_no.advanced_by(count).ok_or(SeqNoOverflow {
+            seq_no: next_seq_no,
+            count,
+        });
+        let Some(head) = log_failure(actor_id, FAILED_TO_APPEND, Some(head)) else {
+            drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, (state, events, thens));
+            return None;
+        };
+
         let encoded = catch_and_log(actor_id, "actor failed to encode events", || {
             encode_events::<A, C>(&persistence.codec, &events)
         });
@@ -646,7 +659,6 @@ where
             return None;
         }
 
-        let appended_count = events.len();
         let applied = catch_panic_and_log(actor_id, "actor failed to apply events", || {
             apply_events(actor, state, events)
         });
@@ -655,7 +667,7 @@ where
             return None;
         };
         state = applied;
-        next_seq_no = next_seq_no.advanced_by(appended_count);
+        next_seq_no = head;
     }
 
     let ran = catch_panic_and_log(actor_id, "actor continuation failed", || {
@@ -756,7 +768,11 @@ where
                 &stored.event.payload,
             )?;
 
-            Ok((actor.apply(state, event), next_seq_no.succ()))
+            let succ = next_seq_no.succ().ok_or(SeqNoOverflow {
+                seq_no: next_seq_no,
+                count: 1,
+            })?;
+            Ok((actor.apply(state, event), succ))
         })
 }
 

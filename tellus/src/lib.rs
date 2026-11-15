@@ -125,7 +125,7 @@ pub use crate::persistence::{
     effect::Effect,
     event_sourced::EventSourced,
     persistence_id::{InvalidPersistenceId, PersistenceId, PersistenceIdSegment},
-    seq_no::SeqNo,
+    seq_no::{SeqNo, SeqNoOverflow},
     store::{
         AppendError, EncodedEvent, EncodedSnapshot, EventStore, NoSnapshots, SnapshotStore,
         StoredEvent, StoredSnapshot,

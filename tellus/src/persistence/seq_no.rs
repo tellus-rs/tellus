@@ -1,4 +1,5 @@
 use derive_more::Display;
+use thiserror::Error;
 
 /// A position in an event stream: either the sequence number of a stored event, gapless and
 /// starting at 0, or the position at which the next event is appended, which is [SeqNo::ZERO] for
@@ -16,20 +17,37 @@ impl SeqNo {
         Self(seq_no)
     }
 
-    /// The position directly after this one, saturating at `u64::MAX`.
-    pub fn succ(self) -> Self {
-        Self(self.0.saturating_add(1))
+    /// The position directly after this one, or `None` if this one is `u64::MAX`, the last
+    /// position.
+    pub fn succ(self) -> Option<Self> {
+        self.0.checked_add(1).map(Self)
     }
 
-    /// The position after appending `count` events at this one, saturating at `u64::MAX`.
-    pub fn advanced_by(self, count: usize) -> Self {
-        Self(self.0.saturating_add(count as u64))
+    /// The position after appending `count` events at this one, or `None` if it lies beyond
+    /// `u64::MAX`, the last position.
+    pub fn advanced_by(self, count: usize) -> Option<Self> {
+        u64::try_from(count)
+            .ok()
+            .and_then(|count| self.0.checked_add(count))
+            .map(Self)
     }
 
     /// This position as a `u64`, for stores mapping it onto a column type.
     pub fn as_u64(self) -> u64 {
         self.0
     }
+}
+
+/// Appending `count` events at `seq_no` would advance a stream beyond its last position,
+/// `u64::MAX`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
+#[error("sequence number {seq_no} cannot advance by {count}")]
+pub struct SeqNoOverflow {
+    /// The position the events would be appended at.
+    pub seq_no: SeqNo,
+
+    /// The number of events.
+    pub count: usize,
 }
 
 #[cfg(test)]
@@ -47,15 +65,15 @@ mod tests {
     /// successive appends would.
     #[test]
     fn succ_and_advanced_by_agree() {
-        assert_eq!(SeqNo::ZERO.succ(), SeqNo::new(1));
+        assert_eq!(SeqNo::ZERO.succ(), Some(SeqNo::new(1)));
         assert_eq!(SeqNo::ZERO.advanced_by(1), SeqNo::ZERO.succ());
-        assert_eq!(SeqNo::new(2).advanced_by(3), SeqNo::new(5));
+        assert_eq!(SeqNo::new(2).advanced_by(3), Some(SeqNo::new(5)));
     }
 
     /// An effect without events settles at the same position it started at.
     #[test]
     fn advanced_by_zero_stays_put() {
-        assert_eq!(SeqNo::new(7).advanced_by(0), SeqNo::new(7));
+        assert_eq!(SeqNo::new(7).advanced_by(0), Some(SeqNo::new(7)));
     }
 
     /// Positions order like their numbers, which a store's read filter relies on.
@@ -65,11 +83,26 @@ mod tests {
         assert!(SeqNo::new(9) > SeqNo::new(8));
     }
 
-    /// Advancing past the end saturates: a wrapped position would silently reorder a stream.
+    /// The last position has no successor.
     #[test]
-    fn advancing_saturates_instead_of_wrapping() {
-        assert_eq!(SeqNo::new(u64::MAX).succ(), SeqNo::new(u64::MAX));
-        assert_eq!(SeqNo::new(u64::MAX).advanced_by(3), SeqNo::new(u64::MAX));
+    fn succ_of_the_last_position_is_none() {
+        assert_eq!(SeqNo::new(u64::MAX - 1).succ(), Some(SeqNo::new(u64::MAX)));
+        assert_eq!(SeqNo::new(u64::MAX).succ(), None);
+    }
+
+    /// Advancing by a count reaching beyond the last position is `None`, the last position itself
+    /// is still reachable.
+    #[test]
+    fn advanced_by_beyond_the_last_position_is_none() {
+        assert_eq!(
+            SeqNo::new(u64::MAX - 3).advanced_by(3),
+            Some(SeqNo::new(u64::MAX))
+        );
+        assert_eq!(SeqNo::new(u64::MAX - 3).advanced_by(4), None);
+        assert_eq!(
+            SeqNo::new(u64::MAX).advanced_by(0),
+            Some(SeqNo::new(u64::MAX))
+        );
     }
 
     /// A position renders as its bare number in logs and in the replay gap error.

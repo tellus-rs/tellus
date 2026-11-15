@@ -592,6 +592,61 @@ async fn a_parent_stop_aborts_a_hung_recovery() {
     assert_terminates(system, "termination must not wait for the hung recovery").await;
 }
 
+/// A command whose events would advance the stream beyond the last position fails the actor
+/// before anything is appended, even with a store which would accept the append: a saturating
+/// position would have stored the event at `u64::MAX` and carried on.
+#[tokio::test]
+async fn a_command_beyond_the_last_position_fails_without_appending() {
+    let store = LastPositionStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("last-position", probe_tx),
+        Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no init from snapshot probe").await,
+        Probe::InitFromSnapshot
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled
+    );
+    assert_terminates(system, "the overflowing command must fail the actor").await;
+    assert_eq!(*store.appended.lock().expect("appended lock poisoned"), 0);
+}
+
+/// Recovery fails at an event stored at `u64::MAX`, since replay cannot advance past it, rather
+/// than resuming at a position it has already applied.
+#[tokio::test]
+async fn recovery_fails_at_an_event_at_the_last_position() {
+    let store = LastPositionStore {
+        event_at_last_position: true,
+        ..LastPositionStore::default()
+    };
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("last-position", probe_tx),
+        Persistence::new(store.clone()).with_snapshot_store(store),
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no init from snapshot probe").await,
+        Probe::InitFromSnapshot
+    );
+    assert_terminates(system, "the overflowing replay must fail recovery").await;
+    assert!(
+        probe_rx.try_recv().is_err(),
+        "recovery must fail before `recovered` runs"
+    );
+}
+
 /// A failure of `recovered` is an ordinary startup failure: under `Restart` the next attempt
 /// runs recovery again, and once `recovered` succeeds the actor handles commands normally.
 #[tokio::test]
@@ -1741,7 +1796,9 @@ impl EventStore for FaultyStore {
             .await
             .map_err(|error| match error {
                 AppendError::Conflict => AppendError::Conflict,
-                AppendError::Store(error) => match error {},
+                AppendError::Store(error) => {
+                    panic!("the in-memory store failed an append: {error}")
+                }
             })
     }
 
@@ -1763,7 +1820,7 @@ impl EventStore for FaultyStore {
         self.inner
             .read(id, from_seq_no, limit)
             .await
-            .map_err(|error| match error {})
+            .map_err(|error| panic!("the in-memory store failed a read: {error}"))
     }
 }
 
@@ -1788,6 +1845,69 @@ impl SnapshotStore for FaultyStore {
 
     async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
         self.inner.load(id).await.map_err(|error| match error {})
+    }
+}
+
+/// A store whose snapshot leaves replay to resume at `u64::MAX`, the last position, and which
+/// accepts every append without fencing, so overflowing positions reach the run loop. With
+/// `event_at_last_position` a replay from there returns one event at `u64::MAX`.
+#[derive(Debug, Clone, Default)]
+struct LastPositionStore {
+    event_at_last_position: bool,
+    appended: Arc<Mutex<usize>>,
+}
+
+impl EventStore for LastPositionStore {
+    type Error = Infallible;
+
+    async fn append(
+        &self,
+        _: &PersistenceId,
+        _: SeqNo,
+        events: Vec<EncodedEvent>,
+    ) -> Result<(), AppendError<Self::Error>> {
+        *self.appended.lock().expect("appended lock poisoned") += events.len();
+        Ok(())
+    }
+
+    async fn read(
+        &self,
+        _: &PersistenceId,
+        from_seq_no: SeqNo,
+        _: NonZeroUsize,
+    ) -> Result<Vec<StoredEvent>, Self::Error> {
+        let last = SeqNo::new(u64::MAX);
+        if self.event_at_last_position && from_seq_no == last {
+            return Ok(vec![StoredEvent {
+                seq_no: last,
+                event: encoded(&Increased(1)),
+            }]);
+        }
+        Ok(Vec::new())
+    }
+}
+
+impl SnapshotStore for LastPositionStore {
+    type Error = Infallible;
+
+    async fn save(
+        &self,
+        _: &PersistenceId,
+        _: SeqNo,
+        _: EncodedSnapshot,
+    ) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
+    async fn load(&self, _: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
+        Ok(Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(u64::MAX),
+            snapshot: EncodedSnapshot {
+                manifest: Count::MANIFEST.into(),
+                schema_version: Count::VERSION,
+                payload: Cbor.encode(&Count(5)).expect("the snapshot is encodable"),
+            },
+        }))
     }
 }
 
