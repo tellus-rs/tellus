@@ -1011,6 +1011,7 @@ mod tests {
                 namespace: None,
                 label_selector: "app=tellus".to_string(),
                 port: Port::Number(NonZeroU16::new(7_878).expect("7878 is not zero")),
+                list_timeout: Pods::DEFAULT_LIST_TIMEOUT,
             }
         );
 

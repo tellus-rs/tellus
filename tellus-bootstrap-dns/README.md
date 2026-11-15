@@ -3,8 +3,8 @@
 DNS seed discovery for [tellus](../tellus) cluster bootstrap: `DnsSeeds` implements
 `SeedDiscovery`, resolving seed addresses from SRV records, which carry address and port (e.g. a
 Kubernetes headless service), or from A/AAAA records paired with a configured port.
-SRV targets are resolved concurrently and independently: a failing target is ignored while any
-other target resolves, and a view resolving no address at all remains an error for bootstrap to
+SRV targets are resolved concurrently and independently: a failing target is logged at warn level
+and skipped while any other target resolves, and a view resolving no address at all remains an error for bootstrap to
 retry. A stale target and a transient failure are indistinguishable to the resolver and are hence
 skipped alike. A partial view does settle, so a target failing throughout the settle window shrinks
 the universe the formation provider counts its majority against.
@@ -33,6 +33,10 @@ cluster::start_endpoint(EndpointConfig::new(addr), transport)?;
 let seeds = DnsSeeds::srv("_tellus._udp.tellus.default.svc.cluster.local")?;
 timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await??;
 ```
+
+`DnsSeeds::srv`, `DnsSeeds::ip` and `DnsSeeds::new` read the system resolver configuration;
+`DnsSeeds::with_resolver` takes a resolver of your own instead. All of them refuse a blank name and
+a malformed one, such as a label over 63 bytes or an empty label, which could never resolve.
 
 With the `serde` feature the `Query` deciding what to resolve is deserializable, so it can come
 from a config file next to tellus's own configuration, and `DnsSeeds::new` takes it:

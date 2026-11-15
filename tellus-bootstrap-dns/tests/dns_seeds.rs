@@ -11,14 +11,17 @@ use hickory_server::{
     zone_handler::{AxfrPolicy, Catalog, ZoneHandler, ZoneType},
 };
 use std::{
+    cell::RefCell,
+    io,
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU16,
     str::FromStr,
-    sync::Arc,
+    sync::{Arc, Once},
 };
 use tellus::cluster::SeedDiscovery;
-use tellus_bootstrap_dns::DnsSeeds;
+use tellus_bootstrap_dns::{DnsSeeds, DnsSeedsError, InvalidQuery, Query};
 use tokio::net::UdpSocket;
+use tracing::Level;
 
 const NODE_A_IP: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 1);
 const NODE_B_IP: Ipv4Addr = Ipv4Addr::new(192, 0, 2, 2);
@@ -27,13 +30,21 @@ const NODE_B_PORT: u16 = 4_002;
 const STALE_PORT: u16 = 4_003;
 const SHARED_PORT: NonZeroU16 = NonZeroU16::new(4_242).expect("4242 is not zero");
 
+thread_local! {
+    static LOG: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
 /// Each SRV record contributes its own port, paired with the addresses its target resolves to; a
-/// target which does not resolve is skipped while the others resolve.
+/// target which does not resolve is skipped while the others resolve, and logged at warn level
+/// with its name, since the resolved view is partial.
 #[tokio::test]
 async fn test_srv() -> anyhow::Result<()> {
+    capture_logs();
     let dns_addr = spawn_dns().await?;
-    let mut seeds =
-        DnsSeeds::srv("_tellus._udp.tellus.test.")?.with_resolver(resolver_at(dns_addr)?);
+    let mut seeds = DnsSeeds::with_resolver(
+        Query::Srv("_tellus._udp.tellus.test.".to_string()),
+        resolver_at(dns_addr)?,
+    )?;
 
     let mut resolved = seeds.resolve().await.context("resolving SRV seeds")?;
     resolved.sort();
@@ -42,6 +53,12 @@ async fn test_srv() -> anyhow::Result<()> {
         SocketAddr::new(IpAddr::V4(NODE_B_IP), NODE_B_PORT),
     ];
     assert_eq!(resolved, expected);
+
+    let log = logged();
+    assert!(log.contains("WARN"), "{log}");
+    assert!(log.contains("cannot resolve SRV target"), "{log}");
+    assert!(log.contains("srv_target=stale.tellus.test."), "{log}");
+    assert!(!log.contains("node-a.tellus.test."), "{log}");
     Ok(())
 }
 
@@ -50,8 +67,10 @@ async fn test_srv() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_all_srv_targets_stale() -> anyhow::Result<()> {
     let dns_addr = spawn_dns().await?;
-    let mut seeds =
-        DnsSeeds::srv("_stale._udp.tellus.test.")?.with_resolver(resolver_at(dns_addr)?);
+    let mut seeds = DnsSeeds::with_resolver(
+        Query::Srv("_stale._udp.tellus.test.".to_string()),
+        resolver_at(dns_addr)?,
+    )?;
 
     assert!(seeds.resolve().await.is_err());
     Ok(())
@@ -62,7 +81,7 @@ async fn test_all_srv_targets_stale() -> anyhow::Result<()> {
 async fn test_ip() -> anyhow::Result<()> {
     let dns_addr = spawn_dns().await?;
     let mut seeds =
-        DnsSeeds::ip("nodes.tellus.test.", SHARED_PORT)?.with_resolver(resolver_at(dns_addr)?);
+        DnsSeeds::with_resolver(ip_query("nodes.tellus.test."), resolver_at(dns_addr)?)?;
 
     let mut resolved = seeds.resolve().await.context("resolving A seeds")?;
     resolved.sort();
@@ -80,10 +99,114 @@ async fn test_ip() -> anyhow::Result<()> {
 async fn test_missing_name() -> anyhow::Result<()> {
     let dns_addr = spawn_dns().await?;
     let mut seeds =
-        DnsSeeds::ip("missing.tellus.test.", SHARED_PORT)?.with_resolver(resolver_at(dns_addr)?);
+        DnsSeeds::with_resolver(ip_query("missing.tellus.test."), resolver_at(dns_addr)?)?;
 
     assert!(seeds.resolve().await.is_err());
     Ok(())
+}
+
+/// A blank name fails on every resolve, so it is refused when the discovery is built rather than
+/// retried by bootstrap forever, and before the system resolver configuration is read.
+#[tokio::test]
+async fn test_blank_query() -> anyhow::Result<()> {
+    let dns_addr = spawn_dns().await?;
+
+    for query in [Query::Srv("".to_string()), ip_query(" \t")] {
+        let error = DnsSeeds::with_resolver(query.clone(), resolver_at(dns_addr)?)
+            .expect_err("a blank name is refused");
+        assert!(matches!(
+            error,
+            DnsSeedsError::Config(InvalidQuery::BlankName)
+        ));
+
+        let error = DnsSeeds::new(query).expect_err("a blank name is refused");
+        assert!(matches!(
+            error,
+            DnsSeedsError::Config(InvalidQuery::BlankName)
+        ));
+    }
+
+    let error = DnsSeeds::srv(" ").expect_err("a blank name is refused");
+    assert!(matches!(
+        error,
+        DnsSeedsError::Config(InvalidQuery::BlankName)
+    ));
+    let error = DnsSeeds::ip("", SHARED_PORT).expect_err("a blank name is refused");
+    assert!(matches!(
+        error,
+        DnsSeedsError::Config(InvalidQuery::BlankName)
+    ));
+    Ok(())
+}
+
+/// A name which is no valid DNS name, such as one with a label over 63 bytes or an empty label,
+/// is refused by every constructor rather than failing on every resolve. An IP query still accepts
+/// an IP address literal, which the resolver answers without a lookup.
+#[tokio::test]
+async fn test_malformed_query() -> anyhow::Result<()> {
+    let dns_addr = spawn_dns().await?;
+    let long_label = format!("{}.tellus.test.", "a".repeat(64));
+
+    for name in [long_label.as_str(), "node..tellus.test."] {
+        for query in [Query::Srv(name.to_string()), ip_query(name)] {
+            let error = DnsSeeds::with_resolver(query.clone(), resolver_at(dns_addr)?)
+                .expect_err("a malformed name is refused");
+            assert!(
+                matches!(
+                    &error,
+                    DnsSeedsError::Config(InvalidQuery::MalformedName { name: refused, .. })
+                        if refused == name
+                ),
+                "{name} was not refused as malformed: {error:?}"
+            );
+        }
+        assert!(matches!(
+            DnsSeeds::srv(name),
+            Err(DnsSeedsError::Config(InvalidQuery::MalformedName { .. }))
+        ));
+        assert!(matches!(
+            DnsSeeds::ip(name, SHARED_PORT),
+            Err(DnsSeedsError::Config(InvalidQuery::MalformedName { .. }))
+        ));
+    }
+
+    for literal in ["127.0.0.1", "::1"] {
+        DnsSeeds::with_resolver(ip_query(literal), resolver_at(dns_addr)?)
+            .expect("an IP address literal is a valid IP query");
+    }
+    Ok(())
+}
+
+/// Installs, once per test binary, a subscriber writing every warning into a buffer of the thread
+/// logging it.
+fn capture_logs() {
+    static INSTALLED: Once = Once::new();
+
+    INSTALLED.call_once(|| {
+        tracing_subscriber::fmt()
+            .with_max_level(Level::WARN)
+            .with_ansi(false)
+            .with_writer(|| ThreadLog)
+            .init();
+    });
+}
+
+/// What this thread has logged since [capture_logs].
+fn logged() -> String {
+    LOG.with_borrow(|bytes| String::from_utf8_lossy(bytes).into_owned())
+}
+
+struct ThreadLog;
+
+impl io::Write for ThreadLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        LOG.with_borrow_mut(|bytes| bytes.extend_from_slice(buf));
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 /// An in-process DNS server on an ephemeral UDP port, authoritative for `tellus.test.`. It serves
@@ -149,6 +272,13 @@ async fn spawn_dns() -> anyhow::Result<SocketAddr> {
         let _ = server.block_until_done().await;
     });
     Ok(addr)
+}
+
+fn ip_query(name: &str) -> Query {
+    Query::Ip {
+        name: name.to_string(),
+        port: SHARED_PORT,
+    }
 }
 
 /// A resolver asking only the given name server, so the tests never touch real DNS.

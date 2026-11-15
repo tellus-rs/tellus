@@ -4564,6 +4564,8 @@ dependencies = [
  "tellus",
  "thiserror 2.0.21",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -4574,6 +4576,7 @@ dependencies = [
  "axum",
  "derive_more",
  "http",
+ "humantime-serde",
  "k8s-openapi",
  "kube",
  "serde",

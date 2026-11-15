@@ -83,6 +83,7 @@ async fn main() -> anyhow::Result<()> {
         namespace: None,
         label_selector: "app=tellus".to_string(),
         port: Port::Number(PORT),
+        list_timeout: Pods::DEFAULT_LIST_TIMEOUT,
     })
     .await
     .context("Kubernetes seed discovery")?;
