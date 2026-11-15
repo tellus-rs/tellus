@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794755153633,
+  "lastUpdate": 1794755635777,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -15419,6 +15419,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 23513900,
             "range": "± 853026",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7d9bf74742bdc0ee8262b9a25b6d0c6daee66df6",
+          "message": "Merge pull request #393 from tellus-rs/fix/seed-discovery\n\nfix(bootstrap)!: validate DNS queries and bound the Kubernetes list call",
+          "timestamp": "2026-11-15T16:04:38+01:00",
+          "tree_id": "a5c648060b187d3eb307bc72ac5900f793ee25df",
+          "url": "https://github.com/tellus-rs/tellus/commit/7d9bf74742bdc0ee8262b9a25b6d0c6daee66df6"
+        },
+        "date": 1794755634523,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 14328435,
+            "range": "± 980222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 13377770,
+            "range": "± 990065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 906280,
+            "range": "± 33129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 776175,
+            "range": "± 5388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 5794652,
+            "range": "± 215851",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 4277490,
+            "range": "± 65131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 19725481,
+            "range": "± 426453",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 20160853,
+            "range": "± 432803",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 19302083,
+            "range": "± 566672",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 19933581,
+            "range": "± 515823",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 20836253,
+            "range": "± 538051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 22026821,
+            "range": "± 944132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 28413886,
+            "range": "± 831706",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 20821512,
+            "range": "± 586567",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 21963354,
+            "range": "± 651912",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 28130851,
+            "range": "± 960325",
             "unit": "ns/iter"
           }
         ]
