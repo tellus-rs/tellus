@@ -1245,9 +1245,18 @@ where
                 asker,
                 nonce,
                 recipient: _,
+                reply_tags,
                 schema_version,
                 payload,
-            } => reply::on_reply(endpoint, peer, asker, nonce, schema_version, &payload),
+            } => reply::on_reply(
+                endpoint,
+                peer,
+                asker,
+                nonce,
+                &reply_tags,
+                schema_version,
+                &payload,
+            ),
 
             Frame::ReplyDropped {
                 asker,
@@ -1834,9 +1843,10 @@ fn delivered_targets<'a>(frame: &'a Frame<'_>) -> &'a [ActorId] {
     }
 }
 
-/// A request dropped here never reaches its peer, so its asks resolve now, not on timeout.
+/// A request or reply dropped here never reaches its peer, so the reply destinations it carries
+/// are released now, not on timeout.
 fn discard_reply_tags(frame: &Frame<'_>) {
-    if let Frame::Message { reply_tags, .. } = frame {
+    if let Frame::Message { reply_tags, .. } | Frame::Reply { reply_tags, .. } = frame {
         reply::discard_replies(reply_tags);
     }
 }
@@ -1888,12 +1898,12 @@ impl Drop for InFlightFrame {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, Backoff, Incoming, MailboxCapacity, SchemaVersion,
+        ActorId, Backoff, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
             codec::{Codec, CodecError},
-            discovery::{KeyKind, WireKey},
-            endpoint::{EndpointConfig, EndpointInner, FormError, MemberAdmission},
+            discovery::{KeyKind, Nonce, WireKey},
+            endpoint::{self, EndpointConfig, EndpointInner, FormError, MemberAdmission},
             formation::JoinOutcome,
             frame::{
                 Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
@@ -1910,6 +1920,7 @@ mod tests {
                 write_streams,
             },
             receptionist::{self, WireGroup},
+            reply,
             schema::Schema,
             state::ForeignCluster,
             transport::{
@@ -2113,6 +2124,37 @@ mod tests {
             DECODE_PANICKED.store(true, Ordering::Relaxed);
             panic!("message decode bug")
         }
+    }
+
+    /// A reply which never reaches the transport releases the reply destinations it carries here,
+    /// since the node it was meant for cannot answer them.
+    #[test]
+    fn a_dead_lettered_reply_releases_its_reply_destinations() {
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let reply_to = ReplyTo::<u64>::new(|_| ());
+        let (payload, reply_tags) = endpoint::with_current(endpoint, || {
+            reply::record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        assert_eq!(endpoint.pending_replies().len(), 1);
+
+        endpoint::with_current(endpoint, || {
+            dead_letter(
+                Frame::Reply {
+                    asker: NodeId::new("127.0.0.1:2".parse().expect("valid address")),
+                    nonce: Nonce::first(),
+                    recipient: None,
+                    reply_tags,
+                    schema_version: SchemaVersion::new(0),
+                    payload: Cow::Owned(payload.expect("the destination is serialized")),
+                },
+                "127.0.0.1:2".parse().expect("valid address"),
+                "node unreachable",
+            );
+        });
+
+        assert_eq!(endpoint.pending_replies().len(), 0);
     }
 
     /// A multicast which never reaches the transport is a dead letter for every target it names.

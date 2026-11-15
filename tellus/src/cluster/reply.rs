@@ -395,7 +395,7 @@ impl PendingReplies {
     }
 }
 
-/// Repeated in the frame, so a node dead-lettering the message undecoded can still answer each.
+/// Repeated in the frame, so a node dead-lettering a message or reply undecoded can answer each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ReplyTag {
     pub(crate) nonce: Nonce,
@@ -522,6 +522,7 @@ pub(crate) fn on_reply(
     peer: NodeId,
     asker: NodeId,
     nonce: Nonce,
+    reply_tags: &[ReplyTag],
     schema_version: SchemaVersion,
     payload: &[u8],
 ) {
@@ -533,6 +534,7 @@ pub(crate) fn on_reply(
             error = "the reply answers another incarnation of this node",
             "dead letter"
         );
+        on_undeliverable(endpoint, peer, reply_tags);
         return;
     }
 
@@ -546,15 +548,19 @@ pub(crate) fn on_reply(
             );
             if let Err(error) = delivered {
                 warn!(%peer, %nonce, %error, source = error.source(), "dead letter");
+                on_undeliverable(endpoint, peer, reply_tags);
             }
         }
 
-        None => warn!(
-            %peer,
-            %nonce,
-            error = "no pending reply destination this peer was asked under this nonce",
-            "dead letter"
-        ),
+        None => {
+            warn!(
+                %peer,
+                %nonce,
+                error = "no pending reply destination this peer was asked under this nonce",
+                "dead letter"
+            );
+            on_undeliverable(endpoint, peer, reply_tags);
+        }
     }
 }
 
@@ -607,7 +613,7 @@ pub(crate) struct ProxyOrigin {
     nonce: Nonce,
 }
 
-/// For a message dead-lettered undecoded only, and tolerant of a repeated notification.
+/// For a message or reply dead-lettered undecoded only, and tolerant of a repeated notification.
 pub(crate) fn on_undeliverable(endpoint: &EndpointInner, peer: NodeId, reply_tags: &[ReplyTag]) {
     for tag in reply_tags {
         let frame = Frame::ReplyDropped {
@@ -861,10 +867,11 @@ where
                 || reply.encode(endpoint.codec(), &peer),
             )
         },
-        |schema_version, payload, _| Frame::Reply {
+        |schema_version, payload, reply_tags| Frame::Reply {
             asker: origin,
             nonce,
             recipient,
+            reply_tags: reply_tags.to_vec(),
             schema_version,
             payload: Cow::Owned(payload),
         },
@@ -883,6 +890,7 @@ mod tests {
             endpoint::{self, EndpointConfig, EndpointInner},
             frame::{Frame, StreamKey},
             node::NodeId,
+            peer::DialRequest,
             reply::{
                 AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, WireReplyTo,
                 note_minted, on_reply, on_reply_canceled, on_reply_dropped, record_minted,
@@ -1526,6 +1534,7 @@ mod tests {
                 next,
                 endpoint.node(),
                 tags[0].nonce,
+                &[],
                 PanicsWhenEncoded::VERSION,
                 &payload,
             );
@@ -1569,6 +1578,7 @@ mod tests {
             responder,
             endpoint.node(),
             tags[0].nonce,
+            &[],
             PanicsWhenDecoded::VERSION,
             &payload,
         );
@@ -1608,6 +1618,7 @@ mod tests {
             responder,
             predecessor,
             tags[0].nonce,
+            &[],
             SchemaVersion::new(0),
             &stale,
         );
@@ -1619,11 +1630,129 @@ mod tests {
             responder,
             endpoint.node(),
             tags[0].nonce,
+            &[],
             SchemaVersion::new(0),
             &answer,
         );
         assert_eq!(reply_rx.try_recv(), Ok(2));
         assert_eq!(pending.len(), 0);
+    }
+
+    #[test]
+    fn a_reply_frame_names_the_reply_destinations_of_its_payload() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let pending = endpoint.pending_replies();
+        let reply_to = remote_proxy::<ReplyTo<u64>>(pending, origin, Nonce::first(), None);
+
+        endpoint::with_current(endpoint, || reply_to.reply(ReplyTo::new(|_| ())));
+
+        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        let Ok(Frame::Reply { reply_tags, .. }) = lane.control_rx.try_recv() else {
+            panic!("not a reply frame");
+        };
+        let [embedded] = reply_tags[..] else {
+            panic!("not one reply tag: {reply_tags:?}");
+        };
+        assert_eq!(embedded.recipient, None);
+        assert_eq!(pending.len(), 1);
+        assert!(pending.take_from(embedded.nonce, origin).is_some());
+    }
+
+    /// A reply naming no pending entry is dead-lettered undecoded, and each reply destination it
+    /// carries is answered toward its responder, so the responder's entry does not leak.
+    #[test]
+    fn a_reply_without_a_pending_entry_releases_its_reply_destinations() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let embedded = tag(Nonce::first());
+        let payload = endpoint.codec().encode(&1_u64).expect("encodes");
+
+        on_reply(
+            endpoint,
+            responder,
+            endpoint.node(),
+            Nonce::first(),
+            &[embedded],
+            SchemaVersion::new(0),
+            &payload,
+        );
+
+        assert_reply_dropped(&dial_requests, responder, embedded);
+    }
+
+    #[test]
+    fn a_reply_for_another_incarnation_releases_its_reply_destinations() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let predecessor = NodeId::new(endpoint.node().addr());
+        let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let embedded = tag(Nonce::first());
+        let payload = endpoint.codec().encode(&1_u64).expect("encodes");
+
+        on_reply(
+            endpoint,
+            responder,
+            predecessor,
+            Nonce::first(),
+            &[embedded],
+            SchemaVersion::new(0),
+            &payload,
+        );
+
+        assert_reply_dropped(&dial_requests, responder, embedded);
+    }
+
+    #[test]
+    fn an_undecodable_reply_releases_its_reply_destinations() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let pending = endpoint.pending_replies();
+        let reply_to = ReplyTo::<u64>::new(|_| ());
+        let (request, tags) = endpoint::with_current(endpoint, || {
+            record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        request.expect("the destination is serialized");
+        send_stamped(pending, &tags, responder, None);
+        let embedded = tag(Nonce::first());
+
+        on_reply(
+            endpoint,
+            responder,
+            endpoint.node(),
+            tags[0].nonce,
+            &[embedded],
+            SchemaVersion::new(0),
+            &[],
+        );
+
+        assert_eq!(pending.len(), 0);
+        assert_reply_dropped(&dial_requests, responder, embedded);
+    }
+
+    fn assert_reply_dropped(
+        dial_requests: &flume::Receiver<DialRequest>,
+        responder: NodeId,
+        embedded: ReplyTag,
+    ) {
+        let lane = dial_requests.try_recv().expect("the responder is dialed");
+        assert_eq!(lane.addr, responder.addr());
+        assert_eq!(
+            lane.control_rx.try_recv(),
+            Ok(Frame::ReplyDropped {
+                asker: responder,
+                nonce: embedded.nonce,
+                recipient: embedded.recipient,
+            })
+        );
+        assert!(lane.control_rx.is_empty());
     }
 
     fn deliver_nothing(

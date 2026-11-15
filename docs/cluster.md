@@ -699,9 +699,12 @@ way.
   advertises anymore, fails the asks stamped with its peers the same way. If the transport reports
   the loss too late, the ask timeout still resolves the request.
 
-  A message frame names its payload's reply destinations next to the payload. So a request the
-  receiving node dead-letters undecoded, e.g. toward a meanwhile terminated actor, is answered with
-  `ReplyDropped` for each of them, and such an ask resolves as `NoReply` rather than by its timeout.
+  A message or reply frame names its payload's reply destinations next to the payload. So a request
+  the receiving node dead-letters undecoded, e.g. toward a meanwhile terminated actor, is answered
+  with `ReplyDropped` for each of them, and such an ask resolves as `NoReply` rather than by its
+  timeout. A reply the asker's node dead-letters is answered the same way, whether it arrives after
+  its ask ended, names another incarnation or fails to decode. A reply destination carried in a
+  reply is hence released at the responder rather than kept until the responding actor terminates.
   A request this node itself drops, one whose framed size exceeds `max_frame_size` or one lost with
   its connection, releases the same destinations locally, since such a frame never reaches its peer
   as a whole. Only the peer a request was sent to settles it. A pending entry is stamped with that

@@ -57,6 +57,7 @@ pub(crate) enum Frame<'a> {
         asker: NodeId,
         nonce: Nonce,
         recipient: Option<ActorId>,
+        reply_tags: Vec<ReplyTag>,
         schema_version: SchemaVersion,
         #[serde(borrow, with = "payload_bytes")]
         payload: Cow<'a, [u8]>,
@@ -518,6 +519,7 @@ mod tests {
                 asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                reply_tags: Vec::new(),
                 schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
@@ -564,6 +566,7 @@ mod tests {
                 asker: asker(),
                 nonce,
                 recipient: None,
+                reply_tags: Vec::new(),
                 schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
@@ -742,6 +745,7 @@ mod tests {
             0, // nonce
             1, // recipient: Some
             16, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, // recipient
+            0,  // no reply tags
             1,  // schema version
             2, 4, 5, // payload
         ]);
@@ -751,6 +755,7 @@ mod tests {
             asker: decoded_asker,
             nonce,
             recipient,
+            reply_tags,
             schema_version,
             payload,
         } = &frame
@@ -763,6 +768,7 @@ mod tests {
             recipient.expect("the reply names a recipient").to_string(),
             RECIPIENT
         );
+        assert!(reply_tags.is_empty());
         assert_eq!(*schema_version, SchemaVersion::new(1));
         assert_eq!(payload.as_ref(), &[4, 5][..]);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
@@ -772,6 +778,7 @@ mod tests {
         bytes.extend([
             0, // nonce
             0, // recipient: None
+            0, // no reply tags
             0, // schema version
             2, 4, 5, // payload
         ]);
@@ -781,6 +788,43 @@ mod tests {
             panic!("not a reply frame");
         };
         assert_eq!(*recipient, None);
+        assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
+
+        let mut bytes = vec![5]; // Frame::Reply
+        bytes.extend(postcard::to_allocvec(&asker).expect("node encodes")); // asker
+        bytes.extend([
+            0, // nonce
+            0, // recipient: None
+            1, // one reply tag
+            7, // reply tag nonce
+            1, // reply tag recipient: Some
+            16, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, // reply tag recipient
+            0,  // schema version
+            2, 4, 5, // payload
+        ]);
+
+        let frame = Frame::from_bytes(&bytes).expect("frame decodes");
+        let Frame::Reply {
+            reply_tags,
+            schema_version,
+            payload,
+            ..
+        } = &frame
+        else {
+            panic!("not a reply frame");
+        };
+        let [ReplyTag { nonce, recipient }] = reply_tags.as_slice() else {
+            panic!("not one reply tag");
+        };
+        assert_eq!(nonce.as_u64(), 7);
+        assert_eq!(
+            recipient
+                .expect("the reply tag names a recipient")
+                .to_string(),
+            TARGET
+        );
+        assert_eq!(*schema_version, SchemaVersion::new(0));
+        assert_eq!(payload.as_ref(), &[4, 5][..]);
         assert_eq!(frame.encode_into(Vec::new()).expect("frame encodes"), bytes);
     }
 
@@ -845,6 +889,10 @@ mod tests {
                 asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                reply_tags: vec![ReplyTag {
+                    nonce: Nonce::first(),
+                    recipient: None,
+                }],
                 schema_version: SchemaVersion::new(1),
                 payload: Cow::Borrowed(&[4, 5, 6]),
             },
@@ -923,6 +971,7 @@ mod tests {
                 asker: asker(),
                 nonce: Nonce::first(),
                 recipient: Some(watcher),
+                reply_tags: Vec::new(),
                 schema_version: SchemaVersion::new(0),
                 payload: Cow::Borrowed(&[]),
             }
