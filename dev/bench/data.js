@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794760908391,
+  "lastUpdate": 1794760911033,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26505,6 +26505,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4388305,
             "range": "± 347569",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c693e6065bcbb37fd13ec17170d458f774be523e",
+          "message": "Merge pull request #401 from tellus-rs/test/lost-terminated-spawn-retry\n\ntest(cluster): resend Spawn until the lost terminated client has a child",
+          "timestamp": "2026-11-15T17:33:27+01:00",
+          "tree_id": "863055f09b3b95a6284d4ab554e0be198a8d00e3",
+          "url": "https://github.com/tellus-rs/tellus/commit/c693e6065bcbb37fd13ec17170d458f774be523e"
+        },
+        "date": 1794760910766,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 32213951,
+            "range": "± 2294249",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28728697,
+            "range": "± 2280608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4407487,
+            "range": "± 395610",
             "unit": "ns/iter"
           }
         ]
