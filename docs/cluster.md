@@ -245,16 +245,16 @@ at the lowest, so any one unreachable address blocks a cold start. `Explicit` ne
 deployment calls `cluster::form` on one node, and bootstrap only ever joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
-gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict majority. The
-address which may form, though, is the lowest of the universe minus every address which has answered
-nothing but unavailable for at least `after`. An address's timer starts with the first round it is
-unavailable in; any other answer, and any round which did not attempt it, resets the timer. The
-timers follow every observed round, so a round answered `Held` resets the timer as well, although it
-never forms. An address unavailable again afterward waits a fresh `after`. It trades uniqueness for
-liveness: a lowest address which is merely unreachable from some nodes, not gone, can form a cluster
-of its own beside the one they form. The foreign cluster probe (see bootstrap below) reports such a
-double formation in `ClusterState::foreign_clusters` on both sides, but the two clusters never
-merge.
+gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict
+majority. The address which may form, though, is the lowest of the universe minus every address
+which has answered nothing but unavailable for at least `after`. An address's timer starts with the
+first round it is unavailable in; any other answer, and any round which did not attempt it, resets
+the timer. The timers follow every observed round, so a round answered `Held` resets the timer as
+well, although it never forms. An address unavailable again afterward waits a fresh `after`. It
+trades uniqueness for liveness: a lowest address which is merely unreachable from some nodes, not
+gone, can form a cluster of its own beside the one they form. The foreign cluster probe (see
+bootstrap below) reports such a double formation in `ClusterState::foreign_clusters` on both sides,
+but the two clusters never merge.
 
 *Bootstrap*: `cluster::bootstrap` turns the seed addresses from configuration into discovery. A
 `SeedDiscovery` resolves them; the provided ones are `FixedSeeds` in tellus, SRV and A/AAAA records
@@ -729,13 +729,16 @@ way.
   with the predecessor, while the `ReplyDropped` comes from the current incarnation, so the
   responder ignores it, as described below. The responder releases that entry once it fences the
   predecessor as Left or Down. A request or reply this node itself drops, one whose framed size
-  exceeds `max_frame_size` or one lost with its connection, releases the same destinations locally,
-  since such a frame never reaches its peer as a whole. Only the peer a request was sent to settles
-  it. A pending entry is stamped with that peer before its frame is queued. A `Reply` frame naming a
-  nonce stamped with anybody else is dropped as a dead letter, and a `ReplyDropped` frame naming one
-  is ignored. Nonces are unique to one process only, since every process counts from zero. So both
-  frames also name the incarnation which asked. One naming another incarnation of this node, such as
-  its predecessor at the same address, is dropped or ignored the same way and settles nothing here.
+  exceeds `max_frame_size` or one lost with its connection before the transport has taken it,
+  releases the same destinations locally, since such a frame never reaches its peer as a whole. One
+  lost with its connection after the transport has taken it is not released when it is lost, but
+  only later, for instance once this node fences that peer. Only the peer a request was sent to
+  settles it. A pending entry is stamped with that peer before its frame is queued. A `Reply` frame
+  naming a nonce stamped with anybody else is dropped as a dead letter, and a `ReplyDropped` frame
+  naming one is ignored. Nonces are unique to one process only, since every process counts from
+  zero. So both frames also name the incarnation which asked. One naming another incarnation of this
+  node, such as its predecessor at the same address, is dropped or ignored the same way and settles
+  nothing here.
 
   An ask which ends without its reply, by its timeout or by its future being dropped, releases its
   own reply destination, the one no actor awaits. So an ask which nothing answers costs its entry

@@ -1821,17 +1821,8 @@ mod tests {
             schema_version,
             &payload,
         );
-        let lane = asker_dials.try_recv().expect("the responder is dialed");
-        let Ok(Frame::ReplyDropped {
-            asker: reply_dropped_asker,
-            nonce,
-            ..
-        }) = lane.control_rx.try_recv()
-        else {
-            panic!("not a reply-dropped frame");
-        };
-        assert_eq!(nonce, embedded.nonce);
-        (reply_dropped_asker, nonce)
+        assert_reply_dropped(asker_dials, responder.node(), embedded);
+        (responder.node(), embedded.nonce)
     }
 
     fn deliver_nothing(
