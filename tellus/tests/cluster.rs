@@ -86,7 +86,7 @@ use std::{
 };
 use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, AskError, Control, Incoming, ReplyTo,
-    SchemaVersion, Unstashed, Untimed,
+    SchemaVersion, Timed, Unstashed, Untimed,
     cluster::{
         self, BootstrapConfig, Change, Changes, ClusterState, ClusterStateSubscription, Departure,
         DownError, EndpointConfig, FixedSeeds, JoinError, Key, Lifecycle, Manifest, Member,
@@ -158,6 +158,7 @@ const SEVER_PAYLOAD: usize = 32 * 1_024;
 const SEVER_DELAY: Duration = Duration::from_millis(10);
 const MARKER_ATTEMPTS: usize = 10;
 const MARKER_RETRY_DELAY: Duration = Duration::from_millis(500);
+const SPAWN_RETRY_TIMER: &str = "spawn retry";
 const LOOKUP_ATTEMPTS: usize = 20;
 const LOOKUP_DELAY: Duration = Duration::from_millis(250);
 const ASKS: u32 = 10;
@@ -5285,8 +5286,10 @@ struct SeverTerminatedState {
     terminated: bool,
 }
 
-/// Watches the streamer, arms the keeper's endpoint to drop the next terminated frame and only
-/// then stops the streamer: the signal must arrive nonetheless, through the watch refresh.
+/// Asks the keeper for a streamer until one arrives, since the sever scenarios before it can cost a
+/// frame either way. Then it watches the streamer, arms the keeper's endpoint to drop the next
+/// terminated frame and only then stops the streamer: the signal must arrive nonetheless, through
+/// the watch refresh.
 struct LostTerminated {
     keeper: ActorRef<KeeperMessage>,
     event_tx: mpsc::Sender<TestEvent>,
@@ -5294,26 +5297,33 @@ struct LostTerminated {
 
 impl Actor for LostTerminated {
     type Message = ClientEvent;
-    type Timers = Untimed;
+    type Timers = Timed;
     type Stash = Unstashed;
     type State = Option<ActorRef<StreamerMessage>>;
     type Error = Infallible;
 
-    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        self.keeper.tell(KeeperMessage::Spawn {
-            reply_to: context.self_ref().clone(),
-        });
+    fn init(
+        &self,
+        context: &ActorContext<Self::Message, Timed>,
+    ) -> Result<Self::State, Self::Error> {
+        self.spawn_streamer(context);
         Ok(None)
     }
 
     fn receive(
         &self,
-        context: &ActorContext<Self::Message>,
+        context: &ActorContext<Self::Message, Timed>,
         incoming: Incoming<Self::Message>,
         state: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
         match incoming {
-            Incoming::Message(ClientEvent::Child(child)) => {
+            Incoming::Message(ClientEvent::Probe) if state.is_none() => {
+                self.spawn_streamer(context);
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(ClientEvent::Child(child)) if state.is_none() => {
+                context.cancel_timer(SPAWN_RETRY_TIMER);
                 context.watch(&child);
                 self.keeper.tell(KeeperMessage::DropTerminated {
                     count: 1,
@@ -5343,6 +5353,15 @@ impl Actor for LostTerminated {
 
             _ => Ok(Control::Continue(state)),
         }
+    }
+}
+
+impl LostTerminated {
+    fn spawn_streamer(&self, context: &ActorContext<ClientEvent, Timed>) {
+        self.keeper.tell(KeeperMessage::Spawn {
+            reply_to: context.self_ref().clone(),
+        });
+        context.start_timer(SPAWN_RETRY_TIMER, ClientEvent::Probe, MARKER_RETRY_DELAY);
     }
 }
 
