@@ -60,8 +60,8 @@
 //! `QuicTransport::dev`, a transport which does not verify certificates; never enable it in
 //! production.
 //!
-//! The `serde` feature makes the configuration deserializable, [ActorConfig] as well as the
-//! cluster's [EndpointConfig](cluster::EndpointConfig),
+//! The `serde` feature makes the configuration deserializable, [ActorConfig] and [HostConfig] as
+//! well as the cluster's [EndpointConfig](cluster::EndpointConfig),
 //! [BootstrapConfig](cluster::BootstrapConfig) and [QuicConfig](cluster::transport::QuicConfig), so
 //! a deployment can read it from a config file with human readable durations. tellus pulls in no
 //! parser of its own, see the README.

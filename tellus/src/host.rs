@@ -256,8 +256,15 @@ impl<M> From<M> for Hosted<M> {
 }
 
 /// Configuration for a [Host]. The default keeps every entity alive and buffers at most 64
-/// messages per entity while the host passivates it.
+/// messages per entity while the host passivates it. Deserializable with the `serde` feature:
+/// an omitted field falls back to its default, and a zero idle timeout is refused as in
+/// [HostConfig::with_idle_timeout].
 #[derive(Debug, Clone, Copy)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(try_from = "UncheckedHostConfig")
+)]
 pub struct HostConfig {
     idle_timeout: Option<Duration>,
     buffer: NonZeroUsize,
@@ -391,6 +398,31 @@ impl Drop for AbortSleeping {
     }
 }
 
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UncheckedHostConfig {
+    #[serde(default, with = "humantime_serde")]
+    idle_timeout: Option<Duration>,
+
+    #[serde(default)]
+    buffer: Option<NonZeroUsize>,
+}
+
+#[cfg(feature = "serde")]
+impl TryFrom<UncheckedHostConfig> for HostConfig {
+    type Error = InvalidHostConfig;
+
+    fn try_from(unchecked: UncheckedHostConfig) -> Result<Self, Self::Error> {
+        let config = unchecked.buffer.map_or_else(Self::default, Self::new);
+
+        match unchecked.idle_timeout {
+            Some(idle_timeout) => config.with_idle_timeout(idle_timeout),
+            None => Ok(config),
+        }
+    }
+}
+
 fn remember<K, M>(keys: &mut HashMap<ActorId, K>, entity: &ActorRef<M>, key: &K)
 where
     K: Clone + Eq + Hash,
@@ -409,4 +441,54 @@ fn dead_letter<M>(actor_id: ActorId, error: &'static str) {
         error,
         "dead letter"
     );
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+    use crate::HostConfig;
+    use std::time::Duration;
+
+    /// The field names, the per-field defaults and the humantime duration format are what a config
+    /// file relies on; this pins them down.
+    #[test]
+    fn a_config_deserializes_from_its_documented_form() {
+        let config =
+            serde_json::from_str::<HostConfig>(r#"{ "idle_timeout": "5m", "buffer": 128 }"#)
+                .expect("the documented config form deserializes");
+
+        assert_eq!(config.idle_timeout, Some(Duration::from_secs(300)));
+        assert_eq!(config.buffer.get(), 128);
+    }
+
+    /// An omitted field takes the value of [HostConfig::default].
+    #[test]
+    fn an_omitted_field_takes_the_default() {
+        let defaults = HostConfig::default();
+
+        let config = serde_json::from_str::<HostConfig>("{}").expect("every field defaults");
+        assert_eq!(config.idle_timeout, None);
+        assert_eq!(config.buffer, defaults.buffer);
+
+        let config = serde_json::from_str::<HostConfig>(r#"{ "idle_timeout": "1s" }"#)
+            .expect("buffer is optional");
+        assert_eq!(config.idle_timeout, Some(Duration::from_secs(1)));
+        assert_eq!(config.buffer, defaults.buffer);
+
+        let config = serde_json::from_str::<HostConfig>(r#"{ "buffer": 8 }"#)
+            .expect("idle_timeout is optional");
+        assert_eq!(config.idle_timeout, None);
+        assert_eq!(config.buffer.get(), 8);
+    }
+
+    /// A zero idle timeout is refused as [HostConfig::with_idle_timeout] refuses it, and so are a
+    /// zero buffer and a misspelled key.
+    #[test]
+    fn deserializing_rejects_an_invalid_config() {
+        let error = serde_json::from_str::<HostConfig>(r#"{ "idle_timeout": "0s" }"#)
+            .expect_err("a zero idle timeout is refused");
+        assert!(error.to_string().contains("idle timeout must not be zero"));
+
+        assert!(serde_json::from_str::<HostConfig>(r#"{ "buffer": 0 }"#).is_err());
+        assert!(serde_json::from_str::<HostConfig>(r#"{ "idle_timout": "1s" }"#).is_err());
+    }
 }
