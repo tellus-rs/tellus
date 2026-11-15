@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794755638293,
+  "lastUpdate": 1794755640490,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25665,6 +25665,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4064803,
             "range": "± 230729",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7d9bf74742bdc0ee8262b9a25b6d0c6daee66df6",
+          "message": "Merge pull request #393 from tellus-rs/fix/seed-discovery\n\nfix(bootstrap)!: validate DNS queries and bound the Kubernetes list call",
+          "timestamp": "2026-11-15T16:04:38+01:00",
+          "tree_id": "a5c648060b187d3eb307bc72ac5900f793ee25df",
+          "url": "https://github.com/tellus-rs/tellus/commit/7d9bf74742bdc0ee8262b9a25b6d0c6daee66df6"
+        },
+        "date": 1794755639966,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30373166,
+            "range": "± 1992971",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 29952841,
+            "range": "± 1702378",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4771370,
+            "range": "± 453950",
             "unit": "ns/iter"
           }
         ]
