@@ -889,7 +889,7 @@ mod tests {
             codec::{Codec, CodecError},
             discovery::Nonce,
             endpoint::{self, EndpointConfig, EndpointInner},
-            frame::{Frame, StreamKey},
+            frame::{Frame, MIN_FRAME_SIZE, StreamKey},
             node::NodeId,
             peer::DialRequest,
             reply::{
@@ -1498,6 +1498,29 @@ mod tests {
         });
 
         assert_eq!(endpoint.pending_replies().len(), 0);
+        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        assert_eq!(lane.addr, origin.addr());
+        assert!(matches!(
+            lane.control_rx.try_recv(),
+            Ok(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
+        ));
+        assert!(lane.control_rx.is_empty());
+    }
+
+    /// A reply over the frame size its origin advertised, though within this node's, is dropped
+    /// rather than sent, and the origin is told.
+    #[test]
+    fn a_reply_over_the_origins_frame_size_is_dropped() {
+        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        endpoint.record_peer(origin, None, MIN_FRAME_SIZE);
+        let nonce = Nonce::first();
+        let reply_to = remote_proxy::<Vec<u8>>(endpoint.pending_replies(), origin, nonce, None);
+
+        endpoint::with_current(endpoint, || reply_to.reply(vec![0; MIN_FRAME_SIZE]));
+
         let lane = dial_requests.try_recv().expect("the origin is dialed");
         assert_eq!(lane.addr, origin.addr());
         assert!(matches!(

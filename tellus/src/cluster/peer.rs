@@ -1927,7 +1927,7 @@ mod tests {
             formation::JoinOutcome,
             frame::{
                 Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
-                RefusalReason,
+                MIN_FRAME_SIZE, RefusalReason,
                 synthetic::{self, Body, HandshakeV3},
             },
             membership::{self, JoinRound, Member, MemberState, Membership},
@@ -5423,6 +5423,183 @@ mod tests {
         let mut acceptor = accepted_lane(endpoint, &mut dials, member).await;
         endpoint.gossip_tick();
         assert!(!next_gossip(&mut acceptor).await.is_empty());
+    }
+
+    /// An acceptor admitting a peer whose frame size is below its own writes the member,
+    /// reachability and registrations snapshots of the connection setup complete, in frames
+    /// within the peer's size.
+    #[tokio::test]
+    async fn an_acceptor_writes_its_setup_snapshots_within_the_peers_frame_size() {
+        let endpoint = formed(1);
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        let (members, observations) = crowd(endpoint);
+        let registered = (0..40)
+            .map(|index| {
+                let (self_ref, mailbox) =
+                    SelfRef::<u64>::new(ActorId::new(), MailboxCapacity::Unbounded);
+                endpoint
+                    .registry()
+                    .register(
+                        WireKey::new::<u64>(KeyKind::Discovery, format!("name-{index}")),
+                        self_ref.actor_ref(),
+                    )
+                    .expect("registers");
+                (self_ref, mailbox)
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            endpoint
+                .registrations_snapshot()
+                .frames
+                .iter()
+                .any(|frame| frame.encoded_len().expect("frame size") > MIN_FRAME_SIZE),
+            "a registrations chunk must exceed the peer's frame size"
+        );
+        let mut dialer = Dialer::accepted_by(endpoint);
+
+        dialer.send_handshake(HandshakeV2 {
+            max_frame_size: u64::try_from(MIN_FRAME_SIZE).expect("the minimum fits"),
+            ..member_handshake(peer)
+        });
+
+        dialer.reply_handshake().await;
+        let mut setup = SetupFrames::default();
+        while setup.members < members
+            || setup.observations < observations
+            || !setup.registrations_complete
+        {
+            setup.record(&dialer.recv().await);
+        }
+        assert_eq!(
+            setup.registered,
+            registered
+                .iter()
+                .map(|(self_ref, _)| self_ref.actor_ref().actor_id())
+                .collect::<BTreeSet<_>>()
+        );
+    }
+
+    /// A lane connected to a peer whose frame size is below this node's queues the member and
+    /// reachability snapshots of the connection setup chunked to the peer's size, so its writer
+    /// delivers them complete rather than discarding an oversize chunk.
+    #[tokio::test]
+    async fn a_lane_queues_its_setup_snapshots_within_the_peers_frame_size() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (members, observations) = crowd(endpoint);
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let dial = timeout(Duration::from_secs(5), dials.recv())
+            .await
+            .expect("the lane dials in time")
+            .expect("the lane dials");
+        let (connected, mut acceptor) = Acceptor::connected();
+        acceptor.cluster = endpoint.committed_cluster().expect("a formed cluster");
+        assert!(
+            dial.answer.send(connected).is_ok(),
+            "the lane awaits the dial"
+        );
+        acceptor.joiner_handshake().await;
+
+        acceptor.send(&Frame::Handshake(Handshake::new(HandshakeV2 {
+            max_frame_size: u64::try_from(MIN_FRAME_SIZE).expect("the minimum fits"),
+            ..v2(member, HandshakeIntent::Member, Some(acceptor.cluster))
+        })));
+
+        let mut setup = SetupFrames::default();
+        timeout(Duration::from_secs(5), async {
+            while setup.members < members || setup.observations < observations {
+                setup.record(&acceptor.joiner_bytes().await);
+            }
+        })
+        .await
+        .expect("the setup snapshots arrive complete in time");
+    }
+
+    /// Adds Up members and this node's observations of them as unreachable, and returns how many
+    /// members and observations the setup snapshots hold, each too many for one frame of
+    /// [MIN_FRAME_SIZE].
+    fn crowd(endpoint: &EndpointInner) -> (usize, usize) {
+        for port in 10..50 {
+            let other = NodeId::new(addr(port));
+            endpoint.update(|membership, reachability| {
+                membership.add_up(other);
+                reachability.observe(other, false);
+            });
+        }
+
+        let own = endpoint.config().max_frame_size.get();
+        let snapshots = [
+            membership::snapshot_frames(endpoint.membership().handshake_snapshot(), own),
+            endpoint.reachability_snapshot_frames(own),
+        ];
+        let [members, observations] = snapshots.map(|frames| {
+            let [frame] = &frames[..] else {
+                panic!("not one frame at this node's size: {frames:?}");
+            };
+            assert!(frame.encoded_len().expect("frame size") > MIN_FRAME_SIZE);
+            match frame {
+                Frame::Gossip { members, .. } => members.len(),
+                Frame::Reachability { observations } => observations.len(),
+                frame => panic!("not a setup snapshot: {frame:?}"),
+            }
+        });
+        (members, observations)
+    }
+
+    /// What the frames of a connection setup carried, each frame checked against
+    /// [MIN_FRAME_SIZE].
+    #[derive(Default)]
+    struct SetupFrames {
+        members: usize,
+        observations: usize,
+        registered: BTreeSet<ActorId>,
+        registrations_complete: bool,
+    }
+
+    impl SetupFrames {
+        fn record(&mut self, bytes: &[u8]) {
+            assert!(
+                bytes.len() <= MIN_FRAME_SIZE,
+                "{} exceeds {MIN_FRAME_SIZE}",
+                bytes.len()
+            );
+            match Frame::from_bytes(bytes).expect("frame decodes") {
+                Frame::Gossip { members, .. } => self.members += members.len(),
+
+                Frame::Reachability { observations } => self.observations += observations.len(),
+
+                Frame::Registrations {
+                    chunk,
+                    chunks,
+                    groups,
+                    ..
+                } => {
+                    self.registered
+                        .extend(groups.iter().flat_map(|group| group.ids.iter().copied()));
+                    self.registrations_complete = chunk + 1 == chunks;
+                }
+
+                _ => {}
+            }
+        }
     }
 
     /// Answers the lane's next dial as `member` and returns once the setup snapshot arrived.

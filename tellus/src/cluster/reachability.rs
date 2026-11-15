@@ -347,8 +347,8 @@ fn edge_is_down(
             .is_some_and(|record| !record.reachable)
 }
 
-/// Chunked once, so a push fanning out to every peer splits the records only once; a [Frame]
-/// owns its records, hence the clone per peer.
+/// The records in order, split into chunks of at most as many as one `Reachability` frame of
+/// `max_frame_size` holds, at least one record each; no chunk for no records.
 pub(crate) fn snapshot_chunks(
     records: Vec<WireReachability>,
     max_frame_size: usize,
