@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794865488999,
+  "lastUpdate": 1794865490793,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33435,6 +33435,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4827157,
             "range": "± 299108",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6942f0424f06441a6ac3a2eaac8cb195a9d9815e",
+          "message": "Merge pull request #453 from tellus-rs/fix/concurrent-leavers\n\nfix(cluster): resolve concurrent departures by incarnation",
+          "timestamp": "2026-11-16T22:36:58+01:00",
+          "tree_id": "251c6000605b69ed876f0424430653e9354593f5",
+          "url": "https://github.com/tellus-rs/tellus/commit/6942f0424f06441a6ac3a2eaac8cb195a9d9815e"
+        },
+        "date": 1794865490368,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 20874110,
+            "range": "± 720695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 20839231,
+            "range": "± 698269",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3949729,
+            "range": "± 227182",
             "unit": "ns/iter"
           }
         ]
