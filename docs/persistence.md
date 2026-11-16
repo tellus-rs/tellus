@@ -88,11 +88,12 @@ On every spawn and every restart, before the first command:
 
 `init` is skipped entirely when a snapshot exists, so it must be nothing but the pure seed of the
 fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
-`recovered` always runs, and never during replay.
+`recovered` runs unless the actor is stopped first, and never during replay.
 
 An actor stopped by its parent before it ran skips recovery altogether, as a plain actor skips
 `init` (see [actors.md](actors.md#the-actor-tree)). The store sees no load and no read, and neither
-`init`, `init_from_snapshot` nor `recovered` runs.
+`init`, `init_from_snapshot` nor `recovered` runs. An actor stopped during recovery never runs
+`recovered`, also when the stop arrives while recovery runs without awaiting.
 
 With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as a plain actor does
 through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,

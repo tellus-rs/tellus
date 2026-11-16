@@ -9,6 +9,7 @@ use std::{
     sync::{
         Arc, Mutex, Once,
         atomic::{AtomicBool, Ordering::SeqCst},
+        mpsc as std_mpsc,
     },
     time::Duration,
 };
@@ -22,7 +23,7 @@ use tellus::{
 use thiserror::Error;
 use tokio::{
     sync::mpsc,
-    task::spawn,
+    task::{block_in_place, spawn},
     time::{Instant, advance, sleep, timeout},
 };
 
@@ -625,6 +626,35 @@ async fn an_event_sourced_root_stopped_before_it_ran_never_recovers() {
     assert_terminates(system, "the root did not terminate").await;
 
     assert_eq!(store.reads(), []);
+    assert_eq!(probe_rx.recv().await, None);
+}
+
+/// A stop which arrives while recovery runs without awaiting, here a snapshot load blocking its
+/// worker, is honored before `recovered`: once the load returns, the actor stops without running
+/// `recovered`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_stop_during_the_last_stretch_of_recovery_skips_recovered() {
+    let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+    let (release_tx, release_rx) = std_mpsc::channel();
+    let snapshots = BlockingLoads {
+        inner: InMemoryStore::default(),
+        started_tx,
+        release_rx: Arc::new(Mutex::new(release_rx)),
+    };
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("stopped-in-recovery", probe_tx),
+        Persistence::new(FaultyStore::default()).with_snapshot_store(snapshots),
+    );
+    recv(&mut started_rx, "the snapshot load did not start").await;
+    system.stop();
+    release_tx
+        .send(())
+        .expect("the snapshot load waits for its release");
+    assert_terminates(system, "the root did not terminate").await;
+
+    assert_eq!(probe_rx.recv().await, Some(Probe::Init));
     assert_eq!(probe_rx.recv().await, None);
 }
 
@@ -3045,6 +3075,42 @@ impl SnapshotStore for FaultyStore {
         }
 
         self.inner.load(id).await.map_err(|error| match error {})
+    }
+}
+
+/// A snapshot store whose `load` reports that it started and then blocks its worker until it is
+/// released, so recovery runs on without awaiting while the test acts.
+#[derive(Debug, Clone)]
+struct BlockingLoads {
+    inner: InMemoryStore,
+    started_tx: mpsc::UnboundedSender<()>,
+    release_rx: Arc<Mutex<std_mpsc::Receiver<()>>>,
+}
+
+impl SnapshotStore for BlockingLoads {
+    type Error = Infallible;
+
+    async fn save(
+        &self,
+        id: &PersistenceId,
+        next_seq_no: SeqNo,
+        snapshot: EncodedSnapshot,
+    ) -> Result<(), Self::Error> {
+        self.inner.save(id, next_seq_no, snapshot).await
+    }
+
+    async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
+        self.started_tx
+            .send(())
+            .expect("the test awaits the start of the load");
+        block_in_place(|| {
+            self.release_rx
+                .lock()
+                .expect("release lock poisoned")
+                .recv()
+                .expect("the test releases the load")
+        });
+        self.inner.load(id).await
     }
 }
 
