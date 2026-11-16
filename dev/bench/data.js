@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794859517157,
+  "lastUpdate": 1794859519046,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28429,6 +28429,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 102425,
             "range": "± 6350",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f5bcec12500008bbf263b6d2682489ee8602affe",
+          "message": "Merge pull request #445 from tellus-rs/test/stored-schema-version\n\ntest(persistence): pin that decode gets the stored schema version",
+          "timestamp": "2026-11-16T20:55:56+01:00",
+          "tree_id": "0f5d8277f7693e156717e6d1033df248db5cfa06",
+          "url": "https://github.com/tellus-rs/tellus/commit/f5bcec12500008bbf263b6d2682489ee8602affe"
+        },
+        "date": 1794859518618,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3948337,
+            "range": "± 193857",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4249879,
+            "range": "± 261995",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1082209,
+            "range": "± 8244",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 135553,
+            "range": "± 5129",
             "unit": "ns/iter"
           }
         ]
