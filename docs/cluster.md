@@ -273,31 +273,34 @@ outlasts it as unavailable. Without that bound a silent address would hold the r
 gives up on it, 30 s, so two silent addresses below a live member would use up a 60 s bootstrap
 timeout. The default leaves room for a QUIC handshake, which takes milliseconds on a LAN, plus the
 `Join` handshake and the member snapshot, each bounded by `heartbeat_interval`. An attempt which
-times out before it connected is abandoned and leaves nothing behind. One which has sent its `Join`
-handshake runs on in the background, since the seed may count this node already. Its outcome takes
-effect as it would have inside the round: an admission makes this node a member, a validated answer
-pins the address, and a failure short of a definitive answer is ambiguous, see above. No formation is taken while it runs. Only the formation
-decision waits for the view to settle. It is taken on a round over a universe which has held at
-least `min_nodes` addresses unchanged for the settle window (`settle`), and only when none of them
-admitted this node. A round can take a while, and a node registering meanwhile is not in its
-universe. So bootstrap resolves again after such a round and decides only if that resolution shows
-the same universe, still settled. A changed universe starts the settle window over, and the next
-round is taken over it. That adds no retry loop of its own: a discovery which keeps changing its set
-blocks the decision as long as it changes, as the settle window always did, while the order of the
-resolved addresses never matters. Joins go on in every round regardless. A settled view holding
-fewer than `min_nodes` addresses blocks that decision, so it is logged at warn level on every
-resolution. A round held back by a seed (`JoinsHeld`) is only observed and never asked to `form`.
-Bootstrap returns as soon as this node is a member, its own formation included, and at once when it
-already is. Membership owns failure detection and downing from then on. `min_nodes` counts the
-universe while the formation provider counts what its addresses answered. That distinction keeps a
-restarted node from re-forming inside a partition: discovery is unaffected by a partition,
-reachability is not. Resolve failures are retried and restart the settle window, since nothing was
-observed during them. There is no overall timeout, so the call is bounded by the caller's timeout.
-`Downed` is fatal per process and means the caller should exit, letting the restart mint the fresh
-incarnation. What does this not prevent? Nodes deciding on views with *different lowest addresses*
-can still form separate clusters, which never merge on their own, since the formation rule is only
-as good as the universe it is taken over. The settle window and the `min_nodes` floor make that less
-likely, so size `min_nodes` to the deployment when possible (see Limitations).
+times out before it has sent its `Join` handshake is abandoned, and the round goes on once it has
+given the join permit back, so it leaves nothing behind. One which has sent its `Join` handshake
+runs to its conclusion, since the seed may count this node already, and the round waits for it, at
+most two `heartbeat_interval`s longer: one for the answer to the handshake, one for the member
+snapshot. Its outcome counts for the round as if it had come in time: an admission makes this node a
+member, a held join forbids forming, a validated answer pins the address, and a failure short of a
+definitive answer is ambiguous, see above. Only the formation decision waits for the view to settle.
+It is taken on a round over a universe which has held at least `min_nodes` addresses unchanged for
+the settle window (`settle`), and only when none of them admitted this node. A round can take a
+while, and a node registering meanwhile is not in its universe. So bootstrap resolves again after
+such a round and decides only if that resolution shows the same universe, still settled. A changed
+universe starts the settle window over, and the next round is taken over it. That adds no retry loop
+of its own: a discovery which keeps changing its set blocks the decision as long as it changes, as
+the settle window always did, while the order of the resolved addresses never matters. Joins go on
+in every round regardless. A settled view holding fewer than `min_nodes` addresses blocks that
+decision, so it is logged at warn level on every resolution. A round held back by a seed
+(`JoinsHeld`) is only observed and never asked to `form`. Bootstrap returns as soon as this node is
+a member, its own formation included, and at once when it already is. Membership owns failure
+detection and downing from then on. `min_nodes` counts the universe while the formation provider
+counts what its addresses answered. That distinction keeps a restarted node from re-forming inside a
+partition: discovery is unaffected by a partition, reachability is not. Resolve failures are retried
+and restart the settle window, since nothing was observed during them. There is no overall timeout,
+so the call is bounded by the caller's timeout. `Downed` is fatal per process and means the caller
+should exit, letting the restart mint the fresh incarnation. What does this not prevent? Nodes
+deciding on views with *different lowest addresses* can still form separate clusters, which never
+merge on their own, since the formation rule is only as good as the universe it is taken over. The
+settle window and the `min_nodes` floor make that less likely, so size `min_nodes` to the deployment
+when possible (see Limitations).
 
 *Foreign cluster probe*: once bootstrap has made this node a member, it spawns a task which keeps
 the discovery and resolves it again every `probe_interval` (see [Configuration](#configuration);

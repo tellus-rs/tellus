@@ -37,7 +37,7 @@ use std::{
 use thiserror::Error;
 use tokio::{
     select,
-    sync::oneshot,
+    sync::oneshot::{self, error::TryRecvError},
     task::{self, JoinError, JoinSet},
     time::{Instant, sleep, timeout},
 };
@@ -72,6 +72,7 @@ pub(crate) struct DialRequest {
 pub(crate) struct JoinRequest {
     pub(crate) addr: SocketAddr,
     pub(crate) result_tx: oneshot::Sender<Result<(), ConnectError>>,
+    pub(crate) abandon_rx: Option<oneshot::Receiver<()>>,
 }
 
 pub(crate) struct ProbeRequest {
@@ -1546,9 +1547,18 @@ async fn run_join<T>(
     let JoinRequest {
         addr,
         mut result_tx,
+        mut abandon_rx,
     } = request;
     if result_tx.is_closed() {
         debug!(seed_addr = %addr, "dropping join request, its caller is gone");
+        return;
+    }
+    if abandon_rx
+        .as_mut()
+        .is_some_and(|abandon_rx| abandon_rx.try_recv() != Err(TryRecvError::Empty))
+    {
+        debug!(seed_addr = %addr, "dropping join request, its caller abandoned it");
+        let _ = result_tx.send(Err(ConnectError::Abandoned));
         return;
     }
 
@@ -1560,6 +1570,7 @@ async fn run_join<T>(
         transport.as_ref(),
         addr,
         &mut result_tx,
+        abandon_rx,
         &admission_possible,
         endpoint,
     )
@@ -1574,16 +1585,28 @@ async fn try_join<T>(
     transport: &T,
     addr: SocketAddr,
     result_tx: &mut oneshot::Sender<Result<(), ConnectError>>,
+    abandon_rx: Option<oneshot::Receiver<()>>,
     admission_possible: &AtomicBool,
     endpoint: &'static EndpointInner,
 ) -> Result<(), ConnectError>
 where
     T: Transport,
 {
+    let abandoned = async {
+        match abandon_rx {
+            Some(abandon_rx) => {
+                let _ = abandon_rx.await;
+            }
+
+            None => pending().await,
+        }
+    };
     let connected = select! {
         connected = transport.connect(addr, endpoint.config().max_frame_size.get()) => connected?,
 
         () = result_tx.closed() => return Err(ConnectError::Abandoned),
+
+        () = abandoned => return Err(ConnectError::Abandoned),
     };
 
     admission_possible.store(true, Ordering::Release);
@@ -1923,6 +1946,7 @@ mod tests {
         ActorId, Backoff, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
+            bootstrap::{self, BootstrapConfig, FixedSeeds, SeedDiscovery},
             codec::{Codec, CodecError},
             discovery::{KeyKind, Nonce, WireKey},
             endpoint::{self, EndpointConfig, EndpointInner, FormError, MemberAdmission},
@@ -1972,6 +1996,7 @@ mod tests {
         time::Duration,
     };
     use tokio::{
+        select,
         sync::{
             Notify,
             mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
@@ -3507,6 +3532,7 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: seed,
             result_tx,
+            abandon_rx: None,
         });
 
         let dial = joining.dials.recv().await.expect("a dial");
@@ -3534,6 +3560,7 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: addr(2),
             result_tx,
+            abandon_rx: None,
         });
         let dial = joining.dials.recv().await.expect("a dial");
 
@@ -3597,10 +3624,12 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: addr(2),
             result_tx: first_tx,
+            abandon_rx: None,
         });
         endpoint.request_join(JoinRequest {
             addr: addr(3),
             result_tx: second_tx,
+            abandon_rx: None,
         });
 
         let first = joining.dials.recv().await.expect("the first dial");
@@ -3664,6 +3693,7 @@ mod tests {
             endpoint.request_join(JoinRequest {
                 addr: seed,
                 result_tx,
+                abandon_rx: None,
             });
             assert!(
                 timeout(Duration::from_secs(5), result_rx)
@@ -3765,6 +3795,7 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: seed,
             result_tx,
+            abandon_rx: None,
         });
 
         let SeedEnds {
@@ -3797,6 +3828,7 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: seed,
             result_tx,
+            abandon_rx: None,
         });
 
         let dial = joining.dials.recv().await.expect("a dial");
@@ -4123,6 +4155,7 @@ mod tests {
         joining.endpoint.request_join(JoinRequest {
             addr: seed,
             result_tx,
+            abandon_rx: None,
         });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
@@ -4744,6 +4777,7 @@ mod tests {
         endpoint.request_join(JoinRequest {
             addr: seed_b.node().addr(),
             result_tx,
+            abandon_rx: None,
         });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
@@ -6444,5 +6478,114 @@ mod tests {
         .await
         .is_ok();
         assert!(re_sent);
+    }
+
+    /// A join round towards a silent seed asked last gives the join permit back before the
+    /// formation is decided, so an abandoned attempt postpones nothing.
+    #[tokio::test(start_paused = true)]
+    async fn a_silent_seed_asked_last_does_not_postpone_the_formation() {
+        let seeds = FixedSeeds::new(vec![addr(1), addr(2), addr(3)]).expect("seeds");
+
+        let formed = bootstrap_forms_within(seeds, Duration::from_secs(120), |dial| {
+            if dial.addr == addr(3) {
+                return Some(dial);
+            }
+            refusing_seed(
+                dial,
+                Duration::ZERO,
+                Duration::ZERO,
+                RefusalReason::NoCluster,
+            );
+            None
+        })
+        .await;
+
+        assert!(formed, "the lowest address forms beside a silent seed");
+    }
+
+    /// A seed holding back joins proves a cluster exists, also when its answer arrives after
+    /// `join_attempt_timeout`, so the lowest address forms nothing, whichever seed holds back.
+    #[tokio::test(start_paused = true)]
+    async fn a_late_joins_held_prevents_the_formation() {
+        for held in [addr(2), addr(3)] {
+            let seeds = FixedSeeds::new(vec![addr(1), addr(2), addr(3)]).expect("seeds");
+
+            let formed = bootstrap_forms_within(seeds, Duration::from_secs(60), |dial| {
+                if dial.addr == held {
+                    refusing_seed(
+                        dial,
+                        Duration::from_millis(4_500),
+                        Duration::from_millis(600),
+                        RefusalReason::JoinsHeld,
+                    );
+                } else {
+                    refusing_seed(
+                        dial,
+                        Duration::ZERO,
+                        Duration::ZERO,
+                        RefusalReason::NoCluster,
+                    );
+                }
+                None
+            })
+            .await;
+
+            assert!(
+                !formed,
+                "a cluster holding back joins at {held} forbids forming"
+            );
+        }
+    }
+
+    /// Runs bootstrap for addr(1), the lowest of the seeds addr(1) to addr(3), over the real join
+    /// loop, handing every dial to `on_dial`; a dial it returns stays unanswered. Answers whether
+    /// this node formed within `window`.
+    async fn bootstrap_forms_within<D, F>(discovery: D, window: Duration, mut on_dial: F) -> bool
+    where
+        D: SeedDiscovery + Send + 'static,
+        F: FnMut(Dial) -> Option<Dial>,
+    {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let config = BootstrapConfig {
+            probe_interval: None,
+            ..BootstrapConfig::new()
+        };
+        let bootstrap = task::spawn(bootstrap::run(endpoint, discovery, config));
+        let mut unanswered = Vec::new();
+        let formed = timeout(window, async {
+            while !endpoint.formed() {
+                select! {
+                    dial = joining.dials.recv() => {
+                        unanswered.extend(on_dial(dial.expect("the join loop dials")));
+                    }
+
+                    () = sleep(Duration::from_millis(10)) => {}
+                }
+            }
+        })
+        .await
+        .is_ok();
+        bootstrap.abort();
+        formed
+    }
+
+    /// A seed which connects after `connect_after`, reads the `Join` handshake and refuses with
+    /// `reason` after `answer_after`.
+    fn refusing_seed(
+        dial: Dial,
+        connect_after: Duration,
+        answer_after: Duration,
+        reason: RefusalReason,
+    ) {
+        task::spawn(async move {
+            sleep(connect_after).await;
+            let (connected, mut acceptor) = Acceptor::connected();
+            if dial.answer.send(connected).is_ok() {
+                acceptor.joiner_handshake().await;
+                sleep(answer_after).await;
+                acceptor.refuse(reason);
+            }
+        });
     }
 }
