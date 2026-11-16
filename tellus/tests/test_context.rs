@@ -1,5 +1,3 @@
-#![cfg(feature = "test-util")]
-
 use std::{
     convert::Infallible,
     num::NonZeroUsize,

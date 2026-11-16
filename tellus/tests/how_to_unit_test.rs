@@ -1,5 +1,3 @@
-#![cfg(feature = "test-util")]
-
 use std::{assert_matches, collections::HashMap, convert::Infallible};
 use tellus::{
     Actor, ActorContext, ActorRef, Control, Incoming, ReplyTo, Unstashed, Untimed,

@@ -63,7 +63,7 @@ Tasks are defined in the [justfile](justfile):
 - `just fix` / `just lint-fix`: apply the compiler's and clippy's suggestions to the default
   workspace members with all features, so the feature-gated code is reached too.
 - Single test: `cargo test -p tellus --test watch <test_name>`; a persistence test needs the
-  features its file is gated on, or it silently runs none (`--features persistence-in-memory` for
+  features its target requires, or cargo refuses it and names them (`--features persistence-in-memory` for
   `persistence.rs`, `host_persistence.rs` and `persistence_tests.rs`, which also needs
   `persistence-tests`). Integration tests live in `tellus/tests/`: `ask.rs`, `persistence.rs`,
   `fairness.rs`, `how_to_unit_test.rs`, `how_to_unit_test_event_sourced.rs`,
@@ -72,7 +72,7 @@ Tasks are defined in the [justfile](justfile):
   which needs `--features cluster-dev`, has no test harness and runs its scenarios from `main`,
   spawning itself as further nodes. `test_context.rs` and `how_to_unit_test.rs` need `--features
   test-util`, and `test_context_persistence.rs` and `how_to_unit_test_event_sourced.rs` also
-  `persistence`, or they silently run none. `timers.rs` holds one scheduler-sensitive test,
+  `persistence`; each target declares these as `required-features` in `tellus/Cargo.toml`. `timers.rs` holds one scheduler-sensitive test,
   `stale_timers_do_not_delay_a_stop`, which is `#[ignore]`d and runs only with `-- --ignored`.
 - Examples: `cargo run --quiet -p tellus --example getting_started_01_hello` and so on; the getting
   started tutorial lives in `tellus/examples/tutorials/getting_started/`, one example per step.

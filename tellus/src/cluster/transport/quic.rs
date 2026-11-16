@@ -758,7 +758,7 @@ mod tests {
         sync::Arc,
         time::Duration,
     };
-    use tokio::{net::UdpSocket, time::timeout};
+    use tokio::{net::UdpSocket, sync::oneshot, time::timeout};
 
     const MAX_FRAME_SIZE: usize = 64;
     const TIMEOUT: Duration = Duration::from_secs(10);
@@ -1095,6 +1095,7 @@ mod tests {
         // Relays the stalled dialer's first datagram to the server and drops everything else.
         let relay = UdpSocket::bind(loopback).await.expect("relay binds");
         let relay_addr = relay.local_addr().expect("relay address");
+        let (forwarded_tx, forwarded_rx) = oneshot::channel();
         let relaying = tokio::spawn(async move {
             let mut datagram = vec![0; 65_536];
             let (len, _) = relay
@@ -1105,6 +1106,7 @@ mod tests {
                 .send_to(&datagram[..len], server_addr)
                 .await
                 .expect("relay forwards");
+            let _ = forwarded_tx.send(());
             loop {
                 if relay.recv_from(&mut datagram).await.is_err() {
                     break;
@@ -1121,8 +1123,11 @@ mod tests {
             let connection = server.accept(MAX_FRAME_SIZE).await.expect("accepts");
             (connection.connection.remote_address(), server)
         });
-        // The stalled handshake reaches the server first.
-        tokio::time::sleep(Duration::from_millis(200)).await;
+        // The server's socket queues the stalled handshake ahead of the next dialer's!
+        timeout(TIMEOUT, forwarded_rx)
+            .await
+            .expect("forwarded in time")
+            .expect("the relay forwards");
 
         let dialer = QuicTransport::dev(loopback).expect("dialer binds");
         let dialer_addr = dialer.local_addr().expect("dialer address");

@@ -1,5 +1,3 @@
-#![cfg(feature = "persistence-in-memory")]
-
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{

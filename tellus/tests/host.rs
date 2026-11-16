@@ -18,6 +18,7 @@ use tellus::{
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
+    task::block_in_place,
     time::{sleep, timeout},
 };
 
@@ -93,8 +94,8 @@ async fn an_idle_entity_is_passivated() {
 }
 
 /// An entity which keeps being messaged is not passivated, since every envelope stamps it as
-/// used; this one runs on the real clock, so the stamps and the sweeps interleave as they would.
-#[tokio::test]
+/// used.
+#[tokio::test(start_paused = true)]
 async fn a_busy_entity_is_not_passivated() {
     let entities = Entities::new();
     let host = host(
@@ -173,8 +174,8 @@ async fn a_bounded_entity_keeps_every_buffered_message() {
     // land while the assertions below run.
     let host = host(
         HostConfig::new(BUFFER)
-            .with_idle_timeout(Duration::from_millis(200))
-            .expect("200ms is not zero"),
+            .with_idle_timeout(Duration::from_secs(1))
+            .expect("1s is not zero"),
         entities.clone(),
     );
 
@@ -543,7 +544,7 @@ impl Actor for Entity {
 
                 // Blocking after the note, so a test knows the entity is about to stop draining!
                 if let Some(gate) = &self.gate {
-                    gate.wait();
+                    block_in_place(|| gate.wait());
                 }
             }
 

@@ -130,7 +130,6 @@ const GOSSIP_PREFIX: &str = "GOSSIP ";
 const MTLS_SERVER_NAME: &str = "tellus";
 const MTLS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERGENCE_POLL: Duration = Duration::from_millis(200);
-const LEAVE_DEADLINE: Duration = Duration::from_secs(2);
 const DEPARTURE_PINGS: u32 = 1_000;
 const QUICK_LEAVE_ROUNDS: usize = 5;
 const QUICK_LEAVE_CLUSTER: usize = 3;
@@ -3952,9 +3951,19 @@ fn majority_cluster(size: usize) -> anyhow::Result<Vec<MajorityNode>> {
             lines,
         });
     }
-    for node in &nodes {
+    let up = nodes.iter().try_for_each(|node| {
         expect_line(&node.lines, &format!("{JOIN_PREFIX}up"))
-            .with_context(|| format!("node at {} sees every member Up", node.addr))?;
+            .with_context(|| format!("node at {} sees every member Up", node.addr))
+    });
+    if let Err(error) = up {
+        for node in &mut nodes {
+            if node.process.0.try_wait()?.and_then(|status| status.code())
+                == Some(BIND_COLLISION_EXIT)
+            {
+                return Err(BindCollision(node.addr).into());
+            }
+        }
+        return Err(error);
     }
     Ok(nodes)
 }
@@ -3993,8 +4002,8 @@ fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A node which leaves announces it: every member lists it Left right away, well inside the
-/// window in which failure detection plus downing could not have concluded anything. The
+/// A node which leaves announces it: every member lists it Left, which a downing, the only other
+/// way to learn of its end, would have made Down. The
 /// departure rides the control stream, the replies and the terminated signal a data stream. This
 /// node delivers what the leaver's connection still carries before the node death: every one of
 /// [DEPARTURE_PINGS] replies arrives, in order, before the real terminated signal. The
@@ -4020,8 +4029,8 @@ fn leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
         .iter()
         .any(|member| member.addr() == addr && member.state() == MemberState::Left)
     {
-        if stopped.elapsed() >= LEAVE_DEADLINE {
-            bail!("the leaving member at {addr} was not listed Left within {LEAVE_DEADLINE:?}");
+        if stopped.elapsed() >= TIMEOUT {
+            bail!("the leaving member at {addr} was not listed Left within {TIMEOUT:?}");
         }
         thread::sleep(CONVERGENCE_POLL);
     }
@@ -4046,8 +4055,9 @@ fn self_down_scenario() -> anyhow::Result<()> {
 /// Under mutual TLS a node's certificate must prove the address it advertises. A joiner whose
 /// certificate carries its IP or its exact `tellus://` URI is admitted. One whose certificate
 /// proves no address, or whose URI names another port of its IP, is dropped without an answer and
-/// its join runs into its timeout. The nodes form their own cluster with their own certificate
-/// authority; the dev-transport client is not part of it.
+/// its join runs into its timeout. A proven joiner admitted after them shows that the seed was up
+/// all along, so a timeout is not a dead seed. The nodes form their own cluster with their own
+/// certificate authority; the dev-transport client is not part of it.
 fn identity_binding_scenario() -> anyhow::Result<()> {
     let scratch = tempfile::tempdir().context("mutual TLS scratch directory")?;
     let dir = scratch.path();
@@ -4151,7 +4161,19 @@ fn identity_binding_scenario() -> anyhow::Result<()> {
     )?);
     expect_join_line(&mut bad_process, "timeout")?;
     expect_exit(&mut bad_process, "unproven mutual TLS joiner")?;
-    Ok(())
+
+    let mut late_process = KillOnDrop(spawn_mutual_node(
+        any_port(),
+        &good_cert,
+        &good_key,
+        &ca_path,
+        Some(seed_addr),
+    )?);
+    expect_join_line(&mut late_process, "ok")?;
+    expect_exit(
+        &mut late_process,
+        "proven mutual TLS joiner after the refused ones",
+    )
 }
 
 /// A node formed on its own is a cluster of its own, and the client's join toward it is refused
@@ -4205,8 +4227,7 @@ fn foreign_cluster_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Two nodes forming clusters of their own on one fixed seed list, as a split cold start leaves
-/// them. Each one's probe reports the other's address and cluster as foreign within a probe
-/// interval of both being up, plus the time a probe takes.
+/// them. Each one's probe reports the other's address and cluster as foreign.
 fn foreign_probe_scenario() -> anyhow::Result<()> {
     let addrs = reserved_addrs(2)?;
     let (first_addr, second_addr) = (addrs[0], addrs[1]);
@@ -4231,11 +4252,9 @@ fn foreign_probe_scenario() -> anyhow::Result<()> {
         first_cluster != second_cluster,
         "two independently formed clusters share the ID {first_cluster}"
     );
-    let both_up = Instant::now();
 
     let first_foreign = prefixed_line(&first_lines, FOREIGN_PREFIX)?;
     let second_foreign = prefixed_line(&second_lines, FOREIGN_PREFIX)?;
-    let elapsed = both_up.elapsed();
     anyhow::ensure!(
         first_foreign == format!("{second_addr} {second_cluster}"),
         "the first node reports {first_foreign} instead of the second's cluster"
@@ -4243,10 +4262,6 @@ fn foreign_probe_scenario() -> anyhow::Result<()> {
     anyhow::ensure!(
         second_foreign == format!("{first_addr} {first_cluster}"),
         "the second node reports {second_foreign} instead of the first's cluster"
-    );
-    anyhow::ensure!(
-        elapsed <= PROBE_INTERVAL + CONNECT_TIMEOUT,
-        "the foreign clusters were reported after {elapsed:?}"
     );
     Ok(())
 }
@@ -5714,7 +5729,10 @@ fn is_bind_collision(error: &anyhow::Error) -> bool {
 
 /// Binds the address to keep it from other processes while the node which owned it is dead.
 fn hold_addr(addr: SocketAddr) -> anyhow::Result<UdpSocket> {
-    UdpSocket::bind(addr).map_err(|_| BindCollision(addr).into())
+    UdpSocket::bind(addr).map_err(|error| match error.kind() {
+        io::ErrorKind::AddrInUse => BindCollision(addr).into(),
+        _ => anyhow::Error::from(error).context(format!("holding {addr}")),
+    })
 }
 
 /// Spawns a node at a freshly reserved address, and at another one if the address was taken

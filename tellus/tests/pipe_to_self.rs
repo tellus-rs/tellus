@@ -2,6 +2,7 @@ mod logs;
 
 use crate::logs::Logs;
 use std::{
+    fmt::Debug,
     future::Future,
     num::{NonZeroU32, NonZeroUsize},
     pin::Pin,
@@ -76,13 +77,16 @@ async fn panic_in_future_delivers_nothing() {
         panicking_tx.send(()).expect("test dropped the receiver");
         panic!("piped future panics on purpose")
     })));
-    panicking_rx.await.expect("piped future did not run");
+    timeout(TIMEOUT, panicking_rx)
+        .await
+        .expect("piped future did not run in time")
+        .expect("piped future dropped the sender");
     assert_logged_as_error(&mut logs, "piped future panics on purpose").await;
 
     system.root().tell(Message::Ping);
     assert_eq!(next_event(&mut events).await, Event::Ping);
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A panic in the conversion of the output is contained like one in the future: it is logged at
@@ -100,7 +104,7 @@ async fn panic_in_conversion_delivers_nothing() {
     system.root().tell(Message::Ping);
     assert_eq!(next_event(&mut events).await, Event::Ping);
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A restart does not cancel a piped future: its output is received by the new state.
@@ -161,7 +165,7 @@ async fn stopped_actor_does_not_wait_for_future() {
         dead_letter.last().and_then(|fields| fields.get("level")),
         Some(&"WARN".to_string())
     );
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A full bounded mailbox still receives the output: it is enqueued past the capacity. The future
@@ -282,6 +286,16 @@ async fn next_event(events: &mut mpsc::UnboundedReceiver<Event>) -> Event {
         .await
         .expect("no event in time")
         .expect("probe dropped the sender")
+}
+
+async fn assert_closed<E>(events: &mut mpsc::UnboundedReceiver<E>)
+where
+    E: Debug,
+{
+    let event = timeout(TIMEOUT, events.recv())
+        .await
+        .expect("the sender was not dropped in time");
+    assert!(event.is_none(), "unexpected event {event:?}");
 }
 
 async fn stop(system: ActorSystem<Message>) {
