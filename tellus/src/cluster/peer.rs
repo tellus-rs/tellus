@@ -3274,6 +3274,27 @@ mod tests {
         ));
     }
 
+    /// A join in flight alone proves no admission: every node of a cold start has one while it
+    /// asks the others, so it still refuses a join as no cluster.
+    #[tokio::test]
+    async fn an_endpoint_with_a_join_in_flight_refuses_joins_as_no_cluster() {
+        let (endpoint, _lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        assert!(endpoint.enter_join());
+
+        assert!(matches!(
+            admit_inbound(
+                NodeId::new(addr(2)),
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
+            Admission::Refuse(RefusalReason::NoCluster)
+        ));
+    }
+
     /// A seed refusing as joining has been admitted by a cluster, so the round counts it as
     /// unavailable rather than as no cluster.
     #[tokio::test]
@@ -6535,6 +6556,36 @@ mod tests {
                 "a cluster holding back joins at {held} forbids forming"
             );
         }
+    }
+
+    /// An attempt answered after `join_attempt_timeout` whose snapshot follows more than one
+    /// `heartbeat_interval` past it still joins, since the round waits two intervals for it.
+    #[tokio::test(start_paused = true)]
+    async fn a_snapshot_in_the_second_interval_after_the_bound_still_joins() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let seed = addr(2);
+        let attempt_timeout = Duration::from_secs(1);
+        assert_eq!(endpoint.config().heartbeat_interval, attempt_timeout);
+
+        let round = task::spawn(async move {
+            membership::join_round(endpoint, &[seed], Some(attempt_timeout)).await
+        });
+        let dial = joining.dials.recv().await.expect("a dial");
+        sleep(Duration::from_millis(500)).await;
+        let (connected, mut acceptor) = Acceptor::connected();
+        assert!(dial.answer.send(connected).is_ok());
+        acceptor.joiner_handshake().await;
+        sleep(Duration::from_millis(700)).await;
+        acceptor.admit(seed);
+        sleep(Duration::from_millis(900)).await;
+        acceptor.gossip(vec![Member::new(NodeId::new(seed), MemberState::Up)], false);
+
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::Joined
+        ));
+        assert!(endpoint.formed());
     }
 
     /// Runs bootstrap for addr(1), the lowest of the seeds addr(1) to addr(3), over the real join
