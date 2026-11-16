@@ -232,8 +232,9 @@ pub(crate) enum JoinRound {
 /// One pass over the seeds, this node's own address skipped in every position: a formed node
 /// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
 /// first, and the other seeds only once its answer has released the pin. An attempt outlasting
-/// `attempt_timeout` is abandoned and counts as unavailable; one past its `Join` handshake runs
-/// on and holds the join permit until it concludes.
+/// `attempt_timeout` is abandoned, and the round goes on only once it has given the join permit
+/// back. One abandoned before its `Join` handshake counts as unavailable. One past it runs to its
+/// end, two `heartbeat_interval`s at most, and counts as if it had answered in time.
 pub(crate) async fn join_round(
     endpoint: &'static EndpointInner,
     seeds: &[SocketAddr],
@@ -974,27 +975,45 @@ async fn join_within(
     addr: SocketAddr,
     attempt_timeout: Option<Duration>,
 ) -> Result<(), ConnectError> {
+    let (result_tx, mut result_rx) = oneshot::channel();
     let Some(attempt_timeout) = attempt_timeout else {
-        return join_via(endpoint, addr).await;
+        endpoint.request_join(JoinRequest {
+            addr,
+            result_tx,
+            abandon_rx: None,
+        });
+        return join_result(result_rx.await);
     };
 
-    let deadline = timers::deadline(tokio_time::Instant::now(), attempt_timeout);
-    timeout_at(deadline, join_via(endpoint, addr))
-        .await
-        .unwrap_or_else(|_| {
-            debug!(seed_addr = %addr, ?attempt_timeout, "join attempt timed out");
+    let (abandon_tx, abandon_rx) = oneshot::channel();
+    endpoint.request_join(JoinRequest {
+        addr,
+        result_tx,
+        abandon_rx: Some(abandon_rx),
+    });
+    let now = tokio_time::Instant::now();
+    if let Ok(result) = timeout_at(timers::deadline(now, attempt_timeout), &mut result_rx).await {
+        return join_result(result);
+    }
+
+    debug!(seed_addr = %addr, ?attempt_timeout, "join attempt timed out");
+    let _ = abandon_tx.send(());
+    let finish_within = endpoint.config().heartbeat_interval.saturating_mul(2);
+    let now = tokio_time::Instant::now();
+    match timeout_at(timers::deadline(now, finish_within), result_rx).await {
+        Ok(result) => join_result(result),
+
+        Err(_) => {
+            warn!(seed_addr = %addr, "abandoned join attempt still unfinished");
             Err(ConnectError::Abandoned)
-        })
+        }
+    }
 }
 
-async fn join_via(endpoint: &'static EndpointInner, addr: SocketAddr) -> Result<(), ConnectError> {
-    let (result_tx, result_rx) = oneshot::channel();
-    endpoint.request_join(JoinRequest { addr, result_tx });
-
-    match result_rx.await {
-        Ok(result) => result,
-        Err(_) => Err(ConnectError::Closed),
-    }
+fn join_result(
+    result: Result<Result<(), ConnectError>, oneshot::error::RecvError>,
+) -> Result<(), ConnectError> {
+    result.unwrap_or(Err(ConnectError::Closed))
 }
 
 #[cfg(test)]

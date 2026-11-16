@@ -140,8 +140,9 @@ pub struct BootstrapConfig {
     /// How long a join round waits for one attempt before it goes on to the next address,
     /// counting that one as unavailable. Without a bound, a silent address holds the round until
     /// the transport gives up, 30 s for QUIC. An attempt which has sent its `Join` handshake still
-    /// runs to its conclusion, and no formation is taken while it does. Must not be zero, which
-    /// would abandon every attempt; defaults to [BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT].
+    /// runs to its conclusion, at most two `heartbeat_interval`s longer, and the round counts its
+    /// outcome as if it had come in time. Must not be zero, which would abandon every attempt;
+    /// defaults to [BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT].
     pub join_attempt_timeout: Duration,
 
     /// Creates the [FormationProvider] deciding whether this node forms a new cluster when no
