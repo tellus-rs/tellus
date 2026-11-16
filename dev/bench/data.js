@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794815354305,
+  "lastUpdate": 1794815359208,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25573,6 +25573,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 120175,
             "range": "± 3650",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5e3fcbd278d9a04c167fd05028b6581dce70ad51",
+          "message": "Merge pull request #410 from tellus-rs/fix/bootstrap-silent-seeds\n\nfix(cluster)!: bound bootstrap join attempts, decide on a fresh view",
+          "timestamp": "2026-11-16T08:42:05+01:00",
+          "tree_id": "760e3caf89694184d0cf4f0ec734d07c97527dde",
+          "url": "https://github.com/tellus-rs/tellus/commit/5e3fcbd278d9a04c167fd05028b6581dce70ad51"
+        },
+        "date": 1794815358737,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3377102,
+            "range": "± 53918",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3328840,
+            "range": "± 35994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 743087,
+            "range": "± 12925",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 101264,
+            "range": "± 9679",
             "unit": "ns/iter"
           }
         ]
