@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794841264996,
+  "lastUpdate": 1794841268055,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -30495,6 +30495,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5741383,
             "range": "± 437050",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7f42f5aeffc308d51997c90dd3d67a87a049d5e0",
+          "message": "Merge pull request #429 from tellus-rs/docs/persistence-examples\n\ndocs(examples): show schema upcasting and event-sourced children",
+          "timestamp": "2026-11-16T15:52:13+01:00",
+          "tree_id": "8482603df7155417353dd20ca44514dd9c8a8daa",
+          "url": "https://github.com/tellus-rs/tellus/commit/7f42f5aeffc308d51997c90dd3d67a87a049d5e0"
+        },
+        "date": 1794841267682,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 34865033,
+            "range": "± 2279132",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 35193081,
+            "range": "± 2946179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5634316,
+            "range": "± 406833",
             "unit": "ns/iter"
           }
         ]
