@@ -69,7 +69,8 @@ where
 
     /// Reconcile the recovered state with the world, e.g. spawn child actors or re-arm timers.
     /// Run once per successful recovery, on every spawn and every restart, after replay or
-    /// snapshot load and before the first command, never during replay.
+    /// snapshot load and before the first command, never during replay, and not at all once the
+    /// actor is stopped.
     ///
     /// tellus handles a failure exactly like a panic, through the configured
     /// [SupervisionStrategy](crate::SupervisionStrategy).

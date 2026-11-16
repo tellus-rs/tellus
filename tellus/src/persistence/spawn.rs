@@ -261,6 +261,15 @@ macro_rules! run_event_sourced {
                     mut next_seq_no,
                 }) = recovered
                 {
+                    if $stopped_by_parent_rx.has_changed().unwrap_or(true) {
+                        debug!(
+                            actor_id = %actor_id,
+                            "stopping, because parent stopped this actor"
+                        );
+                        drop_containing_panic(actor_id, STATE_FAILED_TO_DROP, state);
+                        break 'run;
+                    }
+
                     let state = catch_and_log(actor_id, FAILED_TO_RECOVER, || {
                         $actor.recovered(&context, state)
                     });
