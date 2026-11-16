@@ -40,7 +40,7 @@ use tellus::{
         Member, MemberState, Peer, Schema, SeedDiscovery, Transition, UnsupportedSchemaVersion,
         codec::{Codec, CodecError},
         pubsub::{self, Topic},
-        receptionist,
+        receptionist::{self, ReceptionistError},
         transport::{ConnectedControl, QuicConnection, QuicTransport, Transport, TransportError},
     },
 };
@@ -694,13 +694,23 @@ where
     let workers = receptionist::lookup(&Key::<J>::new(WORKER_KEY))
         .map(|workers| workers.len())
         .unwrap_or_else(|error| {
-            error!(%error, "cannot resolve the workers");
+            match error {
+                error @ ReceptionistError::NoLongerMember => {
+                    debug!(%error, "cannot resolve the workers");
+                }
+                error => error!(%error, "cannot resolve the workers"),
+            }
             0
         });
     let subscribers = receptionist::lookup(Topic::<Event>::new(EVENT_TOPIC).key())
         .map(|subscribers| subscribers.len())
         .unwrap_or_else(|error| {
-            error!(%error, "cannot resolve the subscribers");
+            match error {
+                error @ ReceptionistError::NoLongerMember => {
+                    debug!(%error, "cannot resolve the subscribers");
+                }
+                error => error!(%error, "cannot resolve the subscribers"),
+            }
             0
         });
 
@@ -834,6 +844,9 @@ async fn publish_events(addr: SocketAddr) {
         seq += 1;
         match pubsub::publish(&topic, Event { from: addr, seq }) {
             Ok(told) => debug!(seq, told, "published an event"),
+            Err(error @ ReceptionistError::NoLongerMember) => {
+                debug!(%error, "cannot publish an event");
+            }
             Err(error) => error!(%error, "cannot publish an event"),
         }
     }
@@ -867,14 +880,22 @@ where
             }
 
             () = workers.changed() => {
-                if let Err(error) = workers.current() {
-                    error!(%error, "cannot resolve the workers");
+                match workers.current() {
+                    Ok(_) => {}
+                    Err(error @ ReceptionistError::NoLongerMember) => {
+                        debug!(%error, "cannot resolve the workers");
+                    }
+                    Err(error) => error!(%error, "cannot resolve the workers"),
                 }
             }
 
             () = subscribers.changed() => {
-                if let Err(error) = subscribers.current() {
-                    error!(%error, "cannot resolve the subscribers");
+                match subscribers.current() {
+                    Ok(_) => {}
+                    Err(error @ ReceptionistError::NoLongerMember) => {
+                        debug!(%error, "cannot resolve the subscribers");
+                    }
+                    Err(error) => error!(%error, "cannot resolve the subscribers"),
                 }
             }
         }
