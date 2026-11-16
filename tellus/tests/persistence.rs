@@ -593,6 +593,42 @@ async fn a_parent_stop_aborts_a_hung_recovery() {
     assert_terminates(system, "termination must not wait for the hung recovery").await;
 }
 
+/// An event-sourced child whose parent stops it before it ran never recovers: the store sees no
+/// read, neither `init` nor `recovered` runs, and the parent still terminates.
+#[tokio::test]
+async fn an_event_sourced_child_stopped_before_it_ran_never_recovers() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::new(HastyParent {
+        store: store.clone(),
+        probe_tx,
+    });
+    system.root().tell(());
+    assert_terminates(system, "the parent did not terminate").await;
+
+    assert_eq!(store.reads(), []);
+    assert_eq!(probe_rx.recv().await, None);
+}
+
+/// An event-sourced root whose system is stopped before it ran never recovers: the store sees no
+/// read and neither `init` nor `recovered` runs.
+#[tokio::test]
+async fn an_event_sourced_root_stopped_before_it_ran_never_recovers() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("43", probe_tx),
+        Persistence::new(store.clone()),
+    );
+    system.stop();
+    assert_terminates(system, "the root did not terminate").await;
+
+    assert_eq!(store.reads(), []);
+    assert_eq!(probe_rx.recv().await, None);
+}
+
 /// A command whose events would advance the stream beyond the last position fails the actor
 /// before anything is appended, even with a store which would accept the append: a saturating
 /// position would have stored the event at `u64::MAX` and carried on.
@@ -1905,6 +1941,37 @@ impl Actor for Parent {
             Incoming::Message(()) => Ok(Control::Stop),
             Incoming::Terminated(_) => Ok(Control::Continue(state)),
         }
+    }
+}
+
+/// Spawns a [Counter] and stops, both in the `receive` of its one message.
+struct HastyParent {
+    store: FaultyStore,
+    probe_tx: mpsc::UnboundedSender<Probe>,
+}
+
+impl Actor for HastyParent {
+    type Message = ();
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        _: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        context.spawn_event_sourced(
+            Counter::new("42", self.probe_tx.clone()),
+            Persistence::new(self.store.clone()),
+        );
+        Ok(Control::Stop)
     }
 }
 

@@ -90,6 +90,10 @@ On every spawn and every restart, before the first command:
 fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
 `recovered` always runs, and never during replay.
 
+An actor stopped by its parent before it ran skips recovery altogether, as a plain actor skips
+`init` (see [actors.md](actors.md#the-actor-tree)). The store sees no load and no read, and neither
+`init`, `init_from_snapshot` nor `recovered` runs.
+
 With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as a plain actor does
 through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,
 e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are requests, gated on
@@ -134,11 +138,11 @@ Fully settled means that its events are durable and applied, its `then` has run 
 due snapshot has been attempted. A failed snapshot save is logged at warn level, and settlement
 still completes. The mailbox guarantees of [actors.md](actors.md) carry over unchanged: messages
 from one sender arrive in send order, and a terminated signal arrives behind all messages the
-terminated actor delivered. A parent's stop is honored between commands and at any point during
-recovery, never in the middle of one command settling, and the termination sequence is the same as
-for any actor. A settlement takes at most the store timeout per store call, so a stop waits for it
-at most that long for the append and that long again for a due snapshot save (see
-[Store timeout](#store-timeout)).
+terminated actor delivered. A parent's stop is honored before recovery, at any point during
+recovery and between commands, never in the middle of one command settling, and the termination
+sequence is the same as for any actor. A settlement takes at most the store timeout per store call,
+so a stop waits for it at most that long for the append and that long again for a due snapshot save
+(see [Store timeout](#store-timeout)).
 
 ## Failure and supervision
 

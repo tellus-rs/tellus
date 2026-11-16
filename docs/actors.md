@@ -109,6 +109,12 @@ Termination is bottom-up: a stopping actor first stops its children, each of whi
 does the same, and only terminates itself once all descendants have. `ActorSystem::terminated`
 resolves once the root, and therefore the entire tree, has terminated.
 
+A child stopped by its parent before it ran never runs `init`, so nothing `init` would have sent
+or spawned exists. A child spawned in the `receive` which returns `Control::Stop` is such a child
+as long as its task has not been polled yet. It still runs the termination sequence, so its
+watchers get their terminated signal and its parent terminates only behind it (see stopping and
+termination below). A root whose system is stopped before the root ran skips `init` the same way.
+
 ## Configuration
 
 [`ActorConfig`](../tellus/src/actor_config.rs) is passed via `spawn_with_config` or
@@ -421,7 +427,8 @@ hence never accumulate.
 of four task futures, chosen by the actor's `Timers` and `Stash` types (see timers and stashing
 above):
 
-1. Run `init`; a failure is fed to supervision just like a failure of `receive`, so under
+1. Probe whether the parent has stopped this actor, and if so go to step 4 without running `init`.
+   Otherwise run `init`; a failure is fed to supervision just like a failure of `receive`, so under
    `Restart` even the first initialization is retried.
 2. Loop: wait (biased) for the parent's stop signal, a due timer, a fired timer whose position has
    been reached, or the next item from the mailbox. Fire a due timer instead of receiving anything;
@@ -479,6 +486,13 @@ The closed channel is the completion barrier: a child drops its receiver clone o
 ends, so the channel closing proves every child has terminated. Only then does the actor drop its
 own value and finally signal its watchers: a terminated signal must prove that the actor's
 destructors have run.
+
+An actor stopped by its parent before it ran has no state to drop, since `init` never ran, and
+otherwise runs the same sequence. It is a normal stop, not a failure, so supervision is not
+consulted. Its watchers get an ordinary terminated signal once its actor value has been dropped.
+Whether a child has run before its parent stops it is up to the scheduler. On a current-thread
+runtime, a child spawned in the `receive` which stops its parent has not. On a multi-thread runtime,
+another worker may already have run its `init`.
 
 The mailbox is drained and disconnected right after the state is dropped and before the children are
 stopped, so senders observe the termination while the children still stop. The destructors of the
@@ -777,6 +791,8 @@ has to wait for the actor, since `tell` returns before the message is handled.
   once and is not refused by a full bounded mailbox. On the asker's node it becomes a dead letter
   only if the asker is gone; a reply from another node can also be lost on its way. A missing reply
   is never reported. Detecting one takes a timer per request.
+- An actor stopped by its parent before it ran never runs `init`, and an event-sourced one never
+  starts recovery. Either still terminates like any stopping actor.
 - A canceled or replaced timer is never received, even when it was due already.
 - A message which arrived before a timer's deadline is handled before the timer's message. The run
   loop fires a due timer between two items, so it can also land behind messages which arrived
