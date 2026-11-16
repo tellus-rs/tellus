@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794864464438,
+  "lastUpdate": 1794864467861,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -29437,6 +29437,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 103515,
             "range": "± 6813",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9412bfc840bf229fa766632351f2a38ed56ca7eb",
+          "message": "Merge pull request #451 from tellus-rs/fix/quic-close-ends-streams\n\nfix(cluster): end a QUIC stream at a graceful close between frames",
+          "timestamp": "2026-11-16T22:15:08+01:00",
+          "tree_id": "4e7dc4a8645114f2e76a671878f952396a91b235",
+          "url": "https://github.com/tellus-rs/tellus/commit/9412bfc840bf229fa766632351f2a38ed56ca7eb"
+        },
+        "date": 1794864467506,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4139163,
+            "range": "± 204804",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4080917,
+            "range": "± 198102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1072692,
+            "range": "± 12117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 138592,
+            "range": "± 3696",
             "unit": "ns/iter"
           }
         ]
