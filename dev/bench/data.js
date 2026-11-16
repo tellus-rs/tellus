@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794866727180,
+  "lastUpdate": 1794866728966,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33855,6 +33855,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5237901,
             "range": "± 378459",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d6b82f71c58a210a98cecbfda402f71d3b5a0492",
+          "message": "Merge pull request #456 from tellus-rs/docs/stream-pool-numbers\n\ndocs(cluster): remeasure the stream pool under the codec enum",
+          "timestamp": "2026-11-16T22:57:39+01:00",
+          "tree_id": "4d83c598f95298a07dbfdc371079cf627af3a1b3",
+          "url": "https://github.com/tellus-rs/tellus/commit/d6b82f71c58a210a98cecbfda402f71d3b5a0492"
+        },
+        "date": 1794866728552,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25131859,
+            "range": "± 1775402",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 23970185,
+            "range": "± 928034",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4789081,
+            "range": "± 179228",
             "unit": "ns/iter"
           }
         ]
