@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794823322048,
+  "lastUpdate": 1794823325122,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28815,6 +28815,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4612030,
             "range": "± 210884",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0a45fa6e99de2e3ac1f4bdd4fa9747354df5eb31",
+          "message": "Merge pull request #414 from tellus-rs/fix/child-init-after-stop\n\nfix!: never run init for a child its parent stopped before it ran",
+          "timestamp": "2026-11-16T10:54:26+01:00",
+          "tree_id": "911aefc35d3a85ec1fa48fc7eb855de0f2f52ffb",
+          "url": "https://github.com/tellus-rs/tellus/commit/0a45fa6e99de2e3ac1f4bdd4fa9747354df5eb31"
+        },
+        "date": 1794823324708,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 21314895,
+            "range": "± 751508",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 21089793,
+            "range": "± 535662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3821444,
+            "range": "± 236308",
             "unit": "ns/iter"
           }
         ]
