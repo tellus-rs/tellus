@@ -15,12 +15,12 @@ use std::{
     time::Duration,
 };
 use tellus::cluster::{
-    self, BootstrapConfig, EndpointConfig, FixedSeeds, Lifecycle, MemberState,
+    self, BootstrapConfig, EndpointConfig, FixedSeeds, Lifecycle, MemberState, receptionist,
     transport::QuicTransport,
 };
 use tokio::{
     process::{self, Child},
-    task,
+    select, task,
     time::{sleep, timeout},
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
@@ -32,6 +32,8 @@ const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 const REMOVE_TIMEOUT: Duration = Duration::from_secs(20);
 const LIFECYCLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const EXIT_TIMEOUT: Duration = Duration::from_secs(30);
+const SETTLE_TIMEOUT: Duration = Duration::from_secs(10);
+const SETTLE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 // ANCHOR: main
 #[tokio::main]
@@ -106,7 +108,7 @@ async fn await_member_state(addr: SocketAddr, member_state: MemberState) -> anyh
 async fn leaving_node() -> anyhow::Result<()> {
     let (addr, seeds) = node_args()?;
     join_cluster(addr, seeds).await?;
-    await_all_up().await?;
+    await_settled().await?;
     await_stdin_closed().await?;
 
     let departure = cluster::leave().await.context("leaving the cluster")?;
@@ -146,6 +148,25 @@ async fn await_all_up() -> anyhow::Result<()> {
     .await
     .context("not all nodes up within the timeout")?;
     Ok(())
+}
+
+async fn await_settled() -> anyhow::Result<()> {
+    let mut states = cluster::cluster_state().context("subscribing to the cluster state")?;
+    let settle = async {
+        loop {
+            let state = states.wait_for(|state| state.up().count() == NODES).await;
+            if receptionist::settled(state.version()).context("asking for the settlement")? {
+                return anyhow::Ok(());
+            }
+            select! {
+                () = states.changed() => {}
+                () = sleep(SETTLE_POLL_INTERVAL) => {}
+            }
+        }
+    };
+    timeout(SETTLE_TIMEOUT, settle)
+        .await
+        .context("the receptionist did not settle within the timeout")?
 }
 
 async fn await_stdin_closed() -> anyhow::Result<()> {
