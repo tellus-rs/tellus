@@ -1238,6 +1238,7 @@ where
             continue;
         }
 
+        // Enter the gate before checking delivers_from, else a node death slips in between!
         let _guard = liveness.enter();
         if !endpoint.delivers_from(peer) {
             // A leaving node still awaits the drain's acknowledgment, but delivers nothing!
