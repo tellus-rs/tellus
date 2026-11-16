@@ -43,6 +43,10 @@ concurrency:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 jobs:
   sweep:
     name: Sweep (${{ matrix.runner }}, job ${{ matrix.job }})
@@ -53,6 +57,8 @@ jobs:
       || github.event.label.name == 'sweep-stash'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
+    outputs:
+      base: ${{ steps.inputs.outputs.base }}
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +74,7 @@ jobs:
 
       # Pull request heads are not among the refs a checkout fetches.
       - name: Verify inputs
+        id: inputs
         run: |
           git fetch --quiet --no-tags origin '+refs/pull/*/head:refs/remotes/pull-heads/*'
           if [ "$NULL_RUN" = true ]; then
@@ -85,6 +92,7 @@ jobs:
             echo "$CANDIDATE against $BASE, bench $BENCH" | tee -a "$GITHUB_STEP_SUMMARY"
             git diff --stat "$BASE" "$CANDIDATE" | tee -a "$GITHUB_STEP_SUMMARY"
           fi
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
 
       - name: Create worktrees
         id: worktrees
@@ -128,14 +136,15 @@ jobs:
             test "$(sha256sum < "$RUNNER_TEMP/sweep/C")" = "$(sha256sum < "$RUNNER_TEMP/sweep/B")"
           fi
 
+      # The rules must come from the base, never from the candidate!
       - name: Build stack shift library and probe
         run: |
-          cc -shared -fPIC -O2 -o "$RUNNER_TEMP/sweep/stack_shift.so" .github/stack-sweep/stack_shift.c -ldl
-          cc -O2 -pthread -o "$RUNNER_TEMP/sweep/probe" .github/stack-sweep/probe.c
+          cc -shared -fPIC -O2 -o "$RUNNER_TEMP/sweep/stack_shift.so" ../base/.github/stack-sweep/stack_shift.c -ldl
+          cc -O2 -pthread -o "$RUNNER_TEMP/sweep/probe" ../base/.github/stack-sweep/probe.c
 
       - name: Probe
         run: |
-          .github/stack-sweep/probe.sh "$RUNNER_TEMP/sweep/stack_shift.so" "$RUNNER_TEMP/sweep/probe" \
+          ../base/.github/stack-sweep/probe.sh "$RUNNER_TEMP/sweep/stack_shift.so" "$RUNNER_TEMP/sweep/probe" \
             | tee "$RUNNER_TEMP/sweep/probe.txt"
 
       - name: Metadata
@@ -170,11 +179,11 @@ jobs:
       - name: Sweep
         run: |
           sweep="$RUNNER_TEMP/sweep"
-          python3 -I .github/stack-sweep/sweep.py run --bench "$BENCH" \
+          python3 -I ../base/.github/stack-sweep/sweep.py run \
             --preload "$sweep/stack_shift.so" --workdir "$sweep/work" --out "$sweep/results.jsonl" \
             "B=$sweep/B" "C=$sweep/C" "A=$sweep/A"
-          test "$(wc -l < "$sweep/results.jsonl")" -eq "$(python3 -I .github/stack-sweep/sweep.py lines --bench "$BENCH")"
-          python3 -I .github/stack-sweep/sweep.py summary "$sweep/results.jsonl" >> "$GITHUB_STEP_SUMMARY"
+          test "$(wc -l < "$sweep/results.jsonl")" -eq "$(python3 -I ../base/.github/stack-sweep/sweep.py lines "$sweep/B")"
+          python3 -I ../base/.github/stack-sweep/sweep.py summary "$sweep/results.jsonl" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload results
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -190,12 +199,15 @@ jobs:
     name: Report
     needs: sweep
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       actions: read
       contents: read
     steps:
-      - name: Checkout repository
+      - name: Checkout base
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.sweep.outputs.base }}
 
       - name: Report
         env:

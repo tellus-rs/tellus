@@ -126,7 +126,7 @@ For a local before and after, `just bench-save <baseline>` and `just bench-compa
 the `bench-persistence-` and `bench-stash-` pairs) compare against a saved baseline. `just profile`
 and `just profile-persistence` attribute the time of the hot paths per function with
 [hotpath](https://crates.io/crates/hotpath), and their `-alloc` variants the allocations. The
-`-alloc-gate` recipes fail if a function which must not allocate does. `just criterion-profile`
+`-alloc-gate` recipes fail if a function which must not allocate does. `just profile-criterion`
 runs one criterion benchmark as a hotpath report. `just bench-cluster`, `bench-gossip` and
 `bench-streams` measure remoting across spawned processes and do not run on CI.
 

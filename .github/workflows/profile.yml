@@ -38,52 +38,13 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Output toolchain
-        id: toolchain
-        run: |
-          stable=$(grep channel rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/')
-          echo "stable=$stable" | tee -a "$GITHUB_OUTPUT"
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      - name: Profile and upload the merged report
+        uses: ./.github/actions/hotpath-profile
         with:
-          toolchain: ${{ steps.toolchain.outputs.stable }}
-
-      - name: Install just
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
-        with:
-          tool: just
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-
-      - name: Install valgrind
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y "valgrind=1:${VALGRIND_VERSION}-0ubuntu1"
-          valgrind --version
-
-      - name: Profile natively
-        env:
-          HOTPATH_BENCHMARK: ${{ matrix.benchmark }}
-          HOTPATH_OUTPUT_FORMAT: json
-          HOTPATH_OUTPUT_PATH: ${{ runner.temp }}/native.json
-        run: just ${{ matrix.recipe }} hotpath-callgrind hotpath-cloud
-
-      - name: Profile under Callgrind and upload merged report
-        env:
-          HOTPATH_UPLOAD: 1
-          HOTPATH_BENCHMARK: ${{ matrix.benchmark }}
-          HOTPATH_USER_METADATA: runner=${{ runner.os }}-${{ runner.arch }},toolchain=${{ steps.toolchain.outputs.stable }},profile=release,valgrind=${{ env.VALGRIND_VERSION }}
-          HOTPATH_OUTPUT_FORMAT: json
-          HOTPATH_OUTPUT_PATH: ${{ runner.temp }}/report.json
-          HOTPATH_MERGE_REPORT: ${{ runner.temp }}/native.json
-          HOTPATH_CALLGRIND_OUT_FILE: ${{ runner.temp }}/callgrind.out.%p
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: valgrind -q --tool=callgrind --instr-atstart=no --callgrind-out-file=${{ runner.temp }}/callgrind.out.%p
-        run: |
-          just ${{ matrix.recipe }} hotpath-callgrind hotpath-cloud
-          jq -e '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0)' \
-            "$HOTPATH_OUTPUT_PATH" > /dev/null
+          benchmark: ${{ matrix.benchmark }}
+          recipe: ${{ matrix.recipe }}
+          upload: "true"
+          valgrind-version: ${{ env.VALGRIND_VERSION }}
 
   report:
     name: Profile ${{ matrix.benchmark }}
@@ -108,52 +69,12 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha }}
 
-      - name: Output toolchain
-        id: toolchain
-        run: |
-          stable=$(grep channel rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/')
-          echo "stable=$stable" | tee -a "$GITHUB_OUTPUT"
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      - name: Profile and write the merged report
+        uses: ./.github/actions/hotpath-profile
         with:
-          toolchain: ${{ steps.toolchain.outputs.stable }}
-
-      - name: Install just
-        uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
-        with:
-          tool: just
-
-      - name: Setup Rust cache
-        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-
-      - name: Install valgrind
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y "valgrind=1:${VALGRIND_VERSION}-0ubuntu1"
-          valgrind --version
-
-      - name: Profile natively
-        env:
-          HOTPATH_BENCHMARK: ${{ matrix.benchmark }}
-          HOTPATH_OUTPUT_FORMAT: json
-          HOTPATH_OUTPUT_PATH: ${{ runner.temp }}/native.json
-        run: just ${{ matrix.recipe }} hotpath-callgrind hotpath-cloud
-
-      - name: Profile under Callgrind and write merged report
-        env:
-          HOTPATH_BENCHMARK: ${{ matrix.benchmark }}
-          HOTPATH_USER_METADATA: runner=${{ runner.os }}-${{ runner.arch }},toolchain=${{ steps.toolchain.outputs.stable }},profile=release,valgrind=${{ env.VALGRIND_VERSION }}
-          HOTPATH_OUTPUT_FORMAT: json
-          HOTPATH_OUTPUT_PATH: report.json
-          HOTPATH_MERGE_REPORT: ${{ runner.temp }}/native.json
-          HOTPATH_CALLGRIND_OUT_FILE: ${{ runner.temp }}/callgrind.out.%p
-          CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: valgrind -q --tool=callgrind --instr-atstart=no --callgrind-out-file=${{ runner.temp }}/callgrind.out.%p
-        run: |
-          just ${{ matrix.recipe }} hotpath-callgrind hotpath-cloud
-          test -s report.json
-          jq -e '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0)' \
-            report.json > /dev/null
+          benchmark: ${{ matrix.benchmark }}
+          recipe: ${{ matrix.recipe }}
+          valgrind-version: ${{ env.VALGRIND_VERSION }}
 
       - name: Store report for the relay
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

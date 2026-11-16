@@ -7,6 +7,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      tags:
+        description: Release tags, separated by spaces, whose release notes are put in front of the changelog again; nothing is released
+        required: true
+        type: string
+
+defaults:
+  run:
+    shell: bash
 
 # No run may be dropped, since one can be the release, and the latest must run last!
 concurrency:
@@ -18,6 +28,7 @@ jobs:
   toolchain:
     name: Setup Rust toolchain
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       toolchain: ${{ steps.set_toolchain.outputs.toolchain }}
     steps:
@@ -33,6 +44,7 @@ jobs:
   release-plz:
     name: Run release-plz
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: toolchain
     permissions:
       contents: read
@@ -58,18 +70,26 @@ jobs:
 
       - name: Run release-plz
         id: release-plz
+        if: github.event_name == 'push'
         uses: MarcoIeni/release-plz-action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
 
       - name: Put the release notes in front of the changelog
-        if: steps.release-plz.outputs.releases_created == 'true'
+        if: steps.release-plz.outputs.releases_created == 'true' || github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           RELEASES: ${{ steps.release-plz.outputs.releases }}
+          TAGS: ${{ inputs.tags }}
         run: |
           git fetch --quiet --tags origin
-          for tag in $(jq -r '.[].tag' <<< "$RELEASES"); do
+          if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then
+            tags=$TAGS
+          else
+            tags=$(jq -r '.[].tag' <<< "$RELEASES")
+          fi
+          for tag in $tags; do
+            git rev-parse --verify --quiet "refs/tags/$tag" > /dev/null || { echo "::error::no tag $tag"; exit 1; }
             gh release view "$tag" --json body --jq .body > "$RUNNER_TEMP/changelog.md"
             python3 -I .github/release/release_notes.py "$tag" "$RUNNER_TEMP/changelog.md" > "$RUNNER_TEMP/body.md"
             if [ -s "$RUNNER_TEMP/body.md" ]; then

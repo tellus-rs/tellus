@@ -12,6 +12,10 @@ on:
       - main
   workflow_dispatch:
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.run_id }}
   cancel-in-progress: true
@@ -20,6 +24,7 @@ jobs:
   single-commit:
     name: Enforce single commit
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Enforce exactly one commit for a PR
         if: github.event_name == 'pull_request'
@@ -34,6 +39,7 @@ jobs:
   toolchain:
     name: Setup Rust toolchain
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: single-commit
     outputs:
       stable: ${{ steps.set_toolchain.outputs.stable }}
@@ -53,6 +59,7 @@ jobs:
   fmt-check:
     name: Check Code Format
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     needs: toolchain
     steps:
       - name: Checkout repository
@@ -64,10 +71,10 @@ jobs:
           toolchain: ${{ needs.toolchain.outputs.nightly }}
           components: rustfmt
 
-      - name: Install just
+      - name: Install just and taplo
         uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
         with:
-          tool: just
+          tool: just,taplo
 
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
@@ -79,6 +86,7 @@ jobs:
   lint:
     name: Lint Code
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: toolchain
     steps:
       - name: Checkout repository
@@ -106,6 +114,7 @@ jobs:
   test:
     name: Run Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: toolchain
     steps:
       - name: Checkout repository
@@ -132,6 +141,7 @@ jobs:
   doc:
     name: Create Documentation
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: toolchain
     steps:
       - name: Checkout repository
@@ -141,7 +151,6 @@ jobs:
         uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
         with:
           toolchain: ${{ needs.toolchain.outputs.stable }}
-          components: rust-docs
 
       - name: Install just
         uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
@@ -157,25 +166,30 @@ jobs:
           just doc
 
   stack-sweep-scripts:
-    name: Test Stack Sweep Scripts
+    name: Test stack sweep scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: single-commit
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run the tests of report.py and the codegen comparison
+      - name: Run the tests of sweep.py, report.py and the codegen comparison
         run: |
+          python3 -I .github/stack-sweep/test_sweep.py
           python3 -I .github/stack-sweep/test_report.py
           python3 -I .github/stack-sweep/test_codegen.py
 
   release-scripts:
-    name: Test Release Scripts
+    name: Test release scripts
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: single-commit
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Run the tests of release_notes.py
-        run: python3 -I .github/release/test_release_notes.py
+      - name: Run the tests of release_notes.py and check the notes
+        run: |
+          python3 -I .github/release/test_release_notes.py
+          python3 -I .github/release/release_notes.py --check

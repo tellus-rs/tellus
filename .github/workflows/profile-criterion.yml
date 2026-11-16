@@ -1,0 +1,87 @@
+name: Criterion profile
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+concurrency:
+  group: profile-criterion-${{ github.head_ref || github.run_id }}
+  cancel-in-progress: true
+
+env:
+  VALGRIND_VERSION: "3.26.0"
+
+jobs:
+  upload:
+    name: Criterion profile ${{ matrix.benchmark }} (upload)
+    if: github.event_name == 'push'
+    # Instruction counts only compare within one Valgrind build and Rust toolchain, so the image,
+    # the package and the toolchain are pinned.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - benchmark: criterion-ping_pong-pairs-1
+            bench: messaging
+            id: ping_pong/pairs/1
+            iterations: 100
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Profile and upload the merged report
+        uses: ./.github/actions/hotpath-profile
+        with:
+          benchmark: ${{ matrix.benchmark }}
+          recipe: profile-criterion ${{ matrix.bench }} ${{ matrix.id }} ${{ matrix.iterations }}
+          criterion-id: ${{ matrix.id }}
+          upload: "true"
+          valgrind-version: ${{ env.VALGRIND_VERSION }}
+
+  report:
+    name: Criterion profile ${{ matrix.benchmark }}
+    if: github.event_name == 'pull_request'
+    # Instruction counts only compare within one Valgrind build and Rust toolchain, so the image,
+    # the package and the toolchain are pinned.
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - benchmark: criterion-ping_pong-pairs-1
+            bench: messaging
+            id: ping_pong/pairs/1
+            iterations: 100
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - name: Profile and write the merged report
+        uses: ./.github/actions/hotpath-profile
+        with:
+          benchmark: ${{ matrix.benchmark }}
+          recipe: profile-criterion ${{ matrix.bench }} ${{ matrix.id }} ${{ matrix.iterations }}
+          criterion-id: ${{ matrix.id }}
+          valgrind-version: ${{ env.VALGRIND_VERSION }}
+
+      - name: Store report for the relay
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: hotpath-report-${{ matrix.benchmark }}
+          path: report.json
+          retention-days: 1
+          if-no-files-found: error

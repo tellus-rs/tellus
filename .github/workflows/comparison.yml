@@ -12,10 +12,18 @@ on:
       - .github/workflows/comparison.yml
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
   toolchain:
     name: Setup Rust toolchain
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       stable: ${{ steps.set_toolchain.outputs.stable }}
     steps:
@@ -31,6 +39,7 @@ jobs:
   check:
     name: Check comparison crate
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     needs: toolchain
     if: github.event_name == 'pull_request'
     permissions:
@@ -62,6 +71,7 @@ jobs:
   publish:
     name: Publish comparison
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: toolchain
     if: github.event_name != 'pull_request'
     permissions:
@@ -104,8 +114,10 @@ jobs:
           just bench-comparison
 
       - name: Report
+        env:
+          TAG: ${{ steps.resolve.outputs.tag }}
         run: |
-          just bench-comparison-report ${{ steps.resolve.outputs.tag }}
+          just bench-comparison-report "$TAG"
 
       - name: Publish to gh-pages
         env:

@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from release_notes import release_body
+from release_notes import release_body, unheaded_notes
 
 
 class ReleaseBody(unittest.TestCase):
@@ -121,6 +121,53 @@ class ReleaseBody(unittest.TestCase):
         body = release_body("tellus-v0.6.0", "### Added\n")
 
         self.assertEqual(release_body("tellus-v0.6.0", body), "")
+
+    def test_a_note_path_may_hold_whitespace(self):
+        self.git("tag", "tellus-v0.5.3")
+        self.commit("tellus/release-notes/a first note.md", "### First\n")
+        self.git("tag", "tellus-v0.6.0")
+
+        self.assertEqual(release_body("tellus-v0.6.0", ""), "## Release notes\n\n### First\n")
+
+    def test_a_note_renamed_after_its_release_is_not_repeated(self):
+        self.commit("tellus/release-notes/old.md", "### Old\n\nWhat changed, why, and what to do.\n")
+        self.git("tag", "tellus-v0.5.3")
+        self.git("mv", "tellus/release-notes/old.md", "tellus/release-notes/123-old.md")
+        self.git("commit", "--quiet", "--message", "rename")
+        self.commit("tellus/release-notes/new.md", "### New\n")
+        self.git("tag", "tellus-v0.6.0")
+
+        self.assertEqual(release_body("tellus-v0.6.0", ""), "## Release notes\n\n### New\n")
+
+    def test_a_note_renamed_before_its_release_is_kept(self):
+        self.git("tag", "tellus-v0.5.3")
+        self.commit("tellus/release-notes/draft.md", "### First\n\nWhat changed, why, and what to do.\n")
+        self.git("mv", "tellus/release-notes/draft.md", "tellus/release-notes/123-first.md")
+        self.git("commit", "--quiet", "--message", "rename")
+        self.git("tag", "tellus-v0.6.0")
+
+        self.assertEqual(
+            release_body("tellus-v0.6.0", ""),
+            "## Release notes\n\n### First\n\nWhat changed, why, and what to do.\n",
+        )
+
+    def test_the_note_heading_sits_below_the_release_notes_heading(self):
+        self.git("tag", "tellus-v0.5.3")
+        self.commit("tellus/release-notes/first.md", "### First\n\nText.\n")
+        self.git("tag", "tellus-v0.6.0")
+
+        body = release_body("tellus-v0.6.0", "### Fixed\n")
+        self.assertEqual(body, "## Release notes\n\n### First\n\nText.\n\n## Changelog\n\n### Fixed\n")
+
+    def test_the_check_names_every_note_without_a_heading(self):
+        self.commit("tellus/release-notes/headed.md", "### Headed\n")
+        self.commit("tellus/release-notes/plain.md", "Plain\n")
+        self.commit("tellus/release-notes/second level.md", "## Second level\n")
+        self.commit("tellus/README.md", "# Not a note\n")
+
+        self.assertEqual(
+            unheaded_notes(), ["tellus/release-notes/plain.md", "tellus/release-notes/second level.md"]
+        )
 
 
 if __name__ == "__main__":

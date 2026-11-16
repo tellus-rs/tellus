@@ -1329,6 +1329,8 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
   flume and the bench whose instruction count differs between two bench binaries, `fndiff.py A B
   <regex>` diffs the disassembly of the matching functions with addresses stripped, and `fnmnem.py
   A B <regex>` compares their mnemonic histograms. All three read `OBJDUMP` for a cross objdump.
+  `fnmnem.py` has since been removed; commit
+  [`0a45fa6`](https://github.com/tellus-rs/tellus/blob/0a45fa6e99de2e3ac1f4bdd4fa9747354df5eb31/.github/stack-sweep/fnmnem.py) still has it.
 
 ## Pitfalls
 

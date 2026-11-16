@@ -1,10 +1,11 @@
 """Compose the GitHub release of a crate from its hand-written notes and the generated changelog.
 
-Usage: release_notes.py TAG [CHANGELOG]. Run it inside the repository. TAG is a release tag
+Usage: release_notes.py TAG [CHANGELOG] | --check. Run it inside the repository. TAG is a release tag
 `<crate>-v<major>.<minor>.<patch>`. The notes are the Markdown files added to `<crate>/release-notes/`
-since the crate's previous tag, oldest first. CHANGELOG is a file holding the generated release body,
-which follows the notes. Prints nothing if no note was added or CHANGELOG already holds notes. A TAG
-which does not exist yet ends at HEAD, so the output previews the next release.
+since the crate's previous tag, oldest first; a note renamed since that tag is not added. CHANGELOG is a
+file holding the generated release body, which follows the notes. Prints nothing if no note was added
+or CHANGELOG already holds notes. A TAG which does not exist yet ends at HEAD, so the output previews
+the next release. `--check` fails unless every note in the work tree opens with a `###` heading.
 """
 
 import re
@@ -13,6 +14,7 @@ import sys
 
 TAG = re.compile(r"(?P<crate>.+)-v(?P<major>\d+)\.(?P<minor>\d+)\.(?P<patch>\d+)")
 NOTES_HEADING = "## Release notes"
+NOTE_HEADING = "### "
 CHANGELOG_HEADING = "## Changelog"
 
 
@@ -59,12 +61,37 @@ def previous_tag(crate, current):
 def added_notes(crate, previous, end):
     directory = f"{crate}/release-notes/"
     revisions = f"{previous}..{end}" if previous else end
-    added = git(
-        "log", "--no-renames", "--diff-filter=A", "--name-only", "--format=", "--reverse",
+    added = paths(git(
+        "log", "-z", "--no-renames", "--diff-filter=A", "--name-only", "--format=", "--reverse",
         revisions, "--", directory,
-    ).split()
-    present = set(git("ls-tree", "-r", "--name-only", end, "--", directory).split())
-    return [path for path in dict.fromkeys(added) if path.endswith(".md") and path in present]
+    ))
+    present = set(paths(git("ls-tree", "-r", "-z", "--name-only", end, "--", directory)))
+    renamed = set(renamed_notes(directory, previous, end)) if previous else set()
+    return [
+        path for path in dict.fromkeys(added) if path.endswith(".md") and path in present and path not in renamed
+    ]
+
+
+def renamed_notes(directory, previous, end):
+    """The paths at `end` of the notes which existed under another name at `previous`."""
+    fields = paths(
+        git("diff", "-z", "--name-status", "--find-renames", "--diff-filter=R", previous, end, "--", directory)
+    )
+    return fields[2::3]
+
+
+def paths(output):
+    return [path for path in output.split("\0") if path]
+
+
+def unheaded_notes():
+    """The notes in the work tree which do not open with a `###` heading."""
+    unheaded = []
+    for path in paths(git("ls-files", "-z", "--", "*/release-notes/*.md")):
+        with open(path, encoding="utf-8") as file:
+            if not file.read().startswith(NOTE_HEADING):
+                unheaded.append(path)
+    return unheaded
 
 
 def git(*args):
@@ -72,6 +99,11 @@ def git(*args):
 
 
 def main(args):
+    if args == ["--check"]:
+        unheaded = unheaded_notes()
+        if unheaded:
+            sys.exit("notes not opening with a ### heading: " + ", ".join(unheaded))
+        return
     if len(args) not in (1, 2):
         sys.exit(__doc__)
     changelog = ""
