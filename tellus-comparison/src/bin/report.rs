@@ -8,10 +8,13 @@ use std::{
     path::{Path, PathBuf},
     process::Command,
     thread,
+    time::SystemTime,
 };
 
 const PACKAGES: [&str; 3] = ["kameo", "ractor", "tellus"];
 const LATEST: &str = "latest";
+/// Must match the bench's `RUN_MARKER`!
+const RUN_MARKER: &str = "run-started";
 const COMPARISON_URL: &str = "https://tellus.rs/tellus/comparison/";
 const HEADER: &str = r#"<header class="top"><div class="wrap">
 <a class="brand" href="https://tellus.rs/" aria-label="tellus home"><svg viewBox="0 0 32 32" aria-hidden="true"><path d="M2.33 13h27.35" stroke="currentColor" stroke-width="2.5"/><path d="M2.44 19.5h27.11M5.45 25.2h21.11" stroke="var(--accent)" stroke-width="2.5"/><circle cx="16" cy="16" r="14" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>tellus</a>
@@ -31,7 +34,10 @@ fn main() -> anyhow::Result<()> {
         None => {
             let measurements = read_measurements(&args.input)?;
             if measurements.is_empty() {
-                bail!("no criterion results below {}", args.input.display());
+                bail!(
+                    "no criterion results of the latest run below {}",
+                    args.input.display()
+                );
             }
             Report {
                 metadata: read_metadata(args.tag)?,
@@ -243,8 +249,26 @@ fn day(date: Option<&str>) -> &str {
 }
 
 fn read_measurements(input: &Path) -> anyhow::Result<Vec<Measurement>> {
+    let marker = input.join(RUN_MARKER);
+    let run_start =
+        modified(&marker).context("start of the latest run; run just bench-comparison first")?;
+
     let directories = collect_sample_directories(input)
-        .with_context(|| format!("walking {}", input.display()))?;
+        .with_context(|| format!("walking {}", input.display()))?
+        .into_iter()
+        .map(|directory| {
+            let modified = modified(&directory.join("estimates.json"))?;
+            Ok((directory, modified))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+
+    let (directories, stale) = partition_by_run(directories, run_start);
+    if !stale.is_empty() {
+        eprintln!(
+            "skipped {} results written before the latest run started",
+            stale.len()
+        );
+    }
 
     let mut measurements = directories
         .iter()
@@ -286,6 +310,28 @@ fn collect_sample_directories(directory: &Path) -> anyhow::Result<Vec<PathBuf>> 
         .collect::<anyhow::Result<Vec<_>>>()?;
 
     Ok(collected.into_iter().flatten().collect())
+}
+
+fn modified(path: &Path) -> anyhow::Result<SystemTime> {
+    fs::metadata(path)
+        .and_then(|metadata| metadata.modified())
+        .with_context(|| format!("modification time of {}", path.display()))
+}
+
+/// Splits sample directories, paired with their modification times, into those written since
+/// `run_start` and those written before.
+fn partition_by_run(
+    directories: Vec<(PathBuf, SystemTime)>,
+    run_start: SystemTime,
+) -> (Vec<PathBuf>, Vec<PathBuf>) {
+    let (of_run, stale) = directories
+        .into_iter()
+        .partition::<Vec<_>, _>(|(_, modified)| *modified >= run_start);
+
+    (
+        of_run.into_iter().map(|(directory, _)| directory).collect(),
+        stale.into_iter().map(|(directory, _)| directory).collect(),
+    )
 }
 
 fn read_measurement(directory: &Path) -> anyhow::Result<Measurement> {
@@ -508,7 +554,7 @@ repository; corrections are welcome.</li>
             "Messaging throughput of tellus against kameo and ractor for {}, with the methodology and its caveats.",
             escape(&metadata.tag)
         ),
-        &format!("{COMPARISON_URL}{LATEST}/"),
+        &format!("{COMPARISON_URL}{}/", escape(&metadata.tag)),
         &body,
     )
 }
@@ -613,4 +659,40 @@ fn escape(value: &str) -> String {
         .replace('<', "&lt;")
         .replace('>', "&gt;")
         .replace('"', "&quot;")
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::partition_by_run;
+    use std::{
+        path::PathBuf,
+        time::{Duration, SystemTime},
+    };
+
+    #[test]
+    fn test_partition_by_run() {
+        let run_start = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000);
+        let directories = vec![
+            (PathBuf::from("flood/tellus/new"), run_start),
+            (
+                PathBuf::from("flood/kameo/new"),
+                run_start - Duration::from_nanos(1),
+            ),
+            (
+                PathBuf::from("flood/ractor/new"),
+                run_start + Duration::from_secs(10),
+            ),
+        ];
+
+        let (of_run, stale) = partition_by_run(directories, run_start);
+
+        assert_eq!(
+            of_run,
+            [
+                PathBuf::from("flood/tellus/new"),
+                PathBuf::from("flood/ractor/new")
+            ]
+        );
+        assert_eq!(stale, [PathBuf::from("flood/kameo/new")]);
+    }
 }

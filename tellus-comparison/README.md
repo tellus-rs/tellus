@@ -17,8 +17,10 @@ just lint-comparison      # clippy
 ```
 
 Results are written to `target/criterion-comparison`, deliberately separate from the
-`target/criterion` tree used by tellus's own regression benchmarks, so the two never mix. The
-report goes to `target/comparison-report` as `index.html` and `results.json`, tagged `local`
+`target/criterion` tree used by tellus's own regression benchmarks, so the two never mix. Every
+run touches `target/criterion-comparison/run-started` when it starts, and the report only takes
+results written after that, so a partial rerun is reported alone instead of beside older results.
+The report goes to `target/comparison-report` as `index.html` and `results.json`, tagged `local`
 unless `just bench-comparison-report <tag>` names another tag.
 
 Runs published by CI are collected on the
@@ -67,8 +69,9 @@ The point of these benchmarks is that all three frameworks perform the *same wor
    `tell(..).try_send()`, ractor `ActorRef::send_message`. No awaited sends (that is backpressure,
    a different guarantee) and no request-response calls.
 4. **Identical timing boundaries.** Every framework goes through the same `measure` helper:
-   spawning happens outside the measured region, and the timer covers sending plus awaiting
-   termination. In `ping_pong` that includes both actors of a pair: tellus tears the ponger down
+   spawning happens outside the measured region, up to the end of every actor's startup hook
+   (tellus `init`, kameo `on_start`, ractor `pre_start`), and the timer covers sending plus
+   awaiting termination. In `ping_pong` that includes both actors of a pair: tellus tears the ponger down
    as a child of the pinger, kameo and ractor stop and await it in the pinger's stop hook.
 5. **Identical runtime**: one multi-threaded Tokio runtime, same configuration for all.
 6. **Competitors get their fastest configuration** (see below).

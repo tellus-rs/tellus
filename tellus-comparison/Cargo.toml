@@ -18,7 +18,7 @@ serde_json = { workspace = true }
 criterion = { workspace = true, features = [ "async_tokio" ] }
 kameo     = { workspace = true }
 ractor    = { workspace = true, features = [ "tokio_runtime" ] }
-tokio     = { workspace = true, features = [ "macros", "rt-multi-thread" ] }
+tokio     = { workspace = true, features = [ "macros", "rt-multi-thread", "sync" ] }
 tellus    = { workspace = true }
 
 [[bench]]
