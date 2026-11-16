@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794827674985,
+  "lastUpdate": 1794827679777,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26245,6 +26245,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 85681,
             "range": "± 3560",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "13e90685e87b2699d4878e079a06f28a85e532b2",
+          "message": "Merge pull request #416 from tellus-rs/ci/fail-on-failing-tools\n\nci: fail the steps whose tool fails, and judge sweeps by the base rules",
+          "timestamp": "2026-11-16T12:06:42+01:00",
+          "tree_id": "1a74c5c2be547cece59db5b2e8989cbefe7203a2",
+          "url": "https://github.com/tellus-rs/tellus/commit/13e90685e87b2699d4878e079a06f28a85e532b2"
+        },
+        "date": 1794827679176,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4561497,
+            "range": "± 292707",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4694458,
+            "range": "± 271958",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 996653,
+            "range": "± 4817",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 131591,
+            "range": "± 3476",
             "unit": "ns/iter"
           }
         ]
