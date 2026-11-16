@@ -669,7 +669,7 @@ fn foreign_probe_node() -> anyhow::Result<()> {
             probe_interval: Some(PROBE_INTERVAL),
             ..BootstrapConfig::new()
         };
-        timeout(TIMEOUT, cluster::bootstrap(FixedSeeds::new(seeds), config))
+        timeout(TIMEOUT, cluster::bootstrap(FixedSeeds::new(seeds)?, config))
             .await
             .context("bootstrapping a formed node")??;
 
@@ -5611,7 +5611,7 @@ async fn bootstrap_cluster(seeds: Vec<SocketAddr>) -> anyhow::Result<()> {
         probe_interval: None,
         ..BootstrapConfig::new()
     };
-    timeout(TIMEOUT, cluster::bootstrap(FixedSeeds::new(seeds), config))
+    timeout(TIMEOUT, cluster::bootstrap(FixedSeeds::new(seeds)?, config))
         .await
         .context("bootstrapping the cluster")??;
     Ok(())

@@ -130,8 +130,8 @@ mod wire;
 
 pub use crate::cluster::{
     bootstrap::{
-        BootstrapConfig, BootstrapError, FixedSeeds, InvalidBootstrapConfig, SeedDiscovery,
-        bootstrap,
+        BootstrapConfig, BootstrapError, FixedSeeds, InvalidBootstrapConfig, NoSeeds,
+        SeedDiscovery, bootstrap,
     },
     discovery::{Key, RegisterError, register},
     endpoint::{

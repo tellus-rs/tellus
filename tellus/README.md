@@ -325,7 +325,7 @@ what `start_endpoint` and `bootstrap` refuse. Examples are an advertised address
 IP or a zero port, a zero heartbeat interval, a frame size too small for one member or one
 reachability record and a zero resolve interval. `InvalidEndpointConfig` and
 `InvalidBootstrapConfig` list every case. The seed addresses are configuration as well: a plain list
-for `FixedSeeds`, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
+for `FixedSeeds`, which refuses an empty one, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
 selector of [tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by
 path, which `QuicTransport::from_config` reads.
 
