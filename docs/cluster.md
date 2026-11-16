@@ -612,15 +612,15 @@ discarded run each, interleaved:
 
 | Streams | Bulk throughput (best, range) | Same node p50 | Same node p99 (best, range) | Other node p99 |
 | --- | --- | --- | --- | --- |
-| 16 | 1,569 messages/s, 98.1 MiB/s (97.3 to 98.1) | 71 to 77 us | 39.9 ms (39.9 to 40.4 ms) | 205 to 232 us |
-| 100 | 1,537 messages/s, 96.1 MiB/s (90.1 to 96.1) | 74 to 109 us | 0.79 ms (0.79 to 39.6 ms) | 154 to 226 us |
+| 16 | 11,385 messages/s, 711.6 MiB/s (685.3 to 711.6) | 366 to 403 us | 5.91 ms (5.91 to 6.10 ms) | 258 to 280 us |
+| 100 | 10,871 messages/s, 679.4 MiB/s (664.1 to 679.4) | 364 to 388 us | 2.05 ms (2.05 to 5.42 ms) | 269 to 296 us |
 
-An ask toward an echo hashing onto the transfer's stream waits behind the queued bulk, about 40 ms
-here; every other ask stays below 1 ms. That share is about one recipient in `max_streams_per_peer`:
-5 to 8% of the same node asks with 16 streams, 0 to 2% with 100. So 100 streams lowered the p99 in
-four of five runs, but not in the run where more than 1% of the echoes hashed onto the transfer's
-stream. The p99.9 stayed at about 42 ms in four of five runs. Every run with 100 streams moved less
-bulk than every run with 16, 2% less at best and 4% less on average. The default hence stays at 16:
+An ask toward an echo hashing onto the transfer's stream waits behind the queued bulk, about 6 ms
+here, which sets the same node p99 with 16 streams. About one recipient in `max_streams_per_peer`
+hashes onto that stream. So 100 streams lowered the p99 to about 2 ms in four of five runs, but not
+in the fifth. The p99.9 stayed at 6.1 to 7.0 ms with either count, and no ask in any run took more
+than 10 ms. Every run with 100 streams moved less bulk than every run with 16, 4.5% less at best and
+3.1% less on average. The default hence stays at 16:
 a larger pool shrinks the share of blocked recipients without removing the blocking, and costs
 throughput.
 
@@ -1241,9 +1241,9 @@ swap is added.
 - **Head-of-line blocking is bounded rather than gone.** Recipients hashing onto the same stream
   still delay each other, and a pool of `max_streams_per_peer` streams cannot separate an unbounded
   number of recipients. About one recipient in `max_streams_per_peer` shares a stream with a given
-  bulk transfer. With the default of 16, an ask toward such a recipient waited about 40 ms behind a
+  bulk transfer. With the default of 16, an ask toward such a recipient waited about 6 ms behind a
   transfer of 64 asks of 64 KiB on loopback, which set the p99 of all asks toward that node. 100
-  streams lowered that p99 below 1 ms in four of five runs, at 2 to 4% less bulk throughput.
+  streams lowered that p99 to about 2 ms in four of five runs, at 3 to 4.5% less bulk throughput.
 - **A partition can split the cluster for a while, or for good.** Downing decides from gossiped
   membership and versioned reachability, not from an external arbiter. `KeepMajority` lets at most
   one side of a partition survive, provided the member lists agreed before it. Two sides whose lists
