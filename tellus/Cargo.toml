@@ -136,6 +136,10 @@ path              = "examples/how_to/configure_supervision.rs"
 required-features = [ "serde" ]
 
 [[example]]
+name = "how_to_passivate_idle_entities"
+path = "examples/how_to/passivate_idle_entities.rs"
+
+[[example]]
 name = "how_to_batch_writes"
 path = "examples/how_to/batch_writes.rs"
 
