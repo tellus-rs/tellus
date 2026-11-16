@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794835919955,
+  "lastUpdate": 1794835922701,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26749,6 +26749,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105693,
             "range": "± 5414",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8848acc8c4562fc7125d80faa8b9516f586f88c7",
+          "message": "Merge pull request #426 from tellus-rs/test/documented-guarantees\n\ntest: pin the documented guarantees which no test covered",
+          "timestamp": "2026-11-16T14:23:29+01:00",
+          "tree_id": "8f517b68f89b383b67d915f1ea0305cd2293ef5f",
+          "url": "https://github.com/tellus-rs/tellus/commit/8848acc8c4562fc7125d80faa8b9516f586f88c7"
+        },
+        "date": 1794835922199,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3490639,
+            "range": "± 147303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3425693,
+            "range": "± 110885",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 858117,
+            "range": "± 4273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 106659,
+            "range": "± 2800",
             "unit": "ns/iter"
           }
         ]
