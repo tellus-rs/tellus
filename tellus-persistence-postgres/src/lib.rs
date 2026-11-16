@@ -29,6 +29,42 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! tellus bounds every store call by the timeout of its [Persistence](tellus::Persistence), but
+//! only as a backstop: it drops a call which exceeds it, and a dropped call does not end a
+//! statement which has reached the server, so a dropped append can still commit. The pool therefore
+//! bounds the calls itself, with a `statement_timeout` on its connections and an acquire timeout,
+//! whose sum stays below the `Persistence` timeout, since the statement timeout does not count the
+//! wait for a connection. Neither the statement timeout nor `transaction_timeout` covers the commit
+//! which ends a statement, so an append which fails while it commits stays ambiguous. The README
+//! says more:
+//!
+//! ```rust,no_run
+//! use std::time::Duration;
+//! use tellus::Persistence;
+//! use tellus_persistence_postgres::{
+//!     PostgresStore,
+//!     sqlx::postgres::{PgConnectOptions, PgPoolOptions},
+//! };
+//!
+//! # #[tokio::main]
+//! # async fn main() -> anyhow::Result<()> {
+//! let options = "postgres://tellus:tellus@localhost:5432/tellus"
+//!     .parse::<PgConnectOptions>()?
+//!     .options([("statement_timeout", "4s")]);
+//! let pool = PgPoolOptions::new()
+//!     .acquire_timeout(Duration::from_secs(4))
+//!     .connect_with(options)
+//!     .await?;
+//! let store = PostgresStore::new(pool);
+//! store.migrate().await?;
+//!
+//! let persistence = Persistence::new(store.clone())
+//!     .with_snapshot_store(store)
+//!     .with_timeout(Duration::from_secs(10))?;
+//! # Ok(())
+//! # }
+//! ```
 
 #![doc(
     html_logo_url = "https://tellus.rs/brand/logo-tile.svg",

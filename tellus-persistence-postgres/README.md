@@ -63,6 +63,58 @@ migration, `migrate` of such a release fails instead.
 Such a release also kept its events and snapshots in tables of other names. The
 [release note](release-notes/311-table-rename.md) on the rename says how to move them.
 
+## Timeouts
+
+tellus bounds every store call by the timeout of its `Persistence`, 10 s by default, but only as a
+backstop: it gives up on a call by dropping it. A dropped call does not end a statement which has
+reached the server. sqlx sends no cancel request, so the statement runs on, and its connection
+returns to the pool only once the statement has ended. A dropped append can hence still commit, even
+after the replay of the actor's next incarnation has read the stream. Its events are then in the
+stream but not in the state, and the next append at the same position fails with
+`AppendError::Conflict`.
+
+The pool therefore bounds the calls itself, with a `statement_timeout` on its connections and an
+acquire timeout. The server cancels a statement which exceeds `statement_timeout`, and the call
+then fails definitely: nothing it sent commits later. The statement timeout counts from the moment
+the statement reaches the server, not the wait for a pool connection, which the acquire timeout
+bounds. A call can hence take as long as both together, and their sum stays below the
+`Persistence` timeout, with room for the network round trips. sqlx's default acquire timeout, 30 s,
+is above the default `Persistence` timeout:
+
+```rust
+use std::time::Duration;
+use tellus::Persistence;
+use tellus_persistence_postgres::{
+    PostgresStore,
+    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
+};
+
+let options = "postgres://tellus:tellus@localhost:5432/tellus"
+    .parse::<PgConnectOptions>()?
+    .options([("statement_timeout", "4s")]);
+let pool = PgPoolOptions::new()
+    .acquire_timeout(Duration::from_secs(4))
+    .connect_with(options)
+    .await?;
+let store = PostgresStore::new(pool);
+store.migrate().await?;
+
+let persistence = Persistence::new(store.clone())
+    .with_snapshot_store(store)
+    .with_timeout(Duration::from_secs(10))?;
+```
+
+`migrate` runs under the same statement timeout. While another process migrates the same database,
+`migrate` hence waits for it at most the statement timeout and then fails.
+
+One case stays ambiguous: a call which fails after its statement has begun to commit and before the
+answer has arrived. Neither `statement_timeout` nor `transaction_timeout` covers the commit which
+ends a statement, since PostgreSQL disarms both before it commits. A commit which stalls in the
+server, e.g. waiting for a synchronous standby, outlives them, and only the backstop ends the call.
+A lost connection or a crash of the process at that point leaves the outcome open in the same way.
+Such an append can land after the replay, as above.
+[docs/persistence.md](../docs/persistence.md#store-timeout) describes what follows for the actor.
+
 ## Schema
 
 Events live in the `tellus_events` table with the primary key `(entity_type, entity_id, seq_no)`,
@@ -138,7 +190,9 @@ stops it, `down -v` resets the data.
 
 [`tests/store.rs`](tests/store.rs) runs the contract test suite which ships with `tellus` behind
 its `persistence-tests` feature against a real server, started via testcontainers, hence Docker is
-required. Image tag and credentials are read out of the repository's
+required. [`tests/timeouts.rs`](tests/timeouts.rs) gives up on calls whose statements wait in the
+server, with and without the pool settings of [Timeouts](#timeouts), and uses the pool again
+afterwards. Image tag and credentials are read out of the repository's
 [compose.yaml](../compose.yaml) at compile time via
 [`composed`](https://crates.io/crates/composed), so there is one place to change either.
 
