@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794861150252,
+  "lastUpdate": 1794861152890,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -32385,6 +32385,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4409172,
             "range": "± 135678",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7324ef07828dad4884d4d367ee14bb51a98d2a46",
+          "message": "Merge pull request #448 from tellus-rs/fix/joining-endpoint-refusal\n\nfix(cluster): refuse joins as joining while pinned to a cluster",
+          "timestamp": "2026-11-16T21:24:48+01:00",
+          "tree_id": "afe2b2e008f3a8d38026b5058eb5e2049490243d",
+          "url": "https://github.com/tellus-rs/tellus/commit/7324ef07828dad4884d4d367ee14bb51a98d2a46"
+        },
+        "date": 1794861152488,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31849622,
+            "range": "± 1729358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31457587,
+            "range": "± 1606069",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 6051375,
+            "range": "± 377234",
             "unit": "ns/iter"
           }
         ]
