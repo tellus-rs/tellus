@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794854866615,
+  "lastUpdate": 1794854869965,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27925,6 +27925,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 104968,
             "range": "± 2692",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "668ca641de93ef95e9a845244fa7e4304955926b",
+          "message": "Merge pull request #432 from tellus-rs/test/cluster-guarantees\n\ntest(cluster): prove relayed downing and cover unscenarioed guarantees",
+          "timestamp": "2026-11-16T19:39:56+01:00",
+          "tree_id": "094d618805ad1b08196daac5ff99f14bcd81ce65",
+          "url": "https://github.com/tellus-rs/tellus/commit/668ca641de93ef95e9a845244fa7e4304955926b"
+        },
+        "date": 1794854869636,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4183794,
+            "range": "± 242662",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4491792,
+            "range": "± 300203",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 958171,
+            "range": "± 7021",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 125473,
+            "range": "± 6032",
             "unit": "ns/iter"
           }
         ]
