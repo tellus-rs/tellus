@@ -10,6 +10,15 @@ agreeing on the approach before the code saves both of us a rewrite.
 A vulnerability is the one thing never to report in a public issue; see the
 [security policy](SECURITY.md).
 
+## Who contributes
+
+tellus welcomes contributions from people who engage with the project. Using AI tools is fine, but
+you are the author: you understand every line you submit, you answer review questions yourself,
+and you stay with your pull request until it is merged or closed. Before you work on an existing
+issue, say so on the issue and agree on the approach with us. Pull requests from autonomous agents,
+or from accounts which open pull requests across many unrelated projects without engaging, are
+closed without review.
+
 ## Building and testing
 
 The [README](README.md#development) lists the tools you need: `just`, `cargo-hack`, `taplo`, `jq`,
