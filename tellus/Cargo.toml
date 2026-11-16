@@ -148,6 +148,16 @@ name = "how_to_retry_writes"
 path = "examples/how_to/retry_writes.rs"
 
 [[example]]
+name              = "how_to_evolve_events"
+path              = "examples/how_to/evolve_events.rs"
+required-features = [ "persistence-in-memory" ]
+
+[[example]]
+name              = "how_to_persist_child_actors"
+path              = "examples/how_to/persist_child_actors.rs"
+required-features = [ "persistence-in-memory" ]
+
+[[example]]
 name = "explanation_state_machine"
 path = "examples/explanation/state_machine.rs"
 
