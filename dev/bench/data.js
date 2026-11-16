@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794836381901,
+  "lastUpdate": 1794836384853,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -29865,6 +29865,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4737547,
             "range": "± 318687",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "fcb4dfcaeab4f727b79b5263e705c7295757a9f3",
+          "message": "Merge pull request #425 from tellus-rs/fix/demo-timeouts-and-checks\n\nfix(demo): bound calls, clean up after chaos, verify what is checked",
+          "timestamp": "2026-11-16T14:24:40+01:00",
+          "tree_id": "a1c53185fd015659d8642cee387947d242be72fe",
+          "url": "https://github.com/tellus-rs/tellus/commit/fcb4dfcaeab4f727b79b5263e705c7295757a9f3"
+        },
+        "date": 1794836384627,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30950513,
+            "range": "± 311025",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28692111,
+            "range": "± 211243",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4225107,
+            "range": "± 80649",
             "unit": "ns/iter"
           }
         ]
