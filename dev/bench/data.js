@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794853922452,
+  "lastUpdate": 1794853924137,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27757,6 +27757,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 136123,
             "range": "± 5148",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac6361ec2dcb7494d2dd71f4969bc0d6e40e0ee9",
+          "message": "Merge pull request #431 from tellus-rs/docs/cluster-examples\n\ndocs(examples): show pubsub, downing, rolling upgrades and formation",
+          "timestamp": "2026-11-16T19:24:22+01:00",
+          "tree_id": "1553482ba63580e270c29d1cec0fddc3574b7360",
+          "url": "https://github.com/tellus-rs/tellus/commit/ac6361ec2dcb7494d2dd71f4969bc0d6e40e0ee9"
+        },
+        "date": 1794853923848,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3416614,
+            "range": "± 124194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3554150,
+            "range": "± 146879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 864358,
+            "range": "± 14013",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 104968,
+            "range": "± 2692",
             "unit": "ns/iter"
           }
         ]
