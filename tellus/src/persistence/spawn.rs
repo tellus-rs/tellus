@@ -298,11 +298,11 @@ macro_rules! run_event_sourced {
                                 state,
                                 next_seq_no,
                                 effect,
+                                || context.settle_stash(),
                             )
                             .await
                             {
                                 Some(settled) => {
-                                    context.settle_stash();
                                     state = settled.state;
                                     next_seq_no = settled.next_seq_no;
 
@@ -639,6 +639,7 @@ where
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
+#[expect(clippy::too_many_arguments)]
 async fn settle_or_log_failure<A, E, S, C>(
     actor_id: ActorId,
     actor: &A,
@@ -647,6 +648,7 @@ async fn settle_or_log_failure<A, E, S, C>(
     mut state: A::State,
     mut next_seq_no: SeqNo,
     effect: Effect<A>,
+    settle_stash: impl FnOnce(),
 ) -> Option<Settled<A::State>>
 where
     A: EventSourced,
@@ -696,6 +698,7 @@ where
             drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, (state, events, thens));
             return None;
         }
+        settle_stash();
 
         let applied = catch_panic_and_log(actor_id, "actor failed to apply events", || {
             apply_events(actor, state, events)
@@ -706,6 +709,8 @@ where
         };
         state = applied;
         next_seq_no = head;
+    } else {
+        settle_stash();
     }
 
     let ran = catch_panic_and_log(actor_id, "actor continuation failed", || {

@@ -511,6 +511,37 @@ async fn a_failed_append_discards_the_stash_requests_of_its_command() {
     assert_terminates(system, "system did not terminate").await;
 }
 
+/// A continuation panicking after a durable append keeps the stash requests of its command: the
+/// `Get` stashed by the command is handed back on restart, so it is answered from the recovered
+/// state, which replays the durable event.
+#[tokio::test]
+async fn a_panicking_continuation_keeps_the_stash_requests_of_its_durable_command() {
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("deferring-then-panicking", probe_tx),
+        Persistence::new(FaultyStore::default()),
+        restart_config(),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    let count = system
+        .root()
+        .ask(TIMEOUT, |reply_to| {
+            Command::IncrementAndDeferThenPanic(2, reply_to)
+        })
+        .await;
+    let count = count.expect("the stashed get was dropped with the panicked continuation");
+    assert_eq!(count, 2);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
 /// A store panic on append, like a store error, is an actor failure: supervision restarts the
 /// actor instead of the panic unwinding its task, replay reconciles with the store, and the
 /// command whose append panicked is consumed.
@@ -1628,6 +1659,16 @@ impl EventSourced for Counter {
                 Ok(Effect::persist(Increased(n)))
             }
 
+            Command::IncrementAndDeferThenPanic(n, reply_to) => {
+                context
+                    .stash(Incoming::Message(Command::Get(reply_to)))
+                    .expect("the stash is unbounded");
+                Ok(
+                    Effect::persist(Increased(n))
+                        .then(|_| panic!("continuation panics on purpose")),
+                )
+            }
+
             Command::Undefer => {
                 context.unstash_all();
                 Ok(Effect::none())
@@ -1737,6 +1778,7 @@ enum Command {
     IncrementTwice(u64, u64),
     Get(ReplyTo<u64>),
     IncrementAndDefer(u64, ReplyTo<u64>),
+    IncrementAndDeferThenPanic(u64, ReplyTo<u64>),
     Undefer,
     Fail,
     Stop,
@@ -2391,7 +2433,9 @@ where
 
         Command::StartTimer => unreachable!("only a TimedCounter is told StartTimer"),
 
-        Command::IncrementAndDefer(..) | Command::Undefer => {
+        Command::IncrementAndDefer(..)
+        | Command::IncrementAndDeferThenPanic(..)
+        | Command::Undefer => {
             unreachable!("only a Counter is told to defer")
         }
     }
