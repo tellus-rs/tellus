@@ -11,6 +11,14 @@ use tracing::warn;
 /// with manifest, schema version and payload exactly as written. A manifest holds no NUL, so an
 /// implementation may keep it as text. Implementations must be cheap to clone, e.g. by wrapping a
 /// connection pool.
+///
+/// The caller drops the future of a call which exceeds the timeout of its
+/// [Persistence](crate::Persistence), and the future of a `read` when the actor is stopped during
+/// recovery. Implementations must tolerate that: a dropped call must not panic or corrupt the
+/// store, and the store must stay usable for later calls. Dropping a call does not end what it has
+/// started outside the process, e.g. a statement in a database server. Implementations hence must
+/// bound their own calls below that timeout, so that a call fails on its own first. A dropped
+/// `append` is ambiguous like a failed one, see [EventStore::append].
 #[trait_variant::make(Send)]
 pub trait EventStore
 where
@@ -23,12 +31,18 @@ where
     /// atomically: after a crash the stream contains all of them or none. The append is
     /// conditional on `next_seq_no`, which fences concurrent incarnations. `next_seq_no` is
     /// [SeqNo::ZERO] for an empty stream. An empty `events` appends nothing but is still
-    /// conditional. A failed append leaves the stream untouched, whatever the cause.
+    /// conditional.
+    ///
+    /// A conflict leaves the stream untouched. Any other failure may be ambiguous: an
+    /// implementation which cannot tell whether the events were stored, e.g. since the connection
+    /// was lost while the server committed, fails with its own error. The stream then holds all of
+    /// the events or none. The caller reconciles an ambiguous append by replaying the stream, and
+    /// docs/persistence.md, "Store timeout", names the one case replay does not reconcile.
     ///
     /// # Errors
     /// Implementations fail with a conflict if the stream's actual next sequence number differs
     /// from `next_seq_no`, below or above, or with their own error if the events cannot be
-    /// written.
+    /// written or it is unknown whether they were.
     async fn append(
         &self,
         id: &PersistenceId,
@@ -57,6 +71,11 @@ where
 /// the events, never a source of truth. A snapshot loads back with manifest, schema version and
 /// payload exactly as written. A manifest holds no NUL, so an implementation may keep it as text.
 /// Implementations must be cheap to clone, e.g. by wrapping a connection pool.
+///
+/// The caller drops the future of a call which exceeds the timeout of its
+/// [Persistence](crate::Persistence), and the future of a `load` when the actor is stopped during
+/// recovery. Implementations must tolerate that as an [EventStore] must, and bound their own calls
+/// below that timeout in the same way.
 #[trait_variant::make(Send)]
 pub trait SnapshotStore
 where

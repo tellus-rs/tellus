@@ -30,6 +30,11 @@ use tracing::{debug, warn};
 
 /// A source of seed addresses for [bootstrap], e.g. a static list ([FixedSeeds]), DNS (the
 /// `tellus-bootstrap-dns` crate) or Kubernetes pods (the `tellus-bootstrap-k8s` crate).
+///
+/// [bootstrap] counts the resolved addresses, for [min_nodes](BootstrapConfig::min_nodes) and for
+/// the majority a [FormationProvider] counts. It admits a peer only at the address the peer
+/// advertises. Implementations must hence resolve exactly one address per node, the one it
+/// advertises.
 #[trait_variant::make(Send)]
 pub trait SeedDiscovery
 where
@@ -40,24 +45,49 @@ where
 
     /// Resolve the current seed addresses, this node's own included when it is discoverable;
     /// order and duplicates are irrelevant. Called repeatedly by [bootstrap], so a failure is
-    /// retried, not fatal.
+    /// retried, not fatal. A source yielding no address at all must fail rather than return an
+    /// empty list. With `min_nodes` of one, an empty list lets this node form a cluster alone.
+    ///
+    /// Must bound itself, as [Transport::connect](crate::cluster::transport::Transport::connect)
+    /// must: [bootstrap] awaits it without a bound of its own, so a resolution which never answers
+    /// stalls bootstrap and its probe of foreign clusters.
     ///
     /// # Errors
     /// Implementations fail if the seeds cannot be resolved right now, e.g. the resolver or the
-    /// API server does not answer.
+    /// API server does not answer within the implementation's own bound, or if the source yields
+    /// no address at all.
     async fn resolve(&mut self) -> Result<Vec<SocketAddr>, Self::Error>;
 }
 
 /// The [SeedDiscovery] for a statically configured cluster: resolves to the same fixed
-/// addresses every time.
+/// addresses every time. Deserializes from a sequence of addresses with the `serde` feature.
 #[derive(Debug, Clone)]
-#[cfg_attr(feature = "serde", derive(serde::Deserialize), serde(transparent))]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Deserialize),
+    serde(try_from = "Vec<SocketAddr>")
+)]
 pub struct FixedSeeds(Vec<SocketAddr>);
 
 impl FixedSeeds {
     /// A discovery resolving to exactly the given addresses.
-    pub fn new(seeds: Vec<SocketAddr>) -> Self {
-        Self(seeds)
+    ///
+    /// # Errors
+    /// Fails if `seeds` is empty.
+    pub fn new(seeds: Vec<SocketAddr>) -> Result<Self, NoSeeds> {
+        if seeds.is_empty() {
+            return Err(NoSeeds);
+        }
+
+        Ok(Self(seeds))
+    }
+}
+
+impl TryFrom<Vec<SocketAddr>> for FixedSeeds {
+    type Error = NoSeeds;
+
+    fn try_from(seeds: Vec<SocketAddr>) -> Result<Self, Self::Error> {
+        Self::new(seeds)
     }
 }
 
@@ -68,6 +98,11 @@ impl SeedDiscovery for FixedSeeds {
         Ok(self.0.clone())
     }
 }
+
+/// The empty seed list given to [FixedSeeds::new].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ThisError)]
+#[error("no seed addresses given")]
+pub struct NoSeeds;
 
 /// Configuration for [bootstrap], deserializable with the `serde` feature: every field falls
 /// back to its value in [BootstrapConfig::new], and the formation provider is chosen by name, see
@@ -654,8 +689,8 @@ mod tests {
     use crate::cluster::formation::{Decision, FormationView};
     use crate::cluster::{
         bootstrap::{
-            BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, SeedDiscovery, Settle,
-            Step, bootstrap, probe_foreign_clusters, run, step, universe, validate,
+            BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, NoSeeds, SeedDiscovery,
+            Settle, Step, bootstrap, probe_foreign_clusters, run, step, universe, validate,
         },
         endpoint::{EndpointConfig, EndpointInner},
         formation::{Declined, JoinOutcome, MajorityWithFallback},
@@ -1100,7 +1135,7 @@ mod tests {
         endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(3))));
         let other = ClusterId::new();
-        let seeds = FixedSeeds::new(vec![addr(1), addr(2), addr(3)]);
+        let seeds = FixedSeeds::new(vec![addr(1), addr(2), addr(3)]).expect("seeds");
         let probe = task::spawn(probe_foreign_clusters(endpoint, seeds, RESOLVE_INTERVAL));
 
         for _ in 0..3 {
@@ -1135,7 +1170,7 @@ mod tests {
             EndpointInner::for_tests_with_probes(EndpointConfig::new(addr(1)), 0);
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let other = ClusterId::new();
-        let seeds = FixedSeeds::new(vec![addr(1), addr(2)]);
+        let seeds = FixedSeeds::new(vec![addr(1), addr(2)]).expect("seeds");
         let probe = task::spawn(probe_foreign_clusters(endpoint, seeds, Duration::MAX));
 
         let request = timeout(RESOLVE_INTERVAL, probe_requests.recv_async())
@@ -1167,7 +1202,7 @@ mod tests {
             Err(InvalidBootstrapConfig::ZeroResolveInterval)
         ));
 
-        let seeds = FixedSeeds::new(vec![addr(1), addr(2)]);
+        let seeds = FixedSeeds::new(vec![addr(1), addr(2)]).expect("seeds");
         assert!(
             bootstrap(seeds, config).await.is_err(),
             "bootstrap must refuse the config before it resolves anything"
@@ -1276,6 +1311,15 @@ mod tests {
         assert_eq!(seeds.resolve().await, Ok(vec![addr(1), addr(2)]));
     }
 
+    /// An empty seed list is refused, since resolving it would let this node form a cluster
+    /// alone.
+    #[test]
+    fn fixed_seeds_refuse_an_empty_list() {
+        assert_eq!(FixedSeeds::new(vec![]).map(|_| ()), Err(NoSeeds));
+        #[cfg(feature = "serde")]
+        assert!(serde_json::from_str::<FixedSeeds>("[]").is_err());
+    }
+
     /// A discovery resolving to whatever the test last set.
     #[derive(Clone, Default)]
     struct SharedSeeds(Arc<Mutex<Vec<SocketAddr>>>);
@@ -1326,7 +1370,7 @@ mod tests {
         seeds: Vec<SocketAddr>,
         config: BootstrapConfig,
     ) -> JoinHandle<()> {
-        spawn_run_with(endpoint, FixedSeeds::new(seeds), config)
+        spawn_run_with(endpoint, FixedSeeds::new(seeds).expect("seeds"), config)
     }
 
     fn spawn_run_with<D>(

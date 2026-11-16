@@ -240,7 +240,7 @@ async fn join_cluster(addr: SocketAddr, seeds: Vec<SocketAddr>) -> anyhow::Resul
     cluster::start_endpoint(EndpointConfig::new(addr), transport).context("remoting endpoint")?;
     timeout(
         BOOTSTRAP_TIMEOUT,
-        cluster::bootstrap(FixedSeeds::new(seeds), BootstrapConfig::new()),
+        cluster::bootstrap(FixedSeeds::new(seeds)?, BootstrapConfig::new()),
     )
     .await
     .context("no cluster within the timeout")?

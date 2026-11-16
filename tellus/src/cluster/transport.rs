@@ -81,6 +81,11 @@ where
 /// An established connection produced by a [Transport], carrying its maximum frame size: one
 /// control stream plus as many data streams as the transport supports, each ordered on its own
 /// and unordered against the others.
+///
+/// The caller may drop the `Connection` value and keep only stream halves. Implementations must
+/// keep the connection open, and every half usable, while any of its halves is alive. Dropping the
+/// last half must close the connection, so that the peer's [FrameReceiver::recv] and
+/// [Connection::accept_data] calls end.
 #[trait_variant::make(Send)]
 pub trait Connection
 where
@@ -106,11 +111,16 @@ where
     /// Implementations fail if the connection is gone or allows no further stream.
     async fn open_data(&self) -> Result<Self::Sender, TransportError>;
 
-    /// Accept the next data stream the peer opens; `None` once the connection is gone.
+    /// Accept the next data stream the peer opens; `None` once the connection is closed, by either
+    /// side, and no opened stream is left to accept.
+    ///
+    /// Must be cancel safe: the caller drops the future whenever something else it waits for is
+    /// ready first, and accepts again later. A dropped future must not lose a stream the peer
+    /// opened.
     ///
     /// # Errors
-    /// Implementations fail if the connection failed rather than closed; a closed connection is
-    /// `None`.
+    /// Implementations fail if the connection failed rather than closed, e.g. timed out or was
+    /// reset; a closed connection is `None`.
     async fn accept_data(&self) -> Result<Option<Self::Receiver>, TransportError>;
 
     /// The identity the peer's certificate proves, `None` where there is none, e.g. for a dialer
@@ -177,12 +187,18 @@ pub trait FrameReceiver
 where
     Self: Send + 'static,
 {
-    /// Receive the next frame; `None` once the peer has closed the stream. The bytes borrow the
-    /// receiver, valid until the next call, so a frame can be decoded without a copy per frame.
+    /// Receive the next frame; `None` once the peer has closed the stream and every frame sent on
+    /// it has been received. The bytes borrow the receiver, valid until the next call, so a frame
+    /// can be decoded without a copy per frame.
+    ///
+    /// A connection closing is not a closed stream. Once the connection is closed, gracefully or
+    /// not, before the peer has closed the stream, frames sent on it may be lost. `recv` then
+    /// fails rather than returning `None`, unlike [Connection::accept_data].
     ///
     /// # Errors
-    /// Implementations fail if the stream or the connection failed rather than closed, or if the
-    /// peer sent a frame exceeding the maximum frame size; a closed stream is `None`.
+    /// Implementations fail if the stream failed, if the connection failed or closed before the
+    /// peer closed the stream, or if the peer sent a frame exceeding the maximum frame size; a
+    /// closed stream is `None`.
     async fn recv(&mut self) -> Result<Option<&[u8]>, TransportError>;
 }
 

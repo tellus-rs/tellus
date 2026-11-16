@@ -739,7 +739,7 @@ fn parse_identity(certificates: &[CertificateDer<'_>]) -> PeerIdentity {
 #[cfg(all(test, feature = "cluster-dev"))]
 mod tests {
     use crate::cluster::transport::{
-        Connection, FrameReceiver, FrameSender, Transport,
+        ConnectedControl, Connection, FrameReceiver, FrameSender, Transport,
         quic::{
             ASSEMBLED_WRITE_LIMIT, KEEP_ALIVE_INTERVAL, QuicConfig, QuicTransport,
             QuicTransportError, certs, parse_identity,
@@ -929,6 +929,65 @@ mod tests {
                 Some(b"first".to_vec()),
                 Some(b"second".to_vec())
             )
+        );
+    }
+
+    /// The stream halves keep the connection open once the connection value is dropped, and
+    /// dropping the last of them closes it, which ends the peer's wait for a data stream.
+    #[tokio::test]
+    async fn the_stream_halves_hold_the_connection() {
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let server = QuicTransport::dev(loopback).expect("server transport");
+        let addr = server.local_addr().expect("local address");
+        let client = QuicTransport::dev(loopback).expect("client transport");
+
+        let accepting = tokio::spawn(async move {
+            let connection = server.accept(MAX_FRAME_SIZE).await.expect("accepts");
+            let (mut sender, mut receiver) = connection
+                .accept_control()
+                .await
+                .expect("accepts the control stream");
+            let received = receiver.recv().await.expect("receives").map(<[u8]>::to_vec);
+            sender.send(b"answer").await.expect("sends");
+            let accepted = connection
+                .accept_data()
+                .await
+                .map(|stream| stream.is_some());
+            (received, accepted)
+        });
+
+        let ConnectedControl {
+            connection,
+            control_tx: mut sender,
+            control_rx: mut receiver,
+        } = client
+            .connect(addr, MAX_FRAME_SIZE)
+            .await
+            .expect("connects");
+        drop(connection);
+
+        sender
+            .send(b"question")
+            .await
+            .expect("sends without the connection value");
+        let answer = timeout(TIMEOUT, receiver.recv())
+            .await
+            .expect("in time")
+            .expect("receives without the connection value")
+            .map(<[u8]>::to_vec);
+        assert_eq!(answer, Some(b"answer".to_vec()));
+
+        drop(sender);
+        drop(receiver);
+
+        let (received, accepted) = timeout(TIMEOUT, accepting)
+            .await
+            .expect("in time")
+            .expect("accept task");
+        assert_eq!(received, Some(b"question".to_vec()));
+        assert!(
+            matches!(accepted, Ok(false)),
+            "a closed connection yields no further data stream"
         );
     }
 
