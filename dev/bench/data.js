@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794864921881,
+  "lastUpdate": 1794864923442,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33225,6 +33225,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6076854,
             "range": "± 497163",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8c90a0e575db44a60a4208b1e3c8eada00a8a14e",
+          "message": "Merge pull request #454 from tellus-rs/fix/example-timing\n\nfix(examples): wait for every view before leaving, sort seed addresses",
+          "timestamp": "2026-11-16T22:22:31+01:00",
+          "tree_id": "499f2063102a699506744c61ec8217a32743cc2b",
+          "url": "https://github.com/tellus-rs/tellus/commit/8c90a0e575db44a60a4208b1e3c8eada00a8a14e"
+        },
+        "date": 1794864923168,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25118456,
+            "range": "± 1877388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24555276,
+            "range": "± 1291123",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4827157,
+            "range": "± 299108",
             "unit": "ns/iter"
           }
         ]
