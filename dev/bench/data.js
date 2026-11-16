@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794839350498,
+  "lastUpdate": 1794839352730,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -30075,6 +30075,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4225107,
             "range": "± 80649",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1407c5f0370440589d0cec76e9a76ac08dd98475",
+          "message": "Merge pull request #428 from tellus-rs/docs/example-host\n\ndocs(examples): show Host and passivation in a how-to example",
+          "timestamp": "2026-11-16T15:20:15+01:00",
+          "tree_id": "66824356519b8c1ef6840b1911124bb69b0d837d",
+          "url": "https://github.com/tellus-rs/tellus/commit/1407c5f0370440589d0cec76e9a76ac08dd98475"
+        },
+        "date": 1794839352139,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25334918,
+            "range": "± 1358625",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 23919681,
+            "range": "± 861869",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4629143,
+            "range": "± 229179",
             "unit": "ns/iter"
           }
         ]
