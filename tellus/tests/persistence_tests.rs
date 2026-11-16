@@ -2,8 +2,6 @@
 //! [InMemoryStore], which follows the contract by construction, and a check must fail against a
 //! store which breaks the property it names.
 
-#![cfg(all(feature = "persistence-tests", feature = "persistence-in-memory"))]
-
 use std::{convert::Infallible, num::NonZeroUsize};
 use tellus::{
     AppendError, EncodedEvent, EncodedSnapshot, EventStore, InMemoryStore, PersistenceId, SeqNo,

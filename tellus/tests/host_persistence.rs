@@ -1,5 +1,3 @@
-#![cfg(feature = "persistence-in-memory")]
-
 use serde::{Deserialize, Serialize};
 use std::{
     convert::Infallible,

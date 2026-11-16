@@ -209,7 +209,7 @@ async fn rewatching_after_unwatch_signals() {
 /// late watcher registers at a delay swept across rounds, so that some rounds hit the moment
 /// between the terminating actor taking its watchers and its mailbox being disconnected;
 /// `PRE_WATCHERS` widens that moment, as their signals are sent within it.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn watch_racing_termination_still_signals() {
     for round in 0..ROUNDS {
         let delay = DELAY_STEP * round;

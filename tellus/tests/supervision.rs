@@ -13,7 +13,8 @@ use tellus::{
 use thiserror::Error;
 use tokio::{
     sync::mpsc,
-    time::{Instant, advance, sleep, timeout},
+    task::block_in_place,
+    time::{Instant, advance, timeout},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -289,12 +290,13 @@ async fn parent_stop_cancels_backoff() {
 /// the child is unblocked the actor must terminate without reinitializing. A stop landing before
 /// the restart's first probe passes vacuously, but the actor enters `stop_children` without an
 /// await point after acking its failure, so the raced window is hit reliably.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn parent_stop_during_restart_stop_children_skips_reinit() {
     let inits = Arc::new(AtomicUsize::new(0));
     let (middle_tx, mut middle_rx) = mpsc::channel(1);
     let (failed_tx, mut failed_rx) = mpsc::channel(1);
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
+    let (stopping_tx, mut stopping_rx) = mpsc::channel(1);
     let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
 
     let middle = RestartingMiddle {
@@ -306,6 +308,7 @@ async fn parent_stop_during_restart_stop_children_skips_reinit() {
     let system = ActorSystem::new(StoppingRoot {
         middle: Mutex::new(Some(middle)),
         middle_tx,
+        sibling: Mutex::new(Some(Sibling(stopping_tx))),
     });
 
     let middle_ref = timeout(TIMEOUT, middle_rx.recv())
@@ -324,7 +327,10 @@ async fn parent_stop_during_restart_stop_children_skips_reinit() {
         .expect("failed channel closed");
 
     system.root().tell(());
-    sleep(Duration::from_millis(100)).await;
+    timeout(TIMEOUT, stopping_rx.recv())
+        .await
+        .expect("the root did not stop its children")
+        .expect("stopping channel closed");
     unblock_tx
         .send(())
         .expect("child dropped the unblock channel");
@@ -605,11 +611,12 @@ impl Actor for BackoffParent {
     }
 }
 
-/// Spawn the restarting actor with a zero-backoff restart, hand its reference to the test and stop
-/// on the first message.
+/// Spawn the restarting actor with a zero-backoff restart and a [Sibling], hand the restarting
+/// actor's reference to the test and stop on the first message.
 struct StoppingRoot {
     middle: Mutex<Option<RestartingMiddle>>,
     middle_tx: mpsc::Sender<ActorRef<()>>,
+    sibling: Mutex<Option<Sibling>>,
 }
 
 impl Actor for StoppingRoot {
@@ -630,6 +637,14 @@ impl Actor for StoppingRoot {
                 context.spawn_with_config(middle, config(restart_strategy(1, Duration::ZERO)));
             let _ = self.middle_tx.try_send(middle_ref);
         }
+        if let Some(sibling) = self
+            .sibling
+            .lock()
+            .expect("sibling mutex is not poisoned")
+            .take()
+        {
+            context.spawn(sibling);
+        }
 
         Ok(())
     }
@@ -641,6 +656,37 @@ impl Actor for StoppingRoot {
         _: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
         Ok(Control::Stop)
+    }
+}
+
+/// Ack when dropped at termination. Its parent's stop reaches all of the parent's children with one
+/// send, so the ack proves that the restarting actor has the stop as well.
+struct Sibling(mpsc::Sender<()>);
+
+impl Actor for Sibling {
+    type Message = Nothing;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Boom;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Continue(state))
+    }
+}
+
+impl Drop for Sibling {
+    fn drop(&mut self) {
+        let _ = self.0.try_send(());
     }
 }
 
@@ -689,8 +735,7 @@ impl Actor for RestartingMiddle {
 }
 
 /// Ack and block in `init` until unblocked, so the parent's `stop_children` cannot complete before
-/// the test releases it; requires a multi thread runtime, since the blocked `init` occupies a
-/// worker.
+/// the test releases it; requires a multi thread runtime.
 struct BlockedInInit {
     blocked_tx: mpsc::Sender<()>,
     unblock_rx: std::sync::mpsc::Receiver<()>,
@@ -705,7 +750,7 @@ impl Actor for BlockedInInit {
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let _ = self.blocked_tx.try_send(());
-        let _ = self.unblock_rx.recv();
+        let _ = block_in_place(|| self.unblock_rx.recv());
         Ok(())
     }
 

@@ -55,7 +55,7 @@ async fn stashed_messages_are_handled_before_later_ones() {
         assert_eq!(next_event(&mut events).await, expected);
     }
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A full stash hands the incoming back: with a mailbox bounded to one, the second of two items
@@ -159,7 +159,7 @@ async fn unwatch_drops_a_stashed_terminated_signal() {
     assert_eq!(next_event(&mut events).await, ProbeEvent::Stashed(4));
     assert_eq!(next_event(&mut events).await, ProbeEvent::Kept(4, 1));
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// `unwatch` drops a stash request made before it: the watcher stashes the terminated signal it is
@@ -179,7 +179,7 @@ async fn unwatch_drops_a_stash_request_made_before_it() {
     assert_eq!(next_event(&mut events).await, ProbeEvent::Stashed(4));
     assert_eq!(next_event(&mut events).await, ProbeEvent::Kept(4, 1));
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A terminated signal stashed after `unwatch` is kept: the watcher unwatches and then stashes the
@@ -197,7 +197,7 @@ async fn a_terminated_signal_stashed_after_unwatch_is_received_after_unstashing(
 
     assert_eq!(next_event(&mut events).await, ProbeEvent::Terminated);
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// Unstashed items are received before a due timer: they arrived before its deadline. The timer
@@ -240,7 +240,7 @@ async fn panicking_stashed_item_destructors_are_contained() {
 
 /// A stop by the parent is received ahead of the unstashed items: the first of two unstashed items
 /// blocks until the system has been asked to stop, and the second is never received.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_stop_is_received_ahead_of_unstashed_items() {
     let (system, mut kept, gate) = drainer_system();
 
@@ -256,7 +256,7 @@ async fn a_stop_is_received_ahead_of_unstashed_items() {
         .await
         .expect("actor system did not terminate")
         .expect("watching the root actor failed");
-    assert_eq!(kept.recv().await, None);
+    assert_closed(&mut kept).await;
 }
 
 /// A drain cannot starve the mailbox: an actor which stashes every item again and unstashes on
@@ -823,6 +823,16 @@ where
         .await
         .expect("no event in time")
         .expect("actor dropped the sender")
+}
+
+async fn assert_closed<E>(events: &mut mpsc::UnboundedReceiver<E>)
+where
+    E: Debug,
+{
+    let event = timeout(TIMEOUT, events.recv())
+        .await
+        .expect("the sender was not dropped in time");
+    assert!(event.is_none(), "unexpected event {event:?}");
 }
 
 async fn stop<M>(system: ActorSystem<M>)

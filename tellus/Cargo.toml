@@ -221,3 +221,31 @@ required-features = [ "persistence", "persistence-in-memory" ]
 name              = "cluster"
 harness           = false
 required-features = [ "cluster-dev" ]
+
+[[test]]
+name              = "host_persistence"
+required-features = [ "persistence-in-memory" ]
+
+[[test]]
+name              = "how_to_unit_test"
+required-features = [ "test-util" ]
+
+[[test]]
+name              = "how_to_unit_test_event_sourced"
+required-features = [ "persistence", "test-util" ]
+
+[[test]]
+name              = "persistence"
+required-features = [ "persistence-in-memory" ]
+
+[[test]]
+name              = "persistence_tests"
+required-features = [ "persistence-in-memory", "persistence-tests" ]
+
+[[test]]
+name              = "test_context"
+required-features = [ "test-util" ]
+
+[[test]]
+name              = "test_context_persistence"
+required-features = [ "persistence", "test-util" ]

@@ -1,3 +1,6 @@
+mod logs;
+
+use crate::logs::Logs;
 use std::{
     collections::HashMap,
     convert::Infallible,
@@ -19,15 +22,8 @@ use tokio::{
     runtime::Builder,
     select,
     sync::mpsc,
+    task::block_in_place,
     time::{Instant, advance, sleep, timeout},
-};
-use tracing::{
-    Subscriber,
-    field::{Field, Visit},
-};
-use tracing_subscriber::{
-    Layer,
-    layer::{Context, SubscriberExt},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -122,7 +118,7 @@ async fn restarting_a_key_restarts_its_deadline() {
     assert_eq!(started.elapsed(), Duration::from_millis(1500));
     ping(&system, &mut events).await;
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A canceled timer is never received.
@@ -136,7 +132,7 @@ async fn a_canceled_timer_is_never_received() {
     advance(Duration::from_secs(2)).await;
     ping(&system, &mut events).await;
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// Canceling the earliest timer keeps the next one on time, although the sleep then wakes early.
@@ -174,7 +170,7 @@ async fn a_timer_canceled_once_due_is_never_received() {
     ping(&system, &mut events).await;
     ping(&system, &mut events).await;
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A message which arrived before the deadline is handled before the timeout.
@@ -256,7 +252,7 @@ async fn a_full_bounded_mailbox_still_receives_its_timer() {
     assert_eq!(next_event(&mut events).await, Event::Ping);
     assert_eq!(next_event(&mut events).await, Event::Fired("t", 1));
     stop(system).await;
-    assert_eq!(events.recv().await, None);
+    assert_closed(&mut events).await;
 }
 
 /// A restart cancels the old incarnation's timers, due and pending alike, even when the new
@@ -384,12 +380,9 @@ async fn a_flooded_mailbox_does_not_starve_a_due_timer() {
 #[tokio::test(start_paused = true)]
 #[ignore = "scheduler sensitive, run explicitly"]
 async fn stale_timers_do_not_delay_a_stop() {
-    let (stale_tx, mut stale_rx) = mpsc::unbounded_channel();
-    let _subscriber = tracing::subscriber::set_default(
-        tracing_subscriber::registry().with(StaleTimers(stale_tx)),
-    );
     let (ends_tx, mut ends_rx) = mpsc::unbounded_channel();
     let system = ActorSystem::new(Replacer(ends_tx));
+    let mut logs = Logs::of(system.root().actor_id());
 
     // Every advance lets the actor's timer fire once more and go stale on its next replacement.
     let skipping = async {
@@ -397,7 +390,7 @@ async fn stale_timers_do_not_delay_a_stop() {
             select! {
                 biased;
 
-                _ = stale_rx.recv() => break,
+                _ = logs.until("dropping stale timer") => break,
 
                 _ = advance(Duration::from_millis(1)) => {}
             }
@@ -685,7 +678,7 @@ impl Actor for Clock {
                 self.events
                     .send(Event::Blocked)
                     .expect("test dropped the receiver");
-                release.recv().expect("test dropped the release");
+                block_in_place(|| release.recv()).expect("test dropped the release");
             }
         }
         Ok(Control::Continue(incarnation))
@@ -1107,32 +1100,6 @@ enum Backlog {
     Timeout,
 }
 
-/// Reports every event of a run loop dropping a stale timer.
-struct StaleTimers(mpsc::UnboundedSender<()>);
-
-impl<S> Layer<S> for StaleTimers
-where
-    S: Subscriber,
-{
-    fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
-        let mut stale_timer = StaleTimer(false);
-        event.record(&mut stale_timer);
-        if stale_timer.0 {
-            let _ = self.0.send(());
-        }
-    }
-}
-
-struct StaleTimer(bool);
-
-impl Visit for StaleTimer {
-    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
-        if field.name() == "message" && format!("{value:?}") == "dropping stale timer" {
-            self.0 = true;
-        }
-    }
-}
-
 /// A vending machine which sells the products of its inventory at their prices. A request for a
 /// stocked product starts a wait for money, a timer of `MONEY_TIMEOUT`. Partial money restarts the
 /// timer and delivery cancels it. If the timer expires first, the request times out and the money
@@ -1380,6 +1347,16 @@ async fn next_event<T>(events: &mut mpsc::UnboundedReceiver<T>) -> T {
         .await
         .expect("no event in time")
         .expect("probe dropped the sender")
+}
+
+async fn assert_closed<E>(events: &mut mpsc::UnboundedReceiver<E>)
+where
+    E: Debug,
+{
+    let event = timeout(TIMEOUT, events.recv())
+        .await
+        .expect("the sender was not dropped in time");
+    assert!(event.is_none(), "unexpected event {event:?}");
 }
 
 async fn stop<M>(system: ActorSystem<M>)

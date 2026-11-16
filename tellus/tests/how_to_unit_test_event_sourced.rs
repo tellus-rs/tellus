@@ -1,5 +1,3 @@
-#![cfg(all(feature = "test-util", feature = "persistence"))]
-
 use serde::{Deserialize, Serialize};
 use std::assert_matches;
 use tellus::{

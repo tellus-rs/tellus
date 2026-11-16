@@ -19,6 +19,7 @@ use thiserror::Error;
 use tokio::{
     runtime::Builder,
     sync::mpsc,
+    task::block_in_place,
     time::{sleep, timeout},
 };
 
@@ -43,7 +44,7 @@ async fn stopping_root_terminates_system() {
 
 /// A stopping actor stops its child actors first and only terminates once all descendants have
 /// terminated, i.e. the actor tree terminates bottom-up.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn descendants_terminate_bottom_up() {
     let (terminated_tx, mut terminated_rx) = mpsc::channel(TERMINATION_ORDER.len());
     let (started_tx, mut started_rx) = mpsc::channel(1);
@@ -65,7 +66,7 @@ async fn descendants_terminate_bottom_up() {
 
 /// An actor system can be stopped from the outside, which stops the root actor and with it the
 /// whole tree, bottom-up like any parent stopping its children.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stopping_a_system_terminates_the_tree_bottom_up() {
     let (terminated_tx, mut terminated_rx) = mpsc::channel(TERMINATION_ORDER.len());
     let (started_tx, mut started_rx) = mpsc::channel(1);
@@ -86,7 +87,7 @@ async fn stopping_a_system_terminates_the_tree_bottom_up() {
 
 /// An outside stop takes effect between messages, never inside one: a message being handled when
 /// it arrives is finished first, and the tree terminates afterward.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stopping_a_system_finishes_the_message_being_handled() {
     let (probe_tx, mut probe_rx) = mpsc::channel(2);
     let (release_tx, release_rx) = std::sync::mpsc::channel();
@@ -219,7 +220,7 @@ fn a_self_telling_actor_yields_to_a_current_thread_timer() {
     });
 
     let root = root_rx.recv().expect("runtime publishes root");
-    let stopped_by = match stopped_rx.recv_timeout(Duration::from_millis(500)) {
+    let stopped_by = match stopped_rx.recv_timeout(TIMEOUT) {
         Ok(stopped_by) => stopped_by,
         Err(std_mpsc::RecvTimeoutError::Timeout) => {
             root.tell(FairMessage::WatchdogStop);
@@ -252,7 +253,7 @@ async fn panicking_actor_destructor_still_terminates_system() {
 /// parent stops the actor: its watchers must still be signaled. The watch is registered while the
 /// actor is still alive, so that the signal comes from the termination path rather than from
 /// watching an already terminated actor.
-#[tokio::test(flavor = "multi_thread")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn panicking_state_destructor_still_signals_watchers() {
     let (child_tx, mut child_rx) = mpsc::channel(1);
     let system = ActorSystem::new(PanickingStateRoot(child_tx));
@@ -910,7 +911,7 @@ impl Actor for Blocking {
         state: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
         let _ = self.probe.try_send("started");
-        let _ = self.release.recv();
+        let _ = block_in_place(|| self.release.recv());
         let _ = self.probe.try_send("finished");
 
         Ok(Control::Continue(state))
