@@ -10,7 +10,7 @@
 
 use crate::{
     persistence::{
-        persistence_id::PersistenceId,
+        persistence_id::{MAX_SEGMENT_LEN, PersistenceId},
         seq_no::SeqNo,
         spawn::REPLAY_PAGE,
         store::{
@@ -37,6 +37,7 @@ where
 {
     append_then_read_round_trips(store.clone()).await;
     events_round_trip_at_their_extremes(store.clone()).await;
+    events_round_trip_under_persistence_ids_at_their_extremes(store.clone()).await;
     conflicting_append_is_rejected_and_leaves_the_stream_untouched(store.clone()).await;
     an_append_to_an_empty_stream_is_fenced(store.clone()).await;
     an_empty_append_is_fenced(store.clone()).await;
@@ -44,7 +45,9 @@ where
     concurrent_appends_to_a_non_empty_stream_are_fenced(store.clone()).await;
     streams_are_isolated(store.clone()).await;
     streams_are_isolated_by_both_segments(store.clone()).await;
+    streams_are_isolated_between_lookalike_ids(store.clone()).await;
     reads_are_paged_and_inclusive(store.clone()).await;
+    reads_honor_limits_at_their_extremes(store.clone()).await;
     reads_return_full_pages(store).await;
 }
 
@@ -126,6 +129,37 @@ where
         assert_eq!(
             stored.event.payload, event.payload,
             "a payload must round-trip untouched, empty or holding every byte value"
+        );
+    }
+}
+
+/// Events read back exactly as written under persistence IDs at their extremes: either segment
+/// exactly 255 bytes long, in ASCII or in multi-byte characters, or holding non-ASCII characters,
+/// `%`, `_`, single and double quotes, a backslash and spaces, leading and trailing ones included.
+pub async fn events_round_trip_under_persistence_ids_at_their_extremes<E>(store: E)
+where
+    E: EventStore,
+{
+    let events = sample_events(2);
+
+    for id in extreme_persistence_ids() {
+        let appended = store.append(&id, SeqNo::ZERO, events.clone()).await;
+        assert!(
+            appended.is_ok(),
+            "an append under {id:?} must succeed, got {appended:?}"
+        );
+
+        let stored = store
+            .read(&id, SeqNo::ZERO, LIMIT)
+            .await
+            .unwrap_or_else(|error| panic!("reading the stream {id:?} must succeed: {error}"));
+        assert_eq!(
+            stored
+                .into_iter()
+                .map(|stored| stored.event)
+                .collect::<Vec<_>>(),
+            events,
+            "the stream {id:?} must read back exactly its events"
         );
     }
 }
@@ -402,45 +436,22 @@ pub async fn streams_are_isolated_by_both_segments<E>(store: E)
 where
     E: EventStore,
 {
-    let events = sample_events(2);
-
     for (id_a, id_b) in confusable_id_pairs() {
-        store
-            .append(&id_a, SeqNo::ZERO, vec![events[0].clone()])
-            .await
-            .expect("the append to the first stream must succeed");
-        let appended = store
-            .append(&id_b, SeqNo::ZERO, vec![events[1].clone()])
-            .await;
-        assert!(
-            appended.is_ok(),
-            "{id_b} must be a stream of its own, empty whatever {id_a} holds, got {appended:?}"
-        );
+        assert_streams_isolated(&store, &id_a, &id_b).await;
+    }
+}
 
-        let stored_a = store
-            .read(&id_a, SeqNo::ZERO, LIMIT)
-            .await
-            .expect("reading the first stream must succeed");
-        let stored_b = store
-            .read(&id_b, SeqNo::ZERO, LIMIT)
-            .await
-            .expect("reading the second stream must succeed");
-        assert_eq!(
-            stored_a
-                .into_iter()
-                .map(|stored| stored.event)
-                .collect::<Vec<_>>(),
-            [events[0].clone()],
-            "{id_a} must contain exactly its own events, none of {id_b}"
-        );
-        assert_eq!(
-            stored_b
-                .into_iter()
-                .map(|stored| stored.event)
-                .collect::<Vec<_>>(),
-            [events[1].clone()],
-            "{id_b} must contain exactly its own events, none of {id_a}"
-        );
+/// Persistence IDs which differ in a single character name two streams, however alike they look.
+/// This covers IDs differing only in case, in Unicode normalization or in a trailing space. It
+/// covers an ID holding `%`, `_` or a backslash against one it matches as a `LIKE` pattern, and an
+/// ID against its own prefix. It also covers two 255-byte segments differing only in their last
+/// byte.
+pub async fn streams_are_isolated_between_lookalike_ids<E>(store: E)
+where
+    E: EventStore,
+{
+    for (id_a, id_b) in lookalike_id_pairs() {
+        assert_streams_isolated(&store, &id_a, &id_b).await;
     }
 }
 
@@ -509,6 +520,50 @@ where
     );
 }
 
+/// A read honors the limit at its extremes. Limit 1 returns exactly the event at the given sequence
+/// number, if there is one. Limit `usize::MAX` returns the whole rest of the stream without failing
+/// or truncating it, from the largest sequence number too.
+pub async fn reads_honor_limits_at_their_extremes<E>(store: E)
+where
+    E: EventStore,
+{
+    let id = unique_persistence_id();
+    let len = 3;
+
+    store
+        .append(&id, SeqNo::ZERO, sample_events(len as usize))
+        .await
+        .expect("the append must succeed");
+
+    for from in 0..=len {
+        let page = store
+            .read(&id, SeqNo::new(from), NonZeroUsize::MIN)
+            .await
+            .expect("the read with limit 1 must succeed");
+        assert_eq!(
+            seq_nos(page),
+            (from..len.min(from + 1))
+                .map(SeqNo::new)
+                .collect::<Vec<_>>(),
+            "a read with limit 1 from sequence number {from} of a stream with {len} events must \
+             return exactly the event there, if there is one"
+        );
+    }
+
+    for from in [0, 1, len, u64::MAX] {
+        let page = store
+            .read(&id, SeqNo::new(from), NonZeroUsize::MAX)
+            .await
+            .expect("the read with limit usize::MAX must succeed");
+        assert_eq!(
+            seq_nos(page),
+            (from..len).map(SeqNo::new).collect::<Vec<_>>(),
+            "a read with limit usize::MAX from sequence number {from} of a stream with {len} \
+             events must return the whole rest of the stream"
+        );
+    }
+}
+
 /// A read returns exactly `limit` events while the stream holds that many from the given sequence
 /// number on, and fewer only where the stream ends, over a stream longer than two replay pages.
 /// Replay stops at the first short page, so a store capping its pages truncates recovery.
@@ -561,8 +616,10 @@ where
 {
     snapshots_round_trip_and_the_latest_wins(store.clone()).await;
     snapshots_round_trip_at_their_extremes(store.clone()).await;
+    snapshots_round_trip_under_persistence_ids_at_their_extremes(store.clone()).await;
     snapshots_are_isolated(store.clone()).await;
-    snapshots_are_isolated_by_both_segments(store).await;
+    snapshots_are_isolated_by_both_segments(store.clone()).await;
+    snapshots_are_isolated_between_lookalike_ids(store).await;
 }
 
 /// An unknown ID loads no snapshot; a saved snapshot loads back untouched together with the
@@ -651,6 +708,36 @@ where
     }
 }
 
+/// A snapshot loads back exactly as written under persistence IDs at their extremes: either
+/// segment exactly 255 bytes long, in ASCII or in multi-byte characters, or holding non-ASCII
+/// characters, `%`, `_`, single and double quotes, a backslash and spaces, leading and trailing
+/// ones included.
+pub async fn snapshots_round_trip_under_persistence_ids_at_their_extremes<S>(store: S)
+where
+    S: SnapshotStore,
+{
+    let snapshot = sample_snapshot(1);
+
+    for id in extreme_persistence_ids() {
+        store
+            .save(&id, SeqNo::new(3), snapshot.clone())
+            .await
+            .unwrap_or_else(|error| panic!("the save under {id:?} must succeed: {error}"));
+        let loaded = store
+            .load(&id)
+            .await
+            .unwrap_or_else(|error| panic!("loading {id:?} must succeed: {error}"));
+        assert_eq!(
+            loaded,
+            Some(StoredSnapshot {
+                next_seq_no: SeqNo::new(3),
+                snapshot: snapshot.clone(),
+            }),
+            "{id:?} must load back exactly its snapshot"
+        );
+    }
+}
+
 /// Snapshots are isolated per persistence ID: snapshots saved under two IDs of the same entity
 /// type each load back as their own, with their own sequence number.
 pub async fn snapshots_are_isolated<S>(store: S)
@@ -706,50 +793,18 @@ where
     S: SnapshotStore,
 {
     for (id_a, id_b) in confusable_id_pairs() {
-        let snapshot_a = sample_snapshot(1);
-        let snapshot_b = sample_snapshot(2);
+        assert_snapshots_isolated(&store, &id_a, &id_b).await;
+    }
+}
 
-        store
-            .save(&id_a, SeqNo::new(3), snapshot_a.clone())
-            .await
-            .expect("the save under the first ID must succeed");
-        let unknown = store
-            .load(&id_b)
-            .await
-            .expect("loading the second ID must succeed");
-        assert_eq!(
-            unknown, None,
-            "a snapshot saved under {id_a} must not load under {id_b}"
-        );
-
-        store
-            .save(&id_b, SeqNo::new(5), snapshot_b.clone())
-            .await
-            .expect("the save under the second ID must succeed");
-        let loaded_a = store
-            .load(&id_a)
-            .await
-            .expect("loading the first ID must succeed");
-        let loaded_b = store
-            .load(&id_b)
-            .await
-            .expect("loading the second ID must succeed");
-        assert_eq!(
-            loaded_a,
-            Some(StoredSnapshot {
-                next_seq_no: SeqNo::new(3),
-                snapshot: snapshot_a,
-            }),
-            "{id_a} must load exactly its own snapshot, not the one of {id_b}"
-        );
-        assert_eq!(
-            loaded_b,
-            Some(StoredSnapshot {
-                next_seq_no: SeqNo::new(5),
-                snapshot: snapshot_b,
-            }),
-            "{id_b} must load exactly its own snapshot, not the one of {id_a}"
-        );
+/// Persistence IDs which differ in a single character identify two snapshots, however alike they
+/// look. The IDs are those of [streams_are_isolated_between_lookalike_ids].
+pub async fn snapshots_are_isolated_between_lookalike_ids<S>(store: S)
+where
+    S: SnapshotStore,
+{
+    for (id_a, id_b) in lookalike_id_pairs() {
+        assert_snapshots_isolated(&store, &id_a, &id_b).await;
     }
 }
 
@@ -839,6 +894,30 @@ fn extremes() -> [(Cow<'static, str>, SchemaVersion, Vec<u8>); 2] {
     ]
 }
 
+fn extreme_persistence_ids() -> [PersistenceId; 6] {
+    let special = " contract-ü日本🦀 %_ 'single' \"double\" back\\slash ";
+
+    [
+        persistence_id(maximum_length_segment("contract-", 'x'), unique_entity_id()),
+        persistence_id("contract", maximum_length_segment(&unique_entity_id(), 'x')),
+        persistence_id(maximum_length_segment("contract-", 'é'), unique_entity_id()),
+        persistence_id(
+            "contract",
+            maximum_length_segment(&unique_entity_id(), '🦀'),
+        ),
+        persistence_id(special, unique_entity_id()),
+        persistence_id("contract", format!("{special}{}", unique_entity_id())),
+    ]
+}
+
+fn maximum_length_segment(prefix: &str, fill: char) -> String {
+    let fill_len = MAX_SEGMENT_LEN - prefix.len();
+    let padding = "x".repeat(fill_len % fill.len_utf8());
+    let fill = fill.to_string().repeat(fill_len / fill.len_utf8());
+
+    format!("{prefix}{padding}{fill}")
+}
+
 async fn winner_of_racing_appends<E>(store: &E, id: &PersistenceId, next_seq_no: SeqNo) -> u8
 where
     E: EventStore,
@@ -913,6 +992,98 @@ fn confusable_id_pairs() -> [(PersistenceId, PersistenceId); 2] {
     ]
 }
 
+async fn assert_streams_isolated<E>(store: &E, id_a: &PersistenceId, id_b: &PersistenceId)
+where
+    E: EventStore,
+{
+    let events = sample_events(2);
+
+    store
+        .append(id_a, SeqNo::ZERO, vec![events[0].clone()])
+        .await
+        .unwrap_or_else(|error| panic!("the append to {id_a:?} must succeed: {error:?}"));
+    let appended = store
+        .append(id_b, SeqNo::ZERO, vec![events[1].clone()])
+        .await;
+    assert!(
+        appended.is_ok(),
+        "{id_b:?} must be a stream of its own, empty whatever {id_a:?} holds, got {appended:?}"
+    );
+
+    let stored_a = store
+        .read(id_a, SeqNo::ZERO, LIMIT)
+        .await
+        .unwrap_or_else(|error| panic!("reading {id_a:?} must succeed: {error}"));
+    let stored_b = store
+        .read(id_b, SeqNo::ZERO, LIMIT)
+        .await
+        .unwrap_or_else(|error| panic!("reading {id_b:?} must succeed: {error}"));
+    assert_eq!(
+        stored_a
+            .into_iter()
+            .map(|stored| stored.event)
+            .collect::<Vec<_>>(),
+        [events[0].clone()],
+        "{id_a:?} must contain exactly its own events, none of {id_b:?}"
+    );
+    assert_eq!(
+        stored_b
+            .into_iter()
+            .map(|stored| stored.event)
+            .collect::<Vec<_>>(),
+        [events[1].clone()],
+        "{id_b:?} must contain exactly its own events, none of {id_a:?}"
+    );
+}
+
+fn lookalike_id_pairs() -> Vec<(PersistenceId, PersistenceId)> {
+    let entity_id_pairs = [
+        ("-a", "-A"),
+        ("-ä", "-Ä"),
+        ("-\u{e9}", "-e\u{301}"),
+        (" ", ""),
+        ("-ab", "-a"),
+        ("-ab", "-a%"),
+        ("-ab", "-a_"),
+        ("-ab", "-a\\b"),
+    ]
+    .map(|(suffix_a, suffix_b)| {
+        let unique = unique_entity_id();
+        (
+            persistence_id("contract", format!("{unique}{suffix_a}")),
+            persistence_id("contract", format!("{unique}{suffix_b}")),
+        )
+    });
+
+    let long_entity_type = maximum_length_segment("contract-", 'x');
+    let long_entity_type_b = format!("{}y", &long_entity_type[..MAX_SEGMENT_LEN - 1]);
+    let entity_type_pairs = [
+        ("contract-case", "Contract-Case"),
+        ("contract-ab", "contract-a_"),
+        (long_entity_type.as_str(), long_entity_type_b.as_str()),
+    ]
+    .map(|(entity_type_a, entity_type_b)| {
+        let unique = unique_entity_id();
+        (
+            persistence_id(entity_type_a, &unique),
+            persistence_id(entity_type_b, &unique),
+        )
+    });
+
+    let long_entity_id = maximum_length_segment(&unique_entity_id(), 'x');
+    let long_entity_id_b = format!("{}y", &long_entity_id[..MAX_SEGMENT_LEN - 1]);
+    let long_entity_id_pair = (
+        persistence_id("contract", long_entity_id),
+        persistence_id("contract", long_entity_id_b),
+    );
+
+    entity_id_pairs
+        .into_iter()
+        .chain(entity_type_pairs)
+        .chain([long_entity_id_pair])
+        .collect()
+}
+
 fn seq_nos(stored: Vec<StoredEvent>) -> Vec<SeqNo> {
     stored.into_iter().map(|stored| stored.seq_no).collect()
 }
@@ -923,4 +1094,54 @@ fn sample_snapshot(tag: u8) -> EncodedSnapshot {
         schema_version: SchemaVersion::new(1),
         payload: vec![0xC1, tag],
     }
+}
+
+async fn assert_snapshots_isolated<S>(store: &S, id_a: &PersistenceId, id_b: &PersistenceId)
+where
+    S: SnapshotStore,
+{
+    let snapshot_a = sample_snapshot(1);
+    let snapshot_b = sample_snapshot(2);
+
+    store
+        .save(id_a, SeqNo::new(3), snapshot_a.clone())
+        .await
+        .unwrap_or_else(|error| panic!("the save under {id_a:?} must succeed: {error}"));
+    let unknown = store
+        .load(id_b)
+        .await
+        .unwrap_or_else(|error| panic!("loading {id_b:?} must succeed: {error}"));
+    assert_eq!(
+        unknown, None,
+        "a snapshot saved under {id_a:?} must not load under {id_b:?}"
+    );
+
+    store
+        .save(id_b, SeqNo::new(5), snapshot_b.clone())
+        .await
+        .unwrap_or_else(|error| panic!("the save under {id_b:?} must succeed: {error}"));
+    let loaded_a = store
+        .load(id_a)
+        .await
+        .unwrap_or_else(|error| panic!("loading {id_a:?} must succeed: {error}"));
+    let loaded_b = store
+        .load(id_b)
+        .await
+        .unwrap_or_else(|error| panic!("loading {id_b:?} must succeed: {error}"));
+    assert_eq!(
+        loaded_a,
+        Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(3),
+            snapshot: snapshot_a,
+        }),
+        "{id_a:?} must load exactly its own snapshot, not the one of {id_b:?}"
+    );
+    assert_eq!(
+        loaded_b,
+        Some(StoredSnapshot {
+            next_seq_no: SeqNo::new(5),
+            snapshot: snapshot_b,
+        }),
+        "{id_b:?} must load exactly its own snapshot, not the one of {id_a:?}"
+    );
 }
