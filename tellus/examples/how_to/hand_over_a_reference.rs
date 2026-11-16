@@ -58,7 +58,8 @@ fn init_tracing() {
 
 // ANCHOR: first-node
 async fn first_node() -> anyhow::Result<()> {
-    let addrs = free_addrs(2)?;
+    let mut addrs = free_addrs(2)?;
+    addrs.sort();
     start_endpoint(addrs[0])?;
     let greeter = ActorSystem::new(Greeter);
     let reference = cluster::serialize_ref(greeter.root()).context("serializing the greeter")?;
