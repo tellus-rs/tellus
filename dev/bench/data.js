@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794859972314,
+  "lastUpdate": 1794859973924,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28597,6 +28597,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 135553,
             "range": "± 5129",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "035a649bd1640e2dbfb4d7bc73c4e6f6acd8e575",
+          "message": "Merge pull request #447 from tellus-rs/fix/receptionist-settled-current\n\nfix(cluster): judge receptionist settled by the current cluster state",
+          "timestamp": "2026-11-16T21:02:38+01:00",
+          "tree_id": "f4556af75395e792f2235047df8e0a30199e790f",
+          "url": "https://github.com/tellus-rs/tellus/commit/035a649bd1640e2dbfb4d7bc73c4e6f6acd8e575"
+        },
+        "date": 1794859973644,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3570279,
+            "range": "± 91329",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3541120,
+            "range": "± 173627",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 859959,
+            "range": "± 8222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105287,
+            "range": "± 2790",
             "unit": "ns/iter"
           }
         ]
