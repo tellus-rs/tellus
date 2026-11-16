@@ -3315,9 +3315,9 @@ fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     if refs.len() != 2 || refs.contains(&b) {
         bail!("a downed member's echo is still resolved: {refs:?}");
     }
-    if !receptionist::settled(cluster::cluster_state()?.current().version())? {
-        bail!("the receptionist is not settled after a downing");
-    }
+    let version = cluster::cluster_state()?.current().version();
+    await_settled(runtime, &mut changes, version)
+        .context("the receptionist is not settled after a downing")?;
     await_listing(runtime, &mut subscription, |refs| refs.len() == 2)?;
 
     a.tell(Request::Stop);
