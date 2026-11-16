@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794830991233,
+  "lastUpdate": 1794830997005,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26413,6 +26413,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 131591,
             "range": "± 3476",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5c322ea81bd5f6b4a195913b6d736e679d89b80",
+          "message": "Merge pull request #423 from tellus-rs/fix/comparison-timing\n\nfix(comparison): time every framework alike and report one run",
+          "timestamp": "2026-11-16T13:01:21+01:00",
+          "tree_id": "ec29a253056c05d468139ace302eb71fd7f9ac38",
+          "url": "https://github.com/tellus-rs/tellus/commit/e5c322ea81bd5f6b4a195913b6d736e679d89b80"
+        },
+        "date": 1794830996472,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3399009,
+            "range": "± 129666",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3432082,
+            "range": "± 97643",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 868440,
+            "range": "± 4740",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 108239,
+            "range": "± 2159",
             "unit": "ns/iter"
           }
         ]
