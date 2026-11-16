@@ -53,7 +53,7 @@ fn init_tracing() {
 
 // ANCHOR: first-node
 async fn first_node() -> anyhow::Result<()> {
-    let seeds = reserved_addrs(NODES)?;
+    let seeds = free_addrs(NODES)?;
     let _second_node = spawn_node(seeds[1], &seeds)?;
     join_cluster(seeds[0], seeds).await?;
 
@@ -100,14 +100,15 @@ async fn join_cluster(addr: SocketAddr, seeds: Vec<SocketAddr>) -> anyhow::Resul
 }
 // ANCHOR_END: join-cluster
 
-fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+fn free_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+    // Every socket stays bound until the last address is read, else a port could repeat!
     let sockets = (0..count)
         .map(|_| UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
         .collect::<Result<Vec<_>, _>>()
-        .context("reserving loopback ports")?;
+        .context("binding free loopback ports")?;
     sockets
         .iter()
-        .map(|socket| socket.local_addr().context("reserved local address"))
+        .map(|socket| socket.local_addr().context("free local address"))
         .collect()
 }
 

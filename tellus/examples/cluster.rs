@@ -65,6 +65,7 @@ const ASK_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERGENCE_TIMEOUT: Duration = Duration::from_secs(10);
 const DOWNING_TIMEOUT: Duration = Duration::from_secs(20);
 const LEAVE_TIMEOUT: Duration = Duration::from_secs(5);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -187,7 +188,7 @@ async fn observer_node() -> anyhow::Result<()> {
     cluster::form().context("forming the cluster")?;
     println!("## observer {observer} formed a cluster of one");
 
-    let addrs = reserved_addrs(MEMBERS)?;
+    let addrs = free_addrs(MEMBERS)?;
     let mut nodes = Vec::with_capacity(MEMBERS);
     for addr in &addrs {
         nodes.push(spawn_member_node(*addr, observer)?);
@@ -242,9 +243,11 @@ async fn observer_node() -> anyhow::Result<()> {
     println!("## the stopped nodes announced their departure and are listed Left at once");
 
     for node in &mut nodes[1..] {
-        node.wait()
+        let status = timeout(EXIT_TIMEOUT, node.wait())
             .await
+            .context("a member node did not exit within the timeout")?
             .context("awaiting a member node process")?;
+        anyhow::ensure!(status.success(), "a member node failed: {status}");
     }
     Ok(())
 }
@@ -326,16 +329,17 @@ fn start_endpoint(bind_addr: SocketAddr) -> anyhow::Result<SocketAddr> {
 
 /// Addresses the OS has just handed out and nothing holds anymore, so the nodes about to be
 /// spawned can bind them. Every socket is held until the last address is read, else one port
-/// could be handed out twice.
-fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+/// could be handed out twice. Nothing reserves the ports, so another process may take one before
+/// its node binds it.
+fn free_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
     let sockets = (0..count)
         .map(|_| UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
         .collect::<Result<Vec<_>, _>>()
-        .context("reserving loopback ports")?;
+        .context("binding free loopback ports")?;
 
     sockets
         .iter()
-        .map(|socket| socket.local_addr().context("reserved local address"))
+        .map(|socket| socket.local_addr().context("free local address"))
         .collect()
 }
 

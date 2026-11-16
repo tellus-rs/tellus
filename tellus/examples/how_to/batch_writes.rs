@@ -1,6 +1,7 @@
 //! How-to example for batching writes: a journal actor buffers entries and writes them in batches
 //! with `ActorContext::pipe_to_self`, one write at a time, starting a write once its mailbox has
-//! run empty or a full batch is buffered. A failed or panicking write fails the journal.
+//! run empty or a full batch is buffered. A failed or panicking write fails the journal. On
+//! `Message::Close` the journal writes what it still buffers and then stops.
 
 use anyhow::Context;
 use std::{io, time::Duration};
@@ -28,7 +29,7 @@ async fn main() -> anyhow::Result<()> {
         sleep(Duration::from_millis(100)).await;
     }
 
-    system.stop();
+    journal.tell(Message::Close);
     system
         .terminated()
         .await
@@ -50,6 +51,7 @@ impl Actor for Journal {
         Ok(Buffer {
             entries: Vec::new(),
             writing: false,
+            closing: false,
         })
     }
 
@@ -66,6 +68,8 @@ impl Actor for Journal {
         match message {
             Message::Append(entry) => buffer.entries.push(entry),
 
+            Message::Close => buffer.closing = true,
+
             Message::Written(result) => {
                 result??;
                 buffer.writing = false;
@@ -74,12 +78,17 @@ impl Actor for Journal {
 
         buffer.write_if_due(context);
 
-        Ok(Control::Continue(buffer))
+        if buffer.closing && !buffer.writing && buffer.entries.is_empty() {
+            Ok(Control::Stop)
+        } else {
+            Ok(Control::Continue(buffer))
+        }
     }
 }
 
 enum Message {
     Append(String),
+    Close,
     Written(Result<io::Result<()>, JoinError>),
 }
 
@@ -95,6 +104,7 @@ enum WriteFailed {
 struct Buffer {
     entries: Vec<String>,
     writing: bool,
+    closing: bool,
 }
 
 // ANCHOR: write-if-due

@@ -4,12 +4,14 @@
 //!
 //! Run it with `cargo run --quiet -p tellus --features cluster-dev --example
 //! how_to_shut_down_gracefully`, try `curl -i localhost:8080/health` and `curl
-//! localhost:8080/count`, and press Ctrl-C.
+//! localhost:8080/count`, and press Ctrl-C. To serve HTTP at another address, pass it as the
+//! argument, e.g. `-- 127.0.0.1:8081`.
 
 use anyhow::Context;
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
     convert::Infallible,
+    env,
     future::IntoFuture,
     io,
     net::{IpAddr, Ipv4Addr, SocketAddr},
@@ -23,18 +25,17 @@ use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
     cluster::{self, EndpointConfig, transport::QuicTransport},
 };
+#[cfg(unix)]
+use tokio::signal::unix::{self, SignalKind};
 use tokio::{
     net::TcpListener,
-    signal::{
-        self,
-        unix::{SignalKind, signal},
-    },
+    signal,
     sync::Notify,
     time::{sleep, timeout},
 };
 use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 
-const HTTP_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
+const DEFAULT_HTTP_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
 // Must exceed the time a load balancer takes to drop a node that fails its health check.
 const UNHEALTHY_LINGER: Duration = Duration::from_secs(5);
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
@@ -53,9 +54,10 @@ async fn main() -> anyhow::Result<()> {
         healthy: AtomicBool::new(true),
         counter: system.root().clone(),
     });
-    let listener = TcpListener::bind(HTTP_ADDR)
+    let http_addr = http_addr()?;
+    let listener = TcpListener::bind(http_addr)
         .await
-        .context("binding the HTTP port")?;
+        .with_context(|| format!("binding {http_addr}"))?;
     let drain = Arc::new(Notify::new());
     let server = tokio::spawn(
         axum::serve(listener, router(app.clone()))
@@ -145,12 +147,18 @@ async fn count(State(app): State<Arc<App>>) -> Result<String, StatusCode> {
 // ANCHOR_END: app
 
 // ANCHOR: shutdown-signal
+#[cfg(unix)]
 async fn shutdown_signal() -> anyhow::Result<()> {
-    let mut terminate = signal(SignalKind::terminate()).context("SIGTERM handler")?;
+    let mut terminate = unix::signal(SignalKind::terminate()).context("SIGTERM handler")?;
     tokio::select! {
         _ = terminate.recv() => Ok(()),
         interrupt = signal::ctrl_c() => interrupt.context("Ctrl-C handler"),
     }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() -> anyhow::Result<()> {
+    signal::ctrl_c().await.context("Ctrl-C handler")
 }
 // ANCHOR_END: shutdown-signal
 
@@ -174,6 +182,12 @@ fn start_endpoint() -> anyhow::Result<Duration> {
     let leave_timeout = config.leave_timeout;
     cluster::start_endpoint(config, transport).context("remoting endpoint")?;
     Ok(leave_timeout)
+}
+
+fn http_addr() -> anyhow::Result<SocketAddr> {
+    env::args().nth(1).map_or(Ok(DEFAULT_HTTP_ADDR), |addr| {
+        addr.parse().context("HTTP address argument")
+    })
 }
 
 struct Counter;
