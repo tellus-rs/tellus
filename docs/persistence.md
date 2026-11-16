@@ -98,9 +98,10 @@ With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as 
 through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,
 e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are requests, gated on
 durability like the other effects. They take effect once the command's events are durable, or once
-`recovered` has returned, and a failed append discards them with the events. The stash is runtime
-state like a timer, neither persisted nor recreated by replay, but unlike a timer it survives a
-restart: the recovered state receives the stashed commands first, after `recovered`.
+`recovered` has returned, and a failed append discards them with the events. A failure once the
+events are durable, in `apply` or in a continuation, keeps them. The stash is runtime state like a
+timer, neither persisted nor recreated by replay, but unlike a timer it survives a restart: the
+recovered state receives the stashed commands first, after `recovered`.
 
 A `Timed` event-sourced actor starts its timers (see [actors.md](actors.md#timers)) in `recovered`
 and `handle`; `init` has no context. A timer is runtime state, neither persisted nor recreated by

@@ -269,8 +269,8 @@ where
     /// Stashing is a request, like unstashing. It takes effect once the item at hand is settled:
     /// when [Actor::receive] or [Actor::init] has returned successfully, and for an event-sourced
     /// actor when `recovered` has returned or once the events of a command are durable. A failure
-    /// discards it. The requests made while handling one item take effect in the order they were
-    /// made.
+    /// before that discards it. The requests made while handling one item take effect in the order
+    /// they were made.
     ///
     /// The stash has the capacity of the mailbox. It counts the unstashed items not received yet
     /// and the requests made so far, so a bounded actor holds at most twice its capacity in mailbox

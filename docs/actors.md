@@ -341,8 +341,8 @@ of the sealed [`StashMode`](../tellus/src/stash.rs).
 `stash` and `unstash_all` are requests. They take effect once the item at hand is settled: for a
 plain actor when `receive` or `init` has returned successfully, for an event-sourced one when
 `recovered` has returned or once the command's events are durable (see
-[persistence.md](persistence.md)). A failure discards them, so an actor which stashes the item it is
-handling and then fails does not get that item back after the restart. The requests made while
+[persistence.md](persistence.md)). A failure before that discards them, so an actor which stashes
+the item it is handling and then fails does not get that item back after the restart. The requests made while
 handling one item take effect in the order they were made: `stash(x)` followed by `unstash_all`
 hands `x` back, while `unstash_all` followed by `stash(x)` keeps it stashed.
 

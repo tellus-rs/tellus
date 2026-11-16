@@ -158,6 +158,12 @@ struct Recovered<S> {
     next_seq_no: SeqNo,
 }
 
+enum Settlement<S> {
+    Settled(Settled<S>),
+    FailedBeforeDurable,
+    FailedOnceDurable,
+}
+
 struct Settled<S> {
     state: S,
     next_seq_no: SeqNo,
@@ -290,7 +296,7 @@ macro_rules! run_event_sourced {
                                 break;
                             };
 
-                            match settle_or_log_failure(
+                            let settlement = settle_or_log_failure(
                                 actor_id,
                                 &$actor,
                                 &$persistence,
@@ -299,10 +305,13 @@ macro_rules! run_event_sourced {
                                 next_seq_no,
                                 effect,
                             )
-                            .await
-                            {
-                                Some(settled) => {
-                                    context.settle_stash();
+                            .await;
+                            if !matches!(settlement, Settlement::FailedBeforeDurable) {
+                                context.settle_stash();
+                            }
+
+                            match settlement {
+                                Settlement::Settled(settled) => {
                                     state = settled.state;
                                     next_seq_no = settled.next_seq_no;
 
@@ -320,7 +329,8 @@ macro_rules! run_event_sourced {
                                     }
                                 }
 
-                                None => break,
+                                Settlement::FailedBeforeDurable
+                                | Settlement::FailedOnceDurable => break,
                             }
                         }
                     }
@@ -647,7 +657,7 @@ async fn settle_or_log_failure<A, E, S, C>(
     mut state: A::State,
     mut next_seq_no: SeqNo,
     effect: Effect<A>,
-) -> Option<Settled<A::State>>
+) -> Settlement<A::State>
 where
     A: EventSourced,
     E: EventStore,
@@ -669,7 +679,7 @@ where
         });
         let Some(head) = log_failure(actor_id, FAILED_TO_APPEND, Some(head)) else {
             drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, (state, events, thens));
-            return None;
+            return Settlement::FailedBeforeDurable;
         };
 
         let encoded = catch_and_log(actor_id, "actor failed to encode events", || {
@@ -677,7 +687,7 @@ where
         });
         let Some(encoded) = encoded else {
             drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, (state, events, thens));
-            return None;
+            return Settlement::FailedBeforeDurable;
         };
 
         let appended_events = catch_panic_and_log_async(
@@ -694,7 +704,7 @@ where
         .await;
         if log_failure(actor_id, FAILED_TO_APPEND, appended_events).is_none() {
             drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, (state, events, thens));
-            return None;
+            return Settlement::FailedBeforeDurable;
         }
 
         let applied = catch_panic_and_log(actor_id, "actor failed to apply events", || {
@@ -702,7 +712,7 @@ where
         });
         let Some(applied) = applied else {
             drop_containing_panic(actor_id, VALUES_FAILED_TO_DROP, thens);
-            return None;
+            return Settlement::FailedOnceDurable;
         };
         state = applied;
         next_seq_no = head;
@@ -715,7 +725,7 @@ where
     });
     if ran.is_none() {
         drop_containing_panic(actor_id, STATE_FAILED_TO_DROP, state);
-        return None;
+        return Settlement::FailedOnceDurable;
     }
 
     if appended {
@@ -736,7 +746,7 @@ where
         }
     }
 
-    Some(Settled {
+    Settlement::Settled(Settled {
         state,
         next_seq_no,
         stop,
