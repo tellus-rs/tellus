@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794819819996,
+  "lastUpdate": 1794819821726,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28395,6 +28395,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4297879,
             "range": "± 46407",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b5885c3faaa71b5cf85adf411b2cf7aa55848b17",
+          "message": "Merge pull request #412 from tellus-rs/test/contract-extremes\n\ntest(persistence)!: check IDs and read limits at their extremes",
+          "timestamp": "2026-11-16T09:55:38+01:00",
+          "tree_id": "f35576d905e54a9534de282bc68583c580dc6304",
+          "url": "https://github.com/tellus-rs/tellus/commit/b5885c3faaa71b5cf85adf411b2cf7aa55848b17"
+        },
+        "date": 1794819821325,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 20428086,
+            "range": "± 426206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 20149067,
+            "range": "± 663532",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3745979,
+            "range": "± 207584",
             "unit": "ns/iter"
           }
         ]
