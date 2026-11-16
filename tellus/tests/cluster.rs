@@ -78,7 +78,7 @@ use std::{
     process::{self, Child, Command, ExitStatus, Stdio},
     sync::{
         Arc, LazyLock, Mutex, MutexGuard, OnceLock, PoisonError,
-        atomic::{AtomicBool, AtomicU32, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicUsize, Ordering},
         mpsc::{self, RecvTimeoutError},
     },
     thread,
@@ -93,7 +93,7 @@ use tellus::{
         MemberState, Peer, Schema, Transition, UnsupportedSchemaVersion,
         codec::{Codec, CodecError},
         downing::{Disconnected, DownAfterDeadline, Downing, DowningProvider, KeepMajority},
-        failure::{Deadline, DeadlineFailureDetector},
+        failure::{Deadline, DeadlineFailureDetector, FailureDetector},
         pubsub::{self, Topic},
         receptionist::{self, ReceptionistError, Subscription},
         transport::{
@@ -121,6 +121,7 @@ const FRAME_SIZE_ENV: &str = "TELLUS_REMOTING_FRAME_SIZE";
 const FORCE_COLLISION_ENV: &str = "TELLUS_REMOTING_FORCE_COLLISION";
 const APP_VERSION_ENV: &str = "TELLUS_REMOTING_APP_VERSION";
 const STALE_REF_ENV: &str = "TELLUS_REMOTING_STALE_REF";
+const BLIND_ENV: &str = "TELLUS_REMOTING_BLIND";
 const ADDR_PREFIX: &str = "ADDR ";
 const REF_PREFIX: &str = "REF ";
 const JOIN_PREFIX: &str = "JOIN ";
@@ -132,6 +133,7 @@ const MTLS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERGENCE_POLL: Duration = Duration::from_millis(200);
 const DEPARTURE_PINGS: u32 = 1_000;
 const QUICK_LEAVE_ROUNDS: usize = 5;
+const DOWNING_DEADLINE: Duration = Duration::from_secs(2);
 const QUICK_LEAVE_CLUSTER: usize = 3;
 const MAJORITY_AFTER: Duration = Duration::from_secs(1);
 const JOIN_HOLD_GRACE: Duration = Duration::from_secs(2);
@@ -410,6 +412,9 @@ fn self_down_node() -> anyhow::Result<()> {
 /// before it is downed, whatever the timing.
 static HOLD_DOWNING: AtomicBool = AtomicBool::new(false);
 
+/// How often [GatedDowning] has decided while not held.
+static DOWNING_DECISIONS: AtomicUsize = AtomicUsize::new(0);
+
 /// The scenarios' downing provider: [DownAfterDeadline] behind the [HOLD_DOWNING] flag.
 struct GatedDowning(DownAfterDeadline);
 
@@ -418,6 +423,7 @@ impl DowningProvider for GatedDowning {
         if HOLD_DOWNING.load(Ordering::Relaxed) {
             Downing::Members(Vec::new())
         } else {
+            DOWNING_DECISIONS.fetch_add(1, Ordering::Relaxed);
             self.0.down(members, disconnected, at)
         }
     }
@@ -609,8 +615,10 @@ fn majority_node() -> anyhow::Result<()> {
     })
 }
 
-/// A node printing its cluster ID: without [SEEDS_ENV] it forms a cluster of its own and stays up
-/// until killed, with seeds it joins through them, then leaves and exits.
+/// A node printing its cluster ID: with [SEEDS_ENV] it joins through them, then leaves and exits.
+/// With [BOOTSTRAP_ENV] it bootstraps from that address list and prints the ID once every address
+/// of the list is an Up member, and without either it forms a cluster of its own. Both stay up
+/// until killed.
 fn cluster_id_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -629,7 +637,21 @@ fn cluster_id_node() -> anyhow::Result<()> {
             }
 
             Err(_) => {
-                cluster::form().context("forming the cluster")?;
+                if let Ok(seeds) = env::var(BOOTSTRAP_ENV) {
+                    let seeds = parse_addrs(&seeds)?;
+                    let size = seeds.len();
+                    bootstrap_cluster(seeds).await?;
+                    let mut subscription = cluster::cluster_state()?;
+                    timeout(TIMEOUT, async {
+                        while subscription.current().up().count() < size {
+                            subscription.changed().await;
+                        }
+                    })
+                    .await
+                    .context("awaiting every bootstrapped node Up")?;
+                } else {
+                    cluster::form().context("forming the cluster")?;
+                }
                 false
             }
         };
@@ -731,6 +753,17 @@ fn successor_node() -> anyhow::Result<()> {
         bail!("the departure of a cluster of one names a peer: {departure:?}");
     }
     Ok(())
+}
+
+/// Never suspects anyone, so a node keeps every member it once reached in the reachability graph.
+struct BlindFailureDetector;
+
+impl FailureDetector for BlindFailureDetector {
+    fn record_heartbeat(&mut self, _: Instant) {}
+
+    fn is_available(&self, _: Instant) -> bool {
+        true
+    }
 }
 
 /// Downs nobody, so a node only ever learns it is dead from the others.
@@ -1693,10 +1726,12 @@ fn client() -> anyhow::Result<()> {
     ask_down_scenario(&runtime).context("ask down scenario")?;
 
     relayed_reachability_scenario(&runtime).context("relayed reachability scenario")?;
+    blind_witness_scenario(&runtime).context("blind witness scenario")?;
     retried("restart scenario", || restart_scenario(&runtime)).context("restart scenario")?;
 
     changes_scenario(&runtime).context("changes scenario")?;
     retried("bootstrap scenario", || bootstrap_scenario(&runtime)).context("bootstrap scenario")?;
+    retried("cold start scenario", cold_start_scenario).context("cold start scenario")?;
     retried("down scenario", || down_scenario(&runtime)).context("down scenario")?;
     zombie_scenario(&runtime).context("zombie scenario")?;
     held_join_scenario(&runtime).context("held join scenario")?;
@@ -2789,28 +2824,7 @@ fn relayed_reachability_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let witness = resolve_ref::<Request>(&mut witness_process)?;
     let mut victim_process = KillOnDrop(spawn_node(Role::Echo)?);
     let victim = resolve_ref::<Request>(&mut victim_process)?;
-    let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
-
-    let deadline = Instant::now() + TIMEOUT;
-    let (witness_addr, victim_addr) = loop {
-        let witness_view = runtime
-            .block_on(witness.ask(TIMEOUT, |reply_to| Request::Members { reply_to }))
-            .context("witness members ask")?;
-        let victim_view = runtime
-            .block_on(victim.ask(TIMEOUT, |reply_to| Request::Members { reply_to }))
-            .context("victim members ask")?;
-
-        let all = [self_addr, witness_view.own, victim_view.own];
-        let converged =
-            |view: &MemberAddrs| all.iter().all(|member_addr| view.up.contains(member_addr));
-        if converged(&witness_view) && converged(&victim_view) {
-            break (witness_view.own, victim_view.own);
-        }
-        if Instant::now() >= deadline {
-            bail!("members did not converge: {witness_view:?} versus {victim_view:?}");
-        }
-        thread::sleep(CONVERGENCE_POLL);
-    };
+    let (witness_addr, victim_addr) = converged_pair(runtime, &witness, &victim)?;
 
     let (event_tx, event_rx) = mpsc::channel();
     let system = ActorSystem::new(DeathWatch {
@@ -2848,6 +2862,91 @@ fn relayed_reachability_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     witness.tell(Request::Stop);
     expect_exit(&mut witness_process, "relayed reachability witness")?;
     Ok(())
+}
+
+/// A member which only this node's detector reports unreachable stays inside this node's
+/// component while a witness still reaches it directly: the link is listed broken, and the member
+/// stays Up for twice the downing deadline, while the provider keeps deciding. Downing on this
+/// node's detector alone would down it. The witness's detector never suspects anyone, so it keeps
+/// the killed node reachable in the graph.
+fn blind_witness_scenario(runtime: &Runtime) -> anyhow::Result<()> {
+    let mut witness_process = KillOnDrop(spawn_blind_node()?);
+    let witness = resolve_ref::<Request>(&mut witness_process)?;
+    let mut victim_process = KillOnDrop(spawn_node(Role::Echo)?);
+    let victim = resolve_ref::<Request>(&mut victim_process)?;
+    let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
+    let (witness_addr, victim_addr) = converged_pair(runtime, &witness, &victim)?;
+
+    let mut subscription = cluster::cluster_state()?;
+    let mut observed = Vec::new();
+    victim_process
+        .0
+        .kill()
+        .context("killing the victim process")?;
+    await_state(runtime, &mut subscription, &mut observed, |state| {
+        state
+            .broken_links()
+            .iter()
+            .any(|link| link.observer().addr() == self_addr && link.subject().addr() == victim_addr)
+    })
+    .context("this node's link to the killed node is listed broken")?;
+    let decisions = DOWNING_DECISIONS.load(Ordering::Relaxed);
+    let mut state = observed.last().context("a state was observed")?.clone();
+    let window = Instant::now() + 2 * DOWNING_DEADLINE;
+    loop {
+        if !is_up(&state, victim_addr) || !is_up(&state, witness_addr) {
+            bail!("a member was downed although the witness reaches it: {state:?}");
+        }
+        if !state.unreachable().is_empty() {
+            bail!("a member left this node's component although the witness reaches it: {state:?}");
+        }
+        let remaining = window.saturating_duration_since(Instant::now());
+        if remaining.is_zero()
+            || runtime
+                .block_on(timeout(remaining, subscription.changed()))
+                .is_err()
+        {
+            break;
+        }
+        state = subscription.current();
+    }
+    let decided = DOWNING_DECISIONS.load(Ordering::Relaxed) - decisions;
+    if decided == 0 {
+        bail!("the downing provider never decided while the link was broken");
+    }
+
+    cluster::down(victim_addr).context("downing the killed node")?;
+    witness.tell(Request::Stop);
+    expect_exit(&mut witness_process, "blind witness")
+}
+
+/// The addresses of two freshly spawned members, once both and this node see all three Up.
+fn converged_pair(
+    runtime: &Runtime,
+    witness: &ActorRef<Request>,
+    victim: &ActorRef<Request>,
+) -> anyhow::Result<(SocketAddr, SocketAddr)> {
+    let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
+    let deadline = Instant::now() + TIMEOUT;
+    loop {
+        let witness_view = runtime
+            .block_on(witness.ask(TIMEOUT, |reply_to| Request::Members { reply_to }))
+            .context("witness members ask")?;
+        let victim_view = runtime
+            .block_on(victim.ask(TIMEOUT, |reply_to| Request::Members { reply_to }))
+            .context("victim members ask")?;
+
+        let all = [self_addr, witness_view.own, victim_view.own];
+        let converged =
+            |view: &MemberAddrs| all.iter().all(|member_addr| view.up.contains(member_addr));
+        if converged(&witness_view) && converged(&victim_view) {
+            return Ok((witness_view.own, victim_view.own));
+        }
+        if Instant::now() >= deadline {
+            bail!("members did not converge: {witness_view:?} versus {victim_view:?}");
+        }
+        thread::sleep(CONVERGENCE_POLL);
+    }
 }
 
 /// A node restarted at its old address is a new incarnation. The client first talks to the old
@@ -3686,6 +3785,30 @@ fn bootstrap_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     second.tell(Request::Stop);
     expect_exit(&mut first_process, "first bootstrap echo")?;
     expect_exit(&mut second_process, "second bootstrap echo")?;
+    Ok(())
+}
+
+/// A cold start: three nodes bootstrap from the identical address list while none of them is a
+/// member of anything, so bootstrap itself has to decide which one forms. All three end up in one
+/// cluster.
+fn cold_start_scenario() -> anyhow::Result<()> {
+    let addrs = reserved_addrs(3)?;
+    let mut processes = addrs
+        .iter()
+        .map(|addr| spawn_bootstrap_node(Role::ClusterId, *addr, &addrs).map(KillOnDrop))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let clusters = processes
+        .iter_mut()
+        .zip(&addrs)
+        .map(|(process, addr)| {
+            stdout_line(&mut process.0, CLUSTER_PREFIX)
+                .with_context(|| format!("the cluster of the node at {addr}"))
+        })
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    anyhow::ensure!(
+        clusters.iter().all(|cluster| *cluster == clusters[0]),
+        "the cold start formed more than one cluster: {clusters:?}"
+    );
     Ok(())
 }
 
@@ -5572,6 +5695,9 @@ async fn start_endpoint() -> anyhow::Result<SocketAddr> {
     if let Ok(frame_size) = env::var(FRAME_SIZE_ENV) {
         config.max_frame_size = frame_size.parse().context("frame size")?;
     }
+    if env::var(BLIND_ENV).is_ok() {
+        config.failure_detector = Arc::new(|| Box::new(BlindFailureDetector));
+    }
     let app_version = env::var(APP_VERSION_ENV).unwrap_or_else(|_| APP_VERSION.to_string());
     config.app_version = Some(app_version.parse().context("application version")?);
     cluster::start_endpoint(config, TimeoutTransport(transport))?;
@@ -5602,7 +5728,7 @@ fn test_config(addr: SocketAddr) -> EndpointConfig {
     let mut config = EndpointConfig::new(addr);
     config.failure_detector = Arc::new(move || Box::new(DeadlineFailureDetector::new(deadline)));
     config.downing_provider =
-        Arc::new(|| Box::new(GatedDowning(DownAfterDeadline::new(Duration::from_secs(2)))));
+        Arc::new(|| Box::new(GatedDowning(DownAfterDeadline::new(DOWNING_DEADLINE))));
     config.down_retention = Duration::from_secs(5);
     config
 }
@@ -5808,6 +5934,20 @@ fn spawn_small_frame_node() -> anyhow::Result<Child> {
         .stdout(Stdio::piped())
         .spawn()
         .context("small frame echo process")?;
+    await_bound(&mut child, any_port())?;
+    Ok(child)
+}
+
+/// An echo node whose failure detector never suspects anyone.
+fn spawn_blind_node() -> anyhow::Result<Child> {
+    let seed = SELF_ADDR.get().context("endpoint not started")?;
+    let mut child = Command::new(env::current_exe()?)
+        .env(ROLE_ENV, Role::Echo.as_str())
+        .env(SEEDS_ENV, seed.to_string())
+        .env(BLIND_ENV, "")
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("blind echo process")?;
     await_bound(&mut child, any_port())?;
     Ok(child)
 }

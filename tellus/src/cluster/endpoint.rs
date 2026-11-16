@@ -4562,4 +4562,56 @@ mod tests {
                 if len == max + 1 && limit == max
         ));
     }
+
+    /// docs/cluster.md, Leaving: "The whole exchange is bounded by `leave_timeout`: one deadline
+    /// for every lane, not restarted between the phases." Two silent lanes cost one timeout.
+    #[tokio::test(start_paused = true)]
+    async fn two_silent_lanes_share_one_leave_timeout() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        for port in [2, 3] {
+            endpoint
+                .send(NodeId::new(addr(port)), gossip())
+                .expect("a lane opens");
+        }
+        let _silent = dial_requests.try_iter().collect::<Vec<_>>();
+
+        let started = tokio_time::Instant::now();
+        let departure = endpoint.leave().await.expect("a departure");
+
+        assert_eq!(departure.timed_out(), [addr(2), addr(3)]);
+        assert_eq!(started.elapsed(), endpoint.config().leave_timeout);
+    }
+
+    /// docs/cluster.md, Leaving: "The announcement goes to every Up member, a lane still being
+    /// dialed included".
+    #[tokio::test(start_paused = true)]
+    async fn the_departure_is_queued_on_a_lane_still_being_dialed() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        endpoint.send(member, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+        assert_eq!(endpoint.lane_connected(member.addr()), Some(false));
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let announced = dial.control_rx.try_iter().any(|frame| {
+            matches!(&frame, Frame::Gossip { members, .. } if members
+                .iter()
+                .any(|listed| listed.node() == endpoint.node() && listed.state() == MemberState::Left))
+        });
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        let _ = leaving.await;
+
+        assert!(
+            announced,
+            "the departure is queued on the lane still being dialed"
+        );
+    }
 }

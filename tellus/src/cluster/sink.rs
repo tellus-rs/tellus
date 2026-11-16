@@ -184,13 +184,70 @@ pub(crate) fn admit_frame(
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, SchemaVersion,
+        ActorId, ActorRef, AskError, ReplyTo, SchemaVersion,
         cluster::{
+            codec::{Codec, CodecError},
+            endpoint::{self, EndpointConfig, EndpointInner},
             frame::Frame,
-            sink::{RemoteSendError, admit_frame},
+            node::NodeId,
+            schema::{Peer, Schema},
+            sink::{RemoteSendError, RemoteSink, admit_frame},
         },
     };
-    use std::borrow::Cow;
+    use serde::{Deserialize, Serialize};
+    use std::{
+        borrow::Cow,
+        num::NonZeroUsize,
+        pin::pin,
+        task::{Context, Poll, Waker},
+        time::Duration,
+    };
+
+    /// A request a full outbound queue refuses fails the ask as `MailboxFull` at the send.
+    #[tokio::test]
+    async fn a_request_refused_by_a_full_outbound_queue_fails_as_mailbox_full() {
+        let mut config = EndpointConfig::new("127.0.0.1:1".parse().expect("valid address"));
+        config.outbound_capacity = NonZeroUsize::MIN;
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        let responder =
+            remote_ref::<Request>(NodeId::new("127.0.0.1:2".parse().expect("valid address")));
+
+        assert!(asked(endpoint, &responder).is_pending());
+        assert!(matches!(
+            asked(endpoint, &responder),
+            Poll::Ready(Err(AskError::MailboxFull))
+        ));
+    }
+
+    /// A request toward an unreachable node, here another incarnation at this node's address,
+    /// fails the ask as `ActorTerminated` at the send.
+    #[tokio::test]
+    async fn a_request_toward_an_unreachable_node_fails_as_actor_terminated() {
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let responder = remote_ref::<Request>(NodeId::new(endpoint.node().addr()));
+
+        assert!(matches!(
+            asked(endpoint, &responder),
+            Poll::Ready(Err(AskError::ActorTerminated))
+        ));
+    }
+
+    /// A request the codec cannot encode fails the ask as `NotEncodable` at the send.
+    #[tokio::test]
+    async fn a_request_which_cannot_be_encoded_fails_as_not_encodable() {
+        let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let responder =
+            remote_ref::<Unencodable>(NodeId::new("127.0.0.1:2".parse().expect("valid address")));
+
+        assert!(matches!(
+            asked(endpoint, &responder),
+            Poll::Ready(Err(AskError::NotEncodable(CodecError::Encode(_))))
+        ));
+    }
 
     /// Admission measures the whole frame, envelope included, not just the payload.
     #[test]
@@ -215,5 +272,52 @@ mod tests {
             admit_frame(frame(), 32),
             Err(RemoteSendError::FrameTooLarge { len: actual, max: 32 }) if actual == len
         ));
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Request(ReplyTo<u64>);
+
+    impl Schema for Request {}
+
+    impl From<ReplyTo<u64>> for Request {
+        fn from(reply_to: ReplyTo<u64>) -> Self {
+            Self(reply_to)
+        }
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct Unencodable(ReplyTo<u64>);
+
+    impl Schema for Unencodable {
+        fn encode(&self, _: Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
+            Err(CodecError::make_encoding("this request cannot be encoded"))
+        }
+    }
+
+    impl From<ReplyTo<u64>> for Unencodable {
+        fn from(reply_to: ReplyTo<u64>) -> Self {
+            Self(reply_to)
+        }
+    }
+
+    fn remote_ref<M>(node: NodeId) -> ActorRef<M>
+    where
+        M: Schema,
+    {
+        ActorRef::remote(ActorId::new(), RemoteSink::new(node))
+    }
+
+    /// The ask after its first poll, which is when it sends.
+    fn asked<M>(
+        endpoint: &'static EndpointInner,
+        responder: &ActorRef<M>,
+    ) -> Poll<Result<u64, AskError>>
+    where
+        M: From<ReplyTo<u64>>,
+    {
+        endpoint::with_current(endpoint, || {
+            let ask = pin!(responder.ask(Duration::from_secs(60), M::from));
+            ask.poll(&mut Context::from_waker(Waker::noop()))
+        })
     }
 }

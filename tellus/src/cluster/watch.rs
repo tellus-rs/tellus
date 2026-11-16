@@ -497,14 +497,17 @@ fn listed(taken: Vec<(ActorId, Watchers)>) -> Vec<(ActorId, Vec<Watcher>)> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, MailboxCapacity,
+        ActorId, Incoming, MailboxCapacity,
         cluster::{
+            endpoint::{self, EndpointConfig, EndpointInner},
+            membership::{self, Member, MemberState},
             node::NodeId,
-            watch::{WatcherTable, WireWatchTable},
+            watch::{WatcherTable, WireWatchTable, watch_remote},
         },
         mailbox::make_mailbox,
         watch::Watcher,
     };
+    use tokio::time::Instant;
 
     fn watcher(id: ActorId) -> Watcher {
         let (mailbox_handle, _mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
@@ -513,6 +516,55 @@ mod tests {
 
     fn peer() -> NodeId {
         NodeId::new("127.0.0.1:1234".parse().expect("valid address"))
+    }
+
+    /// A watch on an incarnation already Left or Down fires its signal at once, without a `Watch`
+    /// frame. One on a Left incarnation whose connection still drains fires only with its deferred
+    /// death.
+    #[tokio::test]
+    async fn a_watch_on_a_dead_incarnation_fires_at_once() {
+        let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests(EndpointConfig::new(
+            "127.0.0.1:1".parse().expect("valid address"),
+        ));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let down = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
+        let left = NodeId::new("127.0.0.1:3".parse().expect("valid address"));
+        let draining = NodeId::new("127.0.0.1:4".parse().expect("valid address"));
+        endpoint.update(|membership, _| {
+            membership.add_up(down);
+            membership.add_up(draining);
+        });
+        membership::on_gossip(
+            endpoint,
+            &[
+                Member::new(down, MemberState::Down),
+                Member::new(left, MemberState::Left),
+            ],
+        );
+        endpoint.end_overdue_departures(Instant::now() + endpoint.config().leave_timeout);
+        membership::on_gossip(endpoint, &[Member::new(draining, MemberState::Left)]);
+        assert!(!endpoint.departure_deferred(left));
+        assert!(endpoint.departure_deferred(draining));
+        while lane_dials.try_recv().is_ok() {}
+
+        let target = ActorId::new();
+        for peer in [down, left] {
+            let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
+            let (incoming_rx, _watcher_registration) = mailbox.split();
+            let watcher = Watcher::new(ActorId::new(), mailbox_handle.terminated_handler());
+            endpoint::with_current(endpoint, || watch_remote(peer, target, watcher));
+            assert!(
+                matches!(incoming_rx.try_recv(), Ok(Incoming::Terminated(id)) if id == target),
+                "a watch on {peer} did not fire at once"
+            );
+        }
+        assert!(lane_dials.is_empty());
+
+        let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
+        let (incoming_rx, _watcher_registration) = mailbox.split();
+        let watcher = Watcher::new(ActorId::new(), mailbox_handle.terminated_handler());
+        endpoint::with_current(endpoint, || watch_remote(draining, target, watcher));
+        assert!(incoming_rx.is_empty());
     }
 
     /// A given-up lane belongs to an address, so its watchers are taken by address: every
