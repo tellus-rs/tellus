@@ -212,7 +212,8 @@ The relevant settings are:
 
 - The nodes wrap the transport in a two second connect timeout. QUIC gives up on a silent address
   only after its own handshake timeout, tens of seconds, and a partition leaves three of the four
-  seeds silent, so an unbounded bootstrap round would outlast the fault it is meant to survive.
+  seeds silent. Bootstrap bounds each join attempt by its `join_attempt_timeout` itself, but a lane
+  redialing a silent peer would wait out a whole handshake timeout per attempt.
 - The nodes use `QuicTransport::dev`, which does not verify certificates. That lets the demo run
   without a certificate authority. A deployment uses `QuicTransport::mutual_tls`, which accepts
   only peers whose certificates verify against the cluster's certificate authority. A peer's

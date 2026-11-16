@@ -9,10 +9,11 @@ retry. A stale target and a transient failure are indistinguishable to the resol
 skipped alike. A partial view does settle, so a target failing throughout the settle window shrinks
 the universe the formation provider counts its majority against.
 
-The default resolver keeps no response cache. Bootstrap polls DNS every `resolve_interval` of its
-`BootstrapConfig` to see nodes come and go, and a cached answer would hide a node registered after
-it for the record's TTL, e.g. a sibling restarting a moment later than this one. A resolver given
-via `with_resolver` is used as configured.
+The default resolver keeps no response cache. Bootstrap queries DNS before every join round, and
+again after a round it would decide formation on, to see nodes come and go; the rounds are
+`resolve_interval` of its `BootstrapConfig` apart. A cached answer would hide a node registered
+after it for the record's TTL, e.g. a sibling restarting a moment later than this one. A resolver
+given via `with_resolver` is used as configured.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
 lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
@@ -33,6 +34,10 @@ cluster::start_endpoint(EndpointConfig::new(addr), transport)?;
 let seeds = DnsSeeds::srv("_tellus._udp.tellus.default.svc.cluster.local")?;
 timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await??;
 ```
+
+A join round waits for each address at most `join_attempt_timeout` of the `BootstrapConfig`, 5 s by
+default, so a live member behind a few silent addresses is still reached within that minute. Raise
+the overall timeout with the number of addresses discovery may resolve which do not answer.
 
 `DnsSeeds::srv`, `DnsSeeds::ip` and `DnsSeeds::new` read the system resolver configuration;
 `DnsSeeds::with_resolver` takes a resolver of your own instead. All of them refuse a blank name and

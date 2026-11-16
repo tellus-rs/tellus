@@ -2,7 +2,8 @@
 //! listing the pods matching a label selector through the Kubernetes API and pairing each pod's
 //! address with a port. That port is either one number for all pods or the number a named container
 //! port carries in each pod. Pass it to [bootstrap](tellus::cluster::bootstrap), which lists the
-//! pods every `resolve_interval` and joins through the listed addresses on every listing, retrying
+//! pods before every join round, `resolve_interval` apart, and joins through the listed addresses
+//! on every listing, retrying
 //! failures, e.g. pods still starting while an orchestrator rolls out the others. Only forming a
 //! new cluster waits for the view to settle. Unlike a headless service, which publishes ready
 //! pods only, this sees a pod as soon as it has an address, so a readiness probe may gate on

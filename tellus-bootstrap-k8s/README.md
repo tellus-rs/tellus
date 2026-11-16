@@ -47,6 +47,10 @@ let seeds = K8sSeeds::new(Pods {
 timeout(Duration::from_secs(60), bootstrap(seeds, BootstrapConfig::new())).await??;
 ```
 
+A join round waits for each address at most `join_attempt_timeout` of the `BootstrapConfig`, 5 s by
+default, so a live member behind a few silent addresses is still reached within that minute. Raise
+the overall timeout with the number of addresses discovery may resolve which do not answer.
+
 `K8sSeeds::new` takes the service account mounted into the pod, or the kubeconfig outside a
 cluster; `with_client` takes a client of your own. Both refuse a blank selector, which would match
 every pod in the namespace, as well as a blank namespace or port name and a zero list timeout.

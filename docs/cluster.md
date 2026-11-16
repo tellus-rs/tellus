@@ -115,6 +115,7 @@ after a burst of traffic, see [Failure detection](#failure-detection-and-node-de
 | `min_nodes` | 2 | not 0 |
 | `settle` | 3s | 0 decides on the second resolution seeing the same addresses |
 | `resolve_interval` | 1s | not 0 |
+| `join_attempt_timeout` | 5s | not 0 |
 | `formation_provider` | `majority` | `majority`, `majority_with_fallback`, `unanimous` or `explicit` |
 | `formation_provider.majority_with_fallback.after` | none | 0 passes over on the first unavailable round |
 | `probe_interval` | 30s | not 0; `null` turns the probe off |
@@ -260,11 +261,26 @@ but the two clusters never merge.
 `SeedDiscovery` resolves them; the provided ones are `FixedSeeds` in tellus, SRV and A/AAAA records
 in the [`tellus-bootstrap-dns`](../tellus-bootstrap-dns) crate and pods listed by label selector in
 the [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s) crate. The *universe* is the resolved set
-united with this node's own address. Bootstrap resolves every `resolve_interval` and attempts to
-join through every resolved address but this node's own, lowest first, on every resolution, so a
-node finds an existing cluster at once. Only the formation decision waits for the view to settle. It
-is taken on a round over a universe which has held at least `min_nodes` addresses unchanged for the
-settle window (`settle`), and only when none of them admitted this node. A settled view holding
+united with this node's own address. On every resolution, bootstrap attempts to join through every
+resolved address but this node's own, lowest first, in one round, so a node finds an existing
+cluster at once. It pauses for `resolve_interval` after every round, then resolves again. A round
+waits for each attempt at most `join_attempt_timeout` (5 s by default) and counts an attempt which
+outlasts it as unavailable. Without that bound a silent address would hold the round until QUIC
+gives up on it, 30 s, so two silent addresses below a live member would use up a 60 s bootstrap
+timeout. The default leaves room for a QUIC handshake, which takes milliseconds on a LAN, plus the
+`Join` handshake and the member snapshot, each bounded by `heartbeat_interval`. An attempt which
+times out before it connected is abandoned and leaves nothing behind. One which has sent its `Join`
+handshake runs on in the background, since the seed may count this node already. Its outcome takes
+effect as it would have inside the round: an admission makes this node a member, a validated answer
+pins the address, and a failure short of a definitive answer is ambiguous, see above. No formation is taken while it runs. Only the formation
+decision waits for the view to settle. It is taken on a round over a universe which has held at
+least `min_nodes` addresses unchanged for the settle window (`settle`), and only when none of them
+admitted this node. A round can take a while, and a node registering meanwhile is not in its
+universe. So bootstrap resolves again after such a round and decides only if that resolution shows
+the same universe, still settled. A changed universe starts the settle window over, and the next
+round is taken over it. That adds no retry loop of its own: a discovery which keeps changing its set
+blocks the decision as long as it changes, as the settle window always did, while the order of the
+resolved addresses never matters. Joins go on in every round regardless. A settled view holding
 fewer than `min_nodes` addresses blocks that decision, so it is logged at warn level on every
 resolution. A round held back by a seed (`JoinsHeld`) is only observed and never asked to `form`.
 Bootstrap returns as soon as this node is a member, its own formation included, and at once when it
@@ -272,7 +288,7 @@ already is. Membership owns failure detection and downing from then on. `min_nod
 universe while the formation provider counts what its addresses answered. That distinction keeps a
 restarted node from re-forming inside a partition: discovery is unaffected by a partition,
 reachability is not. Resolve failures are retried and restart the settle window, since nothing was
-observed during them. There is no internal timeout, so the call is bounded by the caller's timeout.
+observed during them. There is no overall timeout, so the call is bounded by the caller's timeout.
 `Downed` is fatal per process and means the caller should exit, letting the restart mint the fresh
 incarnation. What does this not prevent? Nodes deciding on views with *different lowest addresses*
 can still form separate clusters, which never merge on their own, since the formation rule is only

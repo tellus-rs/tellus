@@ -3315,7 +3315,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         assert_eq!(dial.addr, seed);
         let (connected, mut acceptor) = Acceptor::connected();
@@ -3355,7 +3356,9 @@ mod tests {
         let (seed, other) = (addr(2), addr(3));
 
         let round =
-            task::spawn(async move { membership::join_round(endpoint, &[seed, other]).await });
+            task::spawn(
+                async move { membership::join_round(endpoint, &[seed, other], None).await },
+            );
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -3368,7 +3371,9 @@ mod tests {
         ));
 
         let round =
-            task::spawn(async move { membership::join_round(endpoint, &[seed, other]).await });
+            task::spawn(
+                async move { membership::join_round(endpoint, &[seed, other], None).await },
+            );
         for asked in [seed, other] {
             let dial = timeout(Duration::from_secs(5), joining.dials.recv())
                 .await
@@ -3438,6 +3443,46 @@ mod tests {
         drop(result_rx);
         assert!(form_once_settled(endpoint).await.is_ok());
         drop(dial);
+    }
+
+    /// A round abandons an attempt outlasting its timeout and counts it as unavailable. One still
+    /// connecting leaves nothing behind. One past its `Join` handshake runs on, and its failure
+    /// leaves the join ambiguous, which refuses a formation.
+    #[tokio::test]
+    async fn a_timed_out_attempt_is_unavailable_and_ambiguous_only_past_its_handshake() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (silent, answering) = (addr(2), addr(3));
+
+        let round = task::spawn(async move {
+            membership::join_round(
+                endpoint,
+                &[silent, answering],
+                Some(Duration::from_millis(100)),
+            )
+            .await
+        });
+        let silent_dial = joining.dials.recv().await.expect("a dial");
+        assert_eq!(silent_dial.addr, silent);
+        let dial = joining.dials.recv().await.expect("a dial");
+        assert_eq!(dial.addr, answering);
+        let (connected, mut acceptor) = Acceptor::connected();
+        assert!(dial.answer.send(connected).is_ok());
+        acceptor.joiner_handshake().await;
+
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::NoAdmission(outcomes)
+                if outcomes == [
+                    (silent, JoinOutcome::Unavailable),
+                    (answering, JoinOutcome::Unavailable),
+                ]
+        ));
+        assert!(matches!(
+            form_once_settled(endpoint).await,
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == answering
+        ));
+        drop((silent_dial, acceptor));
     }
 
     /// Attempts are exclusive: the second is not even dialed until the first has resolved.
@@ -3697,7 +3742,8 @@ mod tests {
             )
             .collect();
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -3723,7 +3769,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -3893,7 +3940,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4066,7 +4114,8 @@ mod tests {
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let seed = addr(4);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4080,7 +4129,8 @@ mod tests {
             JoinRound::ForeignCluster(_)
         ));
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4160,7 +4210,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4255,7 +4306,9 @@ mod tests {
         let (seed, other) = (addr(2), addr(3));
 
         let round =
-            task::spawn(async move { membership::join_round(endpoint, &[seed, other]).await });
+            task::spawn(
+                async move { membership::join_round(endpoint, &[seed, other], None).await },
+            );
         let dial = joining.dials.recv().await.expect("a dial");
         assert_eq!(dial.addr, seed);
         let (connected, mut acceptor) = Acceptor::connected();
@@ -4339,7 +4392,8 @@ mod tests {
                 endpoint.node_death(dead);
             }
 
-            let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+            let round =
+                task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
             let dial = joining.dials.recv().await.expect("a dial");
             let (connected, mut acceptor) = Acceptor::connected();
             if matches!(failure, PostSendFailure::Unwritable) {
@@ -4392,7 +4446,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4419,7 +4474,8 @@ mod tests {
         let seed = addr(2);
 
         for refuse in [false, true] {
-            let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+            let round =
+                task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
             let dial = joining.dials.recv().await.expect("a dial");
             let (connected, mut acceptor) = Acceptor::connected();
             assert!(dial.answer.send(connected).is_ok());
@@ -4528,7 +4584,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
@@ -4565,7 +4622,8 @@ mod tests {
         let endpoint = joining.endpoint;
         let seed_a = addr(2);
 
-        let round = task::spawn(async move { membership::join_round(endpoint, &[seed_a]).await });
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[seed_a], None).await });
         let dial = joining.dials.recv().await.expect("a dial");
         let (connected, mut acceptor) = Acceptor::connected();
         assert!(dial.answer.send(connected).is_ok());
