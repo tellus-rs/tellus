@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-k8s-v0.1.4...tellus-bootstrap-k8s-v0.2.0) - 2026-11-16
+
+### Added
+
+- add stashing, opt-in per actor via Actor::Stash
+
+### Fixed
+
+- *(bootstrap)* [**breaking**] validate DNS queries and bound the Kubernetes list call
+- *(cluster)* [**breaking**] return a ClusterStateSubscription from cluster_state
+
+### Other
+
+- *(cluster)* [**breaking**] rename bootstrap fields, Formation and codec makers
+
 ## [0.1.4](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-k8s-v0.1.3...tellus-bootstrap-k8s-v0.1.4) - 2026-11-01
 
 ### Other

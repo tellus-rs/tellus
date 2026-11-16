@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.3...tellus-v0.6.0) - 2026-11-16
+
+### Added
+
+- *(persistence)* [**breaking**] bound every store call by a timeout
+- *(host)* make HostConfig deserializable
+- check more fencing, isolation and extremes in the store contract
+- [**breaking**] replace the passivate function of Host with Hosted<M>
+- *(cluster)* [**breaking**] version message payloads for rolling upgrades
+- add stashing, opt-in per actor via Actor::Stash
+
+### Fixed
+
+- *(persistence)* [**breaking**] refuse a sequence number overflow instead of saturating
+- *(cluster)* [**breaking**] refuse to leave an endpoint which never formed or joined
+- *(cluster)* [**breaking**] cap derived deadlines and bound oversize config values
+- *(cluster)* keep a self-down from settling watchers and asks
+- *(cluster)* [**breaking**] fail directory reads once this node has left or is down
+- *(cluster)* send toward a peer at the smaller frame limit of both
+- *(cluster)* release the reply destinations of a dead-lettered reply
+- *(cluster)* name the asking incarnation in reply frames
+- *(cluster)* refuse sends toward a dead incarnation through any lane
+- *(cluster)* [**breaking**] serialize MemberState in snake_case
+- *(cluster)* [**breaking**] refuse zero durations which switch off a safeguard
+- *(cluster)* refuse a send toward another incarnation of this node
+- *(cluster)* keep a panicking decode from closing the connection
+- *(cluster)* keep a panicking reply encode from failing the responder
+- *(inspect)* [**breaking**] end event streams and the recorder on a shutdown future
+- [**breaking**] refuse a NUL in a persistence ID, map positions beyond BIGINT
+- keep a panicking reply_to conversion from failing the responder
+- *(cluster)* [**breaking**] return a ClusterStateSubscription from cluster_state
+- decode long CBOR text and exact JSON floats, refuse non-finite ones
+- *(cluster)* warn of an overdue departure only if it was awaited
+- *(cluster)* ask every seed before forming once a pin is released
+- *(cluster)* hold back joins while this node is leaving
+- *(cluster)* drop removed reply entries outside the pending lock
+- *(cluster)* stop a lane from dialing once its endpoint is downed
+
+### Other
+
+- *(cluster)* limit the release of a lost frame to one not yet sent
+- *(cluster)* pin every place which sends at the peer's frame limit
+- *(cluster)* pin the envelope version order, the QUIC prefix and refs
+- *(cluster)* say what releases a dead-lettered reply's destinations
+- *(cluster)* [**breaking**] rename bootstrap fields, Formation and codec makers
+- *(cluster)* resend Spawn until the lost terminated client has a child
+- *(cluster)* pin the wire bytes of every frame
+- *(cluster)* [**breaking**] make the payload codec a closed enum
+- *(cluster)* freeze a zombie only once its own join has returned
+- *(cluster)* drop the zombie's deadline, tell closed stdout apart
+- add release notes for the breaking changes since 0.5.3
+- state the codecs' limits on nesting and on Some(None)
+- add a how-to example for retrying failed writes
+- retry the fourth lookup of the stash how-to instead of sleeping
+- add a how-to example for stashing
+- state the stash exception to the unwatch contract
+- add the stash bench as a binary of its own
+- run the doctests on the derived nightly
+- mention clustering in the crate description
+- show the build badge for main only
+- encode events in a plain loop
+- rename docker-compose.yaml to compose.yaml
+
 ## [0.5.3](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.2...tellus-v0.5.3) - 2026-11-01
 
 ### Other
