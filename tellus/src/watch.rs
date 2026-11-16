@@ -92,7 +92,10 @@ mod tests {
         ActorId,
         watch::{ActorTerminated, TerminatedHandler, Watcher, WatcherRegistry},
     };
-    use std::sync::Arc;
+    use std::{
+        panic::{AssertUnwindSafe, catch_unwind},
+        sync::Arc,
+    };
 
     /// Registering the same watcher twice signals once: a terminated signal only names the
     /// terminated actor, hence a second one would carry nothing.
@@ -136,6 +139,25 @@ mod tests {
         assert!(registry.add(watcher(watcher_id)).is_err());
     }
 
+    /// A panic while the registry's lock is held, here in the destructor of a removed watcher's
+    /// handler, poisons the lock but does not disable the registry: adding and closing still work.
+    #[test]
+    fn a_panic_under_the_lock_does_not_disable_the_registry() {
+        let (registry, watchers) = WatcherRegistry::new();
+
+        let panicking_id = ActorId::new();
+        assert!(
+            registry
+                .add(Watcher::new(panicking_id, Arc::new(PanicOnDrop)))
+                .is_ok()
+        );
+        assert!(catch_unwind(AssertUnwindSafe(|| registry.remove(panicking_id))).is_err());
+
+        let watcher_id = ActorId::new();
+        assert!(registry.add(watcher(watcher_id)).is_ok());
+        assert_eq!(watchers.close().len(), 1);
+    }
+
     fn watcher(watcher_id: ActorId) -> Watcher {
         Watcher::new(watcher_id, Arc::new(Discard))
     }
@@ -145,6 +167,20 @@ mod tests {
     impl TerminatedHandler for Discard {
         fn handle_terminated(&self, _actor_id: ActorId) -> Result<(), ActorTerminated> {
             Ok(())
+        }
+    }
+
+    struct PanicOnDrop;
+
+    impl TerminatedHandler for PanicOnDrop {
+        fn handle_terminated(&self, _actor_id: ActorId) -> Result<(), ActorTerminated> {
+            Ok(())
+        }
+    }
+
+    impl Drop for PanicOnDrop {
+        fn drop(&mut self) {
+            panic!("the handler's destructor panics on purpose");
         }
     }
 }

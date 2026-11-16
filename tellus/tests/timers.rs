@@ -314,6 +314,32 @@ async fn a_panicking_destructor_of_a_canceled_timer_message_is_contained() {
     assert_discarding_is_contained(Discard::Cancel).await;
 }
 
+/// A pending timer's message whose destructor panics is dropped under containment at a restart:
+/// the destructor runs, and the restarted actor answers.
+#[tokio::test]
+async fn a_panicking_timer_message_destructor_at_a_restart_is_contained() {
+    let dropped = Arc::new(AtomicBool::new(false));
+    let (pongs_tx, mut pongs) = mpsc::unbounded_channel();
+    let backoff = Backoff::new(Duration::from_nanos(1), Duration::from_nanos(1))
+        .expect("the bounds are valid");
+    let config = ActorConfig::default().with_supervision_strategy(SupervisionStrategy::Restart(
+        RestartPolicy::new(NonZeroU32::MIN).with_backoff(backoff),
+    ));
+    let system = ActorSystem::with_config(
+        Rearmer {
+            dropped: dropped.clone(),
+            pongs: pongs_tx,
+        },
+        config,
+    );
+
+    system.root().tell(Rearm::Fail);
+    system.root().tell(Rearm::Ping);
+    next_event(&mut pongs).await;
+    assert!(dropped.load(SeqCst));
+    stop(system).await;
+}
+
 /// A `ReplyTo` inside a pending timer's message resolves its ask as `NoReply` at termination,
 /// since termination drops the timer messages.
 #[tokio::test]
@@ -887,6 +913,58 @@ impl Actor for Discarder {
 enum Discard {
     Replace,
     Cancel,
+    Ping,
+    Held { _message: PanickingMessage },
+}
+
+/// Starts a timer in every `init` whose message panics when dropped, fails on command and answers
+/// a ping.
+struct Rearmer {
+    dropped: Arc<AtomicBool>,
+    pongs: mpsc::UnboundedSender<()>,
+}
+
+impl Actor for Rearmer {
+    type Message = Rearm;
+    type Timers = Timed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Failed;
+
+    fn init(
+        &self,
+        context: &ActorContext<Self::Message, Timed>,
+    ) -> Result<Self::State, Self::Error> {
+        let held = Rearm::Held {
+            _message: PanickingMessage(self.dropped.clone()),
+        };
+        context.start_timer("t", held, Duration::from_secs(3600));
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message, Timed>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        let Incoming::Message(message) = incoming else {
+            unreachable!("the rearmer watches no actor, hence never gets a terminated signal")
+        };
+
+        match message {
+            Rearm::Fail => return Err(Failed),
+
+            Rearm::Ping => self.pongs.send(()).expect("test dropped the receiver"),
+
+            Rearm::Held { .. } => unreachable!("the held timer is never due in a test"),
+        }
+        Ok(Control::Continue(state))
+    }
+}
+
+enum Rearm {
+    Fail,
     Ping,
     Held { _message: PanickingMessage },
 }

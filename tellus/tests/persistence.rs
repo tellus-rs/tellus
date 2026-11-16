@@ -1,6 +1,7 @@
 #![cfg(feature = "persistence-in-memory")]
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde_json::Value;
 use std::{
     convert::Infallible,
     error::{self, Error as _},
@@ -16,7 +17,7 @@ use std::{
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, AppendError, AskError, Backoff, Cbor,
     Codec, Control, Effect, EncodeError, EncodedEvent, EncodedSnapshot, EventSourced, EventStore,
-    InMemoryStore, Incoming, Nothing, PayloadError, Persistence, PersistenceId, ReplyTo,
+    InMemoryStore, Incoming, Json, Nothing, PayloadError, Persistence, PersistenceId, ReplyTo,
     RestartPolicy, SchemaVersion, SeqNo, SnapshotStore, Stashed, StoredEvent, StoredSnapshot,
     SupervisionStrategy, Timed, Unstashed, Untimed, Versioned,
 };
@@ -144,7 +145,7 @@ async fn snapshots_skip_init_and_shorten_replay() {
         "the second recovery must seed from the snapshot and still run recovered"
     );
     assert!(
-        !probes[1..].contains(&Probe::Init),
+        !probes.contains(&Probe::Init),
         "init must be skipped once a snapshot exists"
     );
     assert_eq!(
@@ -1476,6 +1477,466 @@ async fn a_restart_drops_an_event_sourced_actors_timer() {
     assert_terminates(system, "system did not terminate").await;
 }
 
+/// All events of one effect go into one append, which a conforming store makes atomic: the two
+/// events of `IncrementTwice` are one call, the single event of `Increment` another.
+#[tokio::test]
+async fn all_events_of_an_effect_go_into_one_append() {
+    let store = FaultyStore::default();
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("one-append", probe_tx),
+        Persistence::new(store.clone()),
+    );
+    system.root().tell(Command::IncrementTwice(2, 3));
+    system.root().tell(Command::Increment(1));
+    assert_eq!(ask_count(&system).await, 6);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+    assert_eq!(store.appends(), [2, 1]);
+}
+
+/// A panic in `handle` is an actor failure: supervision restarts the actor instead of the panic
+/// unwinding its task, and the command is consumed without an event.
+#[tokio::test]
+async fn a_panic_in_handle_restarts_and_consumes_the_command() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Fragile::new("handle-panics", Fault::HandlePanics, probe_tx),
+        Persistence::new(store.clone()),
+        restart_config(),
+    );
+    system.root().tell(Command::Increment(1));
+    for expected in [
+        Probe::Init,
+        Probe::Recovered,
+        Probe::Handled,
+        Probe::Init,
+        Probe::Recovered,
+    ] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the panic").await,
+            expected
+        );
+    }
+    assert_eq!(ask_count(&system).await, 0);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+    assert!(
+        store
+            .inner()
+            .events(&persistence_id("handle-panics"))
+            .is_empty()
+    );
+}
+
+/// A panic in `apply` after the append is an actor failure, here under `Stop`, and the event stays
+/// durable: the actor terminates without settling the command, and the store holds the event.
+#[tokio::test]
+async fn a_panic_in_apply_fails_the_actor_with_its_event_durable() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Fragile::new("apply-panics", Fault::ApplyPanics, probe_tx),
+        Persistence::new(store.clone()),
+    );
+    system.root().tell(Command::Increment(1));
+    assert_terminates(system, "the panic in apply must stop the actor").await;
+
+    assert_eq!(
+        received(&mut probe_rx),
+        [Probe::Init, Probe::Recovered, Probe::Handled]
+    );
+    assert_eq!(
+        store.inner().events(&persistence_id("apply-panics")).len(),
+        1
+    );
+}
+
+/// A panicking continuation fails the actor. Its event stays durable, and the continuation after
+/// it is lost: the restarted actor replays the event, while `Settled` is never probed.
+#[tokio::test]
+async fn a_panicking_continuation_fails_the_actor_and_loses_the_later_ones() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Fragile::new("then-panics", Fault::ThenPanics, probe_tx),
+        Persistence::new(store.clone()),
+        restart_config(),
+    );
+    system.root().tell(Command::Increment(1));
+    for expected in [
+        Probe::Init,
+        Probe::Recovered,
+        Probe::Handled,
+        Probe::Init,
+        Probe::Recovered,
+    ] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the panic").await,
+            expected
+        );
+    }
+    assert_eq!(ask_count(&system).await, 1);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+    assert!(!received(&mut probe_rx).contains(&Probe::Settled(1)));
+}
+
+/// A failure to encode an event is an actor failure: supervision restarts the actor, and nothing
+/// is appended.
+#[tokio::test]
+async fn an_event_encode_failure_restarts_and_appends_nothing() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("unencodable", probe_tx),
+        Persistence::new(store.clone()).with_codec(Failing),
+        restart_config(),
+    );
+    system.root().tell(Command::Increment(1));
+    for expected in [
+        Probe::Init,
+        Probe::Recovered,
+        Probe::Handled,
+        Probe::Init,
+        Probe::Recovered,
+    ] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the encode failure").await,
+            expected
+        );
+    }
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+    assert!(store.appends().is_empty());
+}
+
+/// A failing or panicking `snapshot` is a failed snapshot save, which never fails the actor:
+/// commands keep settling, and the actor never restarts.
+#[tokio::test]
+async fn a_failing_snapshot_never_fails_the_actor() {
+    for (entity_id, fault) in [
+        ("snapshot-fails", Fault::SnapshotFails),
+        ("snapshot-panics", Fault::SnapshotPanics),
+    ] {
+        let store = FaultyStore::default();
+        let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+        let system = ActorSystem::event_sourced_with_config(
+            Fragile::new(entity_id, fault, probe_tx),
+            Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+            restart_config(),
+        );
+        system.root().tell(Command::Increment(1));
+        system.root().tell(Command::Increment(2));
+        assert_eq!(ask_count(&system).await, 3, "{fault:?}");
+
+        system.root().tell(Command::Stop);
+        assert_terminates(system, "system did not terminate").await;
+        assert_eq!(
+            received(&mut probe_rx)
+                .iter()
+                .filter(|probe| **probe == Probe::Init)
+                .count(),
+            1,
+            "{fault:?} must not restart the actor"
+        );
+    }
+}
+
+/// A failing `init` is a deterministic recovery failure: every restart fails identically, so it
+/// escalates through the restart limit of five to a stop.
+#[tokio::test]
+async fn a_failing_init_escalates_through_the_restart_limit() {
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Fragile::new("init-fails", Fault::InitFails, probe_tx),
+        Persistence::new(FaultyStore::default()),
+        restart_config(),
+    );
+    assert_terminates(system, "the failing init must escalate to a stop").await;
+    assert_eq!(received(&mut probe_rx), [Probe::Init; 6]);
+}
+
+/// A failing `init_from_snapshot` escalates through the restart limit like a failing `init`,
+/// rather than falling back to `init` and a full replay as an undecodable snapshot does.
+#[tokio::test]
+async fn a_failing_init_from_snapshot_escalates_without_replaying_in_full() {
+    let store = FaultyStore::default();
+    seed_snapshot(&store, "init-from-snapshot-fails", Count(7)).await;
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Fragile::new(
+            "init-from-snapshot-fails",
+            Fault::InitFromSnapshotFails,
+            probe_tx,
+        ),
+        Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+        restart_config(),
+    );
+    assert_terminates(
+        system,
+        "the failing init_from_snapshot must escalate to a stop",
+    )
+    .await;
+    assert_eq!(received(&mut probe_rx), [Probe::InitFromSnapshot; 6]);
+    assert_eq!(store.reads(), []);
+}
+
+/// A panic in `apply` during replay is a deterministic recovery failure: it escalates through the
+/// restart limit to a stop instead of unwinding the actor's task, and `recovered` never runs.
+#[tokio::test]
+async fn a_panic_in_apply_during_replay_escalates_through_the_restart_limit() {
+    let store = FaultyStore::default();
+    store
+        .inner()
+        .append(
+            &persistence_id("replay-panics"),
+            SeqNo::ZERO,
+            vec![encoded(&Increased(1))],
+        )
+        .await
+        .expect("the seeded event is appended");
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Fragile::new("replay-panics", Fault::ApplyPanics, probe_tx),
+        Persistence::new(store),
+        restart_config(),
+    );
+    assert_terminates(system, "the panic in replay must escalate to a stop").await;
+    assert_eq!(received(&mut probe_rx), [Probe::Init; 6]);
+}
+
+/// A stored event whose sequence number is not the next one expected is a deterministic recovery
+/// failure: it escalates through the restart limit to a stop, and `recovered` never runs.
+#[tokio::test]
+async fn a_sequence_gap_escalates_through_the_restart_limit() {
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("gap", probe_tx),
+        Persistence::new(GapStore),
+        restart_config(),
+    );
+    assert_terminates(system, "the gap must escalate to a stop").await;
+    assert_eq!(received(&mut probe_rx), [Probe::Init; 6]);
+}
+
+/// A failing read is an ordinary startup failure: under `Restart` the next attempt recovers, and
+/// the actor handles commands.
+#[tokio::test]
+async fn a_failing_read_fails_recovery_into_supervision() {
+    let store = FaultyStore::default().with_failing_reads(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("failing-read", probe_tx),
+        Persistence::new(store),
+        restart_config(),
+    );
+    for expected in [Probe::Init, Probe::Init, Probe::Recovered] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the failed read").await,
+            expected
+        );
+    }
+    system.root().tell(Command::Increment(1));
+    assert_eq!(ask_count(&system).await, 1);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// A failing snapshot load fails recovery into supervision rather than being traded for full
+/// replay: the failed attempt neither seeds via `init` nor reads, and the next attempt loads the
+/// snapshot.
+#[tokio::test]
+async fn a_failing_snapshot_load_fails_recovery_instead_of_replaying_in_full() {
+    let store = FaultyStore::default();
+    seed_snapshot(&store, "failing-load", Count(7)).await;
+    let store = store.with_failing_loads(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("failing-load", probe_tx),
+        Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+        restart_config(),
+    );
+    for expected in [Probe::InitFromSnapshot, Probe::Recovered] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the failed load").await,
+            expected
+        );
+    }
+    assert_eq!(ask_count(&system).await, 7);
+    assert_eq!(store.reads(), [SeqNo::ZERO]);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// With `Persistence::with_codec(Json)` the stored payloads are readable JSON, and the next
+/// incarnation decodes them back into the live state.
+#[tokio::test]
+async fn json_payloads_are_readable_and_replay_into_the_live_state() {
+    let store = FaultyStore::default();
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("json", probe_tx.clone()),
+        Persistence::new(store.clone()).with_codec(Json),
+    );
+    system.root().tell(Command::Increment(1));
+    system.root().tell(Command::IncrementTwice(2, 3));
+    assert_eq!(ask_count(&system).await, 6);
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "first incarnation did not terminate").await;
+
+    let payloads = store
+        .inner()
+        .events(&persistence_id("json"))
+        .into_iter()
+        .map(|stored| String::from_utf8(stored.event.payload).expect("a JSON payload is text"))
+        .collect::<Vec<_>>();
+    assert_eq!(payloads, ["1", "2", "3"]);
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("json", probe_tx),
+        Persistence::new(store).with_codec(Json),
+    );
+    assert_eq!(ask_count(&system).await, 6);
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "second incarnation did not terminate").await;
+}
+
+/// An event nested 127 levels deep reads back with `Json`, one nested 128 levels deep is stored
+/// all the same, and then every recovery fails on it.
+#[tokio::test]
+async fn an_event_nested_beyond_the_json_limit_is_stored_and_fails_every_recovery() {
+    let store = FaultyStore::default();
+    let persistence = Persistence::new(store.clone()).with_codec(Json);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Value>::new("deep-event", probe_tx.clone()),
+        persistence.clone(),
+    );
+    assert_eq!(ask_held(&system, Some(nested(127))).await, nested(127));
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "first incarnation did not terminate").await;
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Value>::new("deep-event", probe_tx.clone()),
+        persistence.clone(),
+    );
+    assert_eq!(ask_held(&system, None).await, nested(127));
+    assert_eq!(ask_held(&system, Some(nested(128))).await, nested(128));
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "second incarnation did not terminate").await;
+    assert_eq!(
+        store.inner().events(&persistence_id("deep-event")).len(),
+        2,
+        "the deeper event must be stored"
+    );
+
+    received(&mut probe_rx);
+    for _ in 0..2 {
+        let system = ActorSystem::event_sourced(
+            Holder::<Value>::new("deep-event", probe_tx.clone()),
+            persistence.clone(),
+        );
+        assert_terminates(system, "the deeper event must fail recovery").await;
+        assert_eq!(received(&mut probe_rx), [Probe::Init]);
+    }
+}
+
+/// A snapshot nested 127 levels deep reads back with `Json`, while one nested 128 levels deep is
+/// discarded at every recovery, which then replays in full.
+#[tokio::test]
+async fn a_snapshot_nested_beyond_the_json_limit_is_discarded_at_every_recovery() {
+    for (depth, entity_id, seed) in [
+        (127, "snapshot-127", Probe::InitFromSnapshot),
+        (128, "snapshot-128", Probe::Init),
+    ] {
+        let store = FaultyStore::default();
+        let persistence = Persistence::new(store.clone())
+            .with_snapshot_store(store.clone())
+            .with_codec(Json);
+        let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+        let system = ActorSystem::event_sourced(
+            Holder::<Value>::new(entity_id, probe_tx.clone()).with_snapshot(nested(depth)),
+            persistence.clone(),
+        );
+        assert_eq!(ask_held(&system, Some(nested(1))).await, nested(1));
+        system.root().tell(HolderCommand::Stop);
+        assert_terminates(system, "first incarnation did not terminate").await;
+
+        received(&mut probe_rx);
+        for _ in 0..2 {
+            let system = ActorSystem::event_sourced(
+                Holder::<Value>::new(entity_id, probe_tx.clone()),
+                persistence.clone(),
+            );
+            let held = ask_held(&system, None).await;
+            system.root().tell(HolderCommand::Stop);
+            assert_terminates(system, "a later incarnation did not terminate").await;
+
+            assert_eq!(received(&mut probe_rx), [seed, Probe::Recovered]);
+            let expected = if seed == Probe::Init {
+                nested(1)
+            } else {
+                nested(depth)
+            };
+            assert_eq!(held, expected, "at depth {depth}");
+        }
+    }
+}
+
+/// An event nested 255 levels deep reads back with the default `Cbor`.
+#[tokio::test]
+async fn an_event_nested_to_the_cbor_limit_recovers() {
+    let store = FaultyStore::default();
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Value>::new("cbor-limit", probe_tx.clone()),
+        Persistence::new(store.clone()),
+    );
+    assert_eq!(ask_held(&system, Some(nested(255))).await, nested(255));
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "first incarnation did not terminate").await;
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Value>::new("cbor-limit", probe_tx),
+        Persistence::new(store),
+    );
+    assert_eq!(ask_held(&system, None).await, nested(255));
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "second incarnation did not terminate").await;
+}
+
+/// Neither codec preserves `Some(None)`: the live state holds it, while the state recovered from
+/// the very event holds `None`, without any error.
+#[tokio::test]
+async fn some_none_reads_back_as_none() {
+    assert_some_none_reads_back_as_none(Cbor, "some-none-cbor").await;
+    assert_some_none_reads_back_as_none(Json, "some-none-json").await;
+}
+
 /// Global, as a thread-local subscriber races with the callsite interest cache of parallel tests.
 fn init_tracing() {
     TRACING.call_once(|| {
@@ -1517,6 +1978,76 @@ async fn ask_child_count(child: &ActorRef<Command>) -> u64 {
         .ask(TIMEOUT, Command::Get)
         .await
         .expect("no reply to get")
+}
+
+/// Every probe received so far.
+fn received(probe_rx: &mut mpsc::UnboundedReceiver<Probe>) -> Vec<Probe> {
+    let mut probes = Vec::new();
+    while let Ok(probe) = probe_rx.try_recv() {
+        probes.push(probe);
+    }
+    probes
+}
+
+/// Save a snapshot of the given count for the given entity, from which replay resumes at 0.
+async fn seed_snapshot(store: &FaultyStore, entity_id: &str, count: Count) {
+    store
+        .inner()
+        .save(
+            &persistence_id(entity_id),
+            SeqNo::ZERO,
+            EncodedSnapshot {
+                manifest: Count::MANIFEST.into(),
+                schema_version: Count::VERSION,
+                payload: Cbor.encode(&count).expect("the snapshot is encodable"),
+            },
+        )
+        .await
+        .expect("the seeded snapshot is saved");
+}
+
+/// Set the held value, if one is given, and round-trip a `Get` for it.
+async fn ask_held<T>(system: &ActorSystem<HolderCommand<T>>, value: Option<T>) -> T
+where
+    T: Send + 'static,
+{
+    if let Some(value) = value {
+        system.root().tell(HolderCommand::Set(value));
+    }
+    system
+        .root()
+        .ask(TIMEOUT, HolderCommand::Get)
+        .await
+        .expect("no reply to get")
+}
+
+/// A JSON value of nested arrays, `depth` levels deep.
+fn nested(depth: usize) -> Value {
+    (0..depth).fold(Value::Null, |value, _| Value::Array(vec![value]))
+}
+
+async fn assert_some_none_reads_back_as_none<C>(codec: C, entity_id: &'static str)
+where
+    C: Codec + Clone + Send + Sync + 'static,
+{
+    let persistence = Persistence::new(FaultyStore::default()).with_codec(codec);
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Option<Option<u32>>>::new(entity_id, probe_tx.clone()),
+        persistence.clone(),
+    );
+    assert_eq!(ask_held(&system, Some(Some(None))).await, Some(None));
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "first incarnation did not terminate").await;
+
+    let system = ActorSystem::event_sourced(
+        Holder::<Option<Option<u32>>>::new(entity_id, probe_tx),
+        persistence,
+    );
+    assert_eq!(ask_held(&system, None).await, None);
+    system.root().tell(HolderCommand::Stop);
+    assert_terminates(system, "second incarnation did not terminate").await;
 }
 
 /// The wiring over the given store, its calls bounded by [STORE_TIMEOUT].
@@ -1731,6 +2262,226 @@ impl EventSourced for TimedCounter {
     }
 }
 
+/// A counter which fails at the step its [Fault] names, every time it gets there.
+struct Fragile {
+    entity_id: &'static str,
+    fault: Fault,
+    probe_tx: mpsc::UnboundedSender<Probe>,
+}
+
+impl Fragile {
+    fn new(entity_id: &'static str, fault: Fault, probe_tx: mpsc::UnboundedSender<Probe>) -> Self {
+        Self {
+            entity_id,
+            fault,
+            probe_tx,
+        }
+    }
+}
+
+impl EventSourced for Fragile {
+    type Command = Command;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type Event = Increased;
+    type State = u64;
+    type Snapshot = Count;
+    type Error = Boom;
+
+    fn persistence_id(&self) -> PersistenceId {
+        persistence_id(self.entity_id)
+    }
+
+    fn init(&self) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::Init);
+        if self.fault == Fault::InitFails {
+            return Err(Boom);
+        }
+        Ok(0)
+    }
+
+    fn init_from_snapshot(&self, Count(count): Self::Snapshot) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::InitFromSnapshot);
+        if self.fault == Fault::InitFromSnapshotFails {
+            return Err(Boom);
+        }
+        Ok(count)
+    }
+
+    fn recovered(
+        &self,
+        _: &ActorContext<Self::Command>,
+        state: Self::State,
+    ) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::Recovered);
+        Ok(state)
+    }
+
+    fn handle(
+        &self,
+        _: &ActorContext<Self::Command>,
+        incoming: Incoming<Self::Command>,
+        _: &Self::State,
+    ) -> Result<Effect<Self>, Self::Error> {
+        let Incoming::Message(command) = incoming else {
+            return Ok(Effect::none());
+        };
+
+        match command {
+            Command::Increment(n) => {
+                let _ = self.probe_tx.send(Probe::Handled);
+                if self.fault == Fault::HandlePanics {
+                    panic!("handle panics on purpose");
+                }
+
+                let mut effect = Effect::persist(Increased(n));
+                if self.fault == Fault::ThenPanics {
+                    effect = effect.then(|_| panic!("a continuation panics on purpose"));
+                }
+                let probe_tx = self.probe_tx.clone();
+                Ok(effect.then(move |count| {
+                    let _ = probe_tx.send(Probe::Settled(*count));
+                }))
+            }
+
+            Command::Get(reply_to) => Ok(Effect::none().then(move |count| reply_to.reply(*count))),
+
+            Command::Stop => Ok(Effect::stop()),
+
+            _ => unreachable!("a fragile counter is told to increment, get and stop only"),
+        }
+    }
+
+    fn apply(&self, state: Self::State, Increased(n): Self::Event) -> Self::State {
+        if self.fault == Fault::ApplyPanics {
+            panic!("apply panics on purpose");
+        }
+        state + n
+    }
+
+    fn snapshot(&self, _: &Self::State) -> Result<Option<Self::Snapshot>, Self::Error> {
+        match self.fault {
+            Fault::SnapshotFails => Err(Boom),
+            Fault::SnapshotPanics => panic!("snapshot panics on purpose"),
+            _ => Ok(None),
+        }
+    }
+}
+
+/// The step at which a [Fragile] counter fails.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Fault {
+    InitFails,
+    InitFromSnapshotFails,
+    HandlePanics,
+    ApplyPanics,
+    ThenPanics,
+    SnapshotFails,
+    SnapshotPanics,
+}
+
+/// Holds the value of its last event, and offers a fixed snapshot after every event if configured.
+struct Holder<T> {
+    entity_id: &'static str,
+    probe_tx: mpsc::UnboundedSender<Probe>,
+    snapshot: Option<T>,
+}
+
+impl<T> Holder<T> {
+    fn new(entity_id: &'static str, probe_tx: mpsc::UnboundedSender<Probe>) -> Self {
+        Self {
+            entity_id,
+            probe_tx,
+            snapshot: None,
+        }
+    }
+
+    fn with_snapshot(mut self, snapshot: T) -> Self {
+        self.snapshot = Some(snapshot);
+        self
+    }
+}
+
+impl<T> EventSourced for Holder<T>
+where
+    T: Clone + Default + Serialize + DeserializeOwned + Send + Sync + 'static,
+{
+    type Command = HolderCommand<T>;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type Event = Held<T>;
+    type State = T;
+    type Snapshot = Held<T>;
+    type Error = Infallible;
+
+    fn persistence_id(&self) -> PersistenceId {
+        persistence_id(self.entity_id)
+    }
+
+    fn init(&self) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::Init);
+        Ok(T::default())
+    }
+
+    fn init_from_snapshot(&self, Held(value): Self::Snapshot) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::InitFromSnapshot);
+        Ok(value)
+    }
+
+    fn recovered(
+        &self,
+        _: &ActorContext<Self::Command>,
+        state: Self::State,
+    ) -> Result<Self::State, Self::Error> {
+        let _ = self.probe_tx.send(Probe::Recovered);
+        Ok(state)
+    }
+
+    fn handle(
+        &self,
+        _: &ActorContext<Self::Command>,
+        incoming: Incoming<Self::Command>,
+        _: &Self::State,
+    ) -> Result<Effect<Self>, Self::Error> {
+        match incoming {
+            Incoming::Message(HolderCommand::Set(value)) => Ok(Effect::persist(Held(value))),
+
+            Incoming::Message(HolderCommand::Get(reply_to)) => {
+                Ok(Effect::<Self>::none().then(move |value| reply_to.reply(value.clone())))
+            }
+
+            Incoming::Message(HolderCommand::Stop) => Ok(Effect::stop()),
+
+            Incoming::Terminated(_) => Ok(Effect::none()),
+        }
+    }
+
+    fn apply(&self, _: Self::State, Held(value): Self::Event) -> Self::State {
+        value
+    }
+
+    fn snapshot(&self, _: &Self::State) -> Result<Option<Self::Snapshot>, Self::Error> {
+        Ok(self.snapshot.clone().map(Held))
+    }
+}
+
+enum HolderCommand<T> {
+    Set(T),
+    Get(ReplyTo<T>),
+    Stop,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Held<T>(T);
+
+impl<T> Versioned for Held<T>
+where
+    T: Serialize + DeserializeOwned,
+{
+    const MANIFEST: &'static str = "held";
+    const VERSION: SchemaVersion = SchemaVersion::new(1);
+}
+
 #[derive(Debug)]
 enum Command {
     Increment(u64),
@@ -1783,7 +2534,7 @@ impl Codec for Failing {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Probe {
     Init,
     InitFromSnapshot,
@@ -2061,19 +2812,23 @@ impl Actor for TimedParent {
 
 /// An [InMemoryStore] which can be made to misbehave: appends can be delayed, and fail, panic or
 /// hang a given number of times, or hang once their events are stored; reads, snapshot loads and
-/// snapshot saves can hang a given number of times, and snapshot saves can fail. Reads are
-/// logged, so a test can assert which positions a replay asked for.
+/// snapshot saves can hang a given number of times, reads and snapshot loads can fail a given
+/// number of times, and snapshot saves can fail. Successful reads and every append are logged, so
+/// a test can assert which positions a replay asked for and how many events each append carried.
 #[derive(Debug, Clone, Default)]
 struct FaultyStore {
     inner: InMemoryStore,
     reads: Arc<Mutex<Vec<SeqNo>>>,
+    appends: Arc<Mutex<Vec<usize>>>,
     append_delay: Option<Duration>,
     append_failures: Arc<Mutex<u32>>,
     append_panics: Arc<Mutex<u32>>,
     hanging_appends: Arc<Mutex<u32>>,
     hanging_stored_appends: Arc<Mutex<u32>>,
     hanging_reads: Arc<Mutex<u32>>,
+    failing_reads: Arc<Mutex<u32>>,
     hanging_loads: Arc<Mutex<u32>>,
+    failing_loads: Arc<Mutex<u32>>,
     hanging_saves: Arc<Mutex<u32>>,
     fail_saves: bool,
     error_hooks: Arc<ErrorHooks>,
@@ -2110,8 +2865,18 @@ impl FaultyStore {
         self
     }
 
+    fn with_failing_reads(mut self, failures: u32) -> Self {
+        self.failing_reads = Arc::new(Mutex::new(failures));
+        self
+    }
+
     fn with_hanging_loads(mut self, hangs: u32) -> Self {
         self.hanging_loads = Arc::new(Mutex::new(hangs));
+        self
+    }
+
+    fn with_failing_loads(mut self, failures: u32) -> Self {
+        self.failing_loads = Arc::new(Mutex::new(failures));
         self
     }
 
@@ -2148,6 +2913,10 @@ impl FaultyStore {
     fn reads(&self) -> Vec<SeqNo> {
         self.reads.lock().expect("reads lock poisoned").clone()
     }
+
+    fn appends(&self) -> Vec<usize> {
+        self.appends.lock().expect("appends lock poisoned").clone()
+    }
 }
 
 impl EventStore for FaultyStore {
@@ -2159,6 +2928,11 @@ impl EventStore for FaultyStore {
         next_seq_no: SeqNo,
         events: Vec<EncodedEvent>,
     ) -> Result<(), AppendError<Self::Error>> {
+        self.appends
+            .lock()
+            .expect("appends lock poisoned")
+            .push(events.len());
+
         if let Some(append_delay) = self.append_delay {
             sleep(append_delay).await;
         }
@@ -2224,6 +2998,10 @@ impl EventStore for FaultyStore {
             pending::<()>().await;
         }
 
+        if take_fault(&self.failing_reads) {
+            return Err(self.error());
+        }
+
         self.reads
             .lock()
             .expect("reads lock poisoned")
@@ -2262,6 +3040,10 @@ impl SnapshotStore for FaultyStore {
     async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
         if take_fault(&self.hanging_loads) {
             pending::<()>().await;
+        }
+
+        if take_fault(&self.failing_loads) {
+            return Err(self.error());
         }
 
         self.inner.load(id).await.map_err(|error| match error {})
@@ -2328,6 +3110,40 @@ impl SnapshotStore for LastPositionStore {
                 payload: Cbor.encode(&Count(5)).expect("the snapshot is encodable"),
             },
         }))
+    }
+}
+
+/// A store whose stream has a gap: a read from the start returns the events at 0 and 2.
+#[derive(Debug, Clone, Copy)]
+struct GapStore;
+
+impl EventStore for GapStore {
+    type Error = Infallible;
+
+    async fn append(
+        &self,
+        _: &PersistenceId,
+        _: SeqNo,
+        _: Vec<EncodedEvent>,
+    ) -> Result<(), AppendError<Self::Error>> {
+        Ok(())
+    }
+
+    async fn read(
+        &self,
+        _: &PersistenceId,
+        from_seq_no: SeqNo,
+        _: NonZeroUsize,
+    ) -> Result<Vec<StoredEvent>, Self::Error> {
+        if from_seq_no != SeqNo::ZERO {
+            return Ok(Vec::new());
+        }
+        Ok([0, 2]
+            .map(|seq_no| StoredEvent {
+                seq_no: SeqNo::new(seq_no),
+                event: encoded(&Increased(1)),
+            })
+            .into())
     }
 }
 
