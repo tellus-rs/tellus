@@ -506,11 +506,11 @@ where
 }
 
 /// The [JoinSet] is awaited on every exit, else a successor reader overlaps a delivery draining
-/// here; a poisoned stream ends the whole connection. Neither a finished stream nor a closed
-/// connection ends a reader: each runs until its own stream ends, so a departed peer's last
-/// frames are delivered before its death. A departed peer's drain marker is acknowledged once
-/// exactly as many data streams as it announces have ended cleanly, those which ended before it
-/// included.
+/// here; a poisoned stream ends the whole connection, unless its peer's departure is deferred.
+/// Neither a finished stream nor a closed connection ends a reader: each runs until its own
+/// stream ends, so a departed peer's last frames are delivered before its death. A departed
+/// peer's drain marker is acknowledged once exactly as many data streams as it announces have
+/// ended cleanly, those which ended before it included.
 async fn read_streams<C>(
     connection: C,
     control_rx: C::Receiver,
@@ -565,6 +565,10 @@ async fn read_streams<C>(
                         if id == control && endpoint.departure_deferred(peer) =>
                     {
                         drain.announced = Some(data_streams);
+                    }
+
+                    ReadEnd::Poisoned if endpoint.departure_deferred(peer) => {
+                        debug!(%peer, "a stream of a departing peer failed, reading the others to their end");
                     }
 
                     ReadEnd::Poisoned => break,
@@ -654,23 +658,21 @@ where
                     .max_frame_size
                     .get()
                     .min(greeting.max_frame_size);
-                let (poisoned_tx, mut poisoned_rx) = oneshot::channel();
+                let (lost_tx, mut lost_rx) = oneshot::channel();
                 let (drain_ack_tx, drain_ack_rx) = oneshot::channel();
                 let reader = task::spawn(async move {
                     match read_frames(frame_receiver, peer, liveness, endpoint).await {
-                        ReadEnd::Closed => {}
-
                         ReadEnd::DrainAcknowledged if endpoint.leaving() => {
                             let _ = drain_ack_tx.send(());
                         }
 
-                        ReadEnd::Poisoned => {
-                            let _ = poisoned_tx.send(());
+                        ReadEnd::Closed | ReadEnd::Poisoned => {
+                            let _ = lost_tx.send(());
                         }
 
                         ReadEnd::Drained(_) | ReadEnd::DrainAcknowledged => {
                             warn!(%peer, "closing connection, a drain frame outside a departure");
-                            let _ = poisoned_tx.send(());
+                            let _ = lost_tx.send(());
                         }
                     }
                 });
@@ -716,7 +718,7 @@ where
 
                     _ = sever_rx.changed() => WriterEnd::ConnectionLost,
 
-                    Ok(()) = &mut poisoned_rx => WriterEnd::ConnectionLost,
+                    Ok(()) = &mut lost_rx => WriterEnd::ConnectionLost,
                 };
                 endpoint.mark_lane_disconnected(addr, lane_id);
                 reader.abort();
@@ -1959,11 +1961,11 @@ mod tests {
             membership::{self, JoinRound, Member, MemberState, Membership},
             node::{ClusterId, NodeId},
             peer::{
-                Admission, ConnectError, DialRequest, Greeting, JoinRequest, LeaveSignals,
-                MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound, admit_outbound,
-                check_dialed, dead_letter, dial_loop, exchange_handshakes, identity_binds,
-                join_loop, probe_loop, read_frames, recv_handshake, run_accepted, write_frames,
-                write_streams,
+                Admission, ConnectError, DEAD_LETTERS, DialRequest, Greeting, JoinRequest,
+                LeaveSignals, MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound,
+                admit_outbound, check_dialed, dead_letter, dial_loop, exchange_handshakes,
+                identity_binds, join_loop, probe_loop, read_frames, recv_handshake, run_accepted,
+                write_frames, write_streams,
             },
             receptionist::{self, WireGroup},
             reply,
@@ -6342,6 +6344,29 @@ mod tests {
         assert!(!leaver.drain_acked(), "no DrainAck past the deadline");
     }
 
+    /// A failing stream of a departing peer ends alone: the other streams are still read to their
+    /// end, so a frame arriving on one of them afterward is delivered before the death.
+    #[tokio::test]
+    async fn a_failing_stream_of_a_departing_peer_leaves_the_others_reading() {
+        let endpoint = formed(1);
+        let leaver = InboundPeer::admitted_by(endpoint, 2).await;
+        let node = leaver.node;
+        let mut recipient = Recipient::watching(endpoint, node, ActorId::new());
+        leaver.send(&departure(node));
+        eventually(|| endpoint.departure_deferred(node)).await;
+
+        let failing = leaver.open_stream();
+        let other = leaver.open_stream();
+        other.send(&message(endpoint, recipient.id(), 1));
+        recipient.receive(1).await;
+        failing.0.send(vec![0xff; 8]).expect("the acceptor reads");
+        sleep(Duration::from_millis(100)).await;
+        other.send(&message(endpoint, recipient.id(), 2));
+        recipient.receive(2).await;
+
+        assert_eq!(recipient.received()[..2], [Some(1), Some(2)]);
+    }
+
     #[derive(Serialize, Deserialize)]
     struct BlocksWhenDecoded(u64);
 
@@ -6501,6 +6526,75 @@ mod tests {
         assert!(re_sent);
     }
 
+    /// A lane whose acceptor ends the control stream cleanly reconnects at once, so a message
+    /// sent right after waits in its queue and rides the next connection rather than being
+    /// dead-lettered by a send on the closed one.
+    #[tokio::test]
+    async fn a_lane_reconnects_when_its_acceptor_ends_the_control_stream() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        drop(accepted_lane(endpoint, &mut dials, member).await);
+        sleep(Duration::from_millis(100)).await;
+
+        let target = ActorId::new();
+        endpoint
+            .send(member, message(endpoint, target, 7))
+            .expect("the message is queued");
+        sleep(Duration::from_millis(100)).await;
+        let dead_lettered = lock(&DEAD_LETTERS).remove(&target);
+
+        let dial = timeout(Duration::from_secs(5), dials.recv())
+            .await
+            .expect("a second dial in time")
+            .expect("a second dial");
+        let (connected, mut second) = Acceptor::connected();
+        second.cluster = endpoint.committed_cluster().expect("a formed cluster");
+        assert!(
+            dial.answer.send(connected).is_ok(),
+            "the lane awaits the dial"
+        );
+        second.joiner_handshake().await;
+        second.send(&Frame::Handshake(Handshake::new(v2(
+            member,
+            HandshakeIntent::Member,
+            Some(second.cluster),
+        ))));
+        let delivered = timeout(Duration::from_secs(2), async {
+            loop {
+                let bytes = second.joiner_bytes().await;
+                if let Frame::Message { target: sent, .. } =
+                    Frame::from_bytes(&bytes).expect("frame decodes")
+                    && sent == target
+                {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok();
+
+        assert!(!dead_lettered, "the message is not dead-lettered");
+        assert!(delivered, "the message rides the next connection");
+    }
+
     /// A join round towards a silent seed asked last gives the join permit back before the
     /// formation is decided, so an abandoned attempt postpones nothing.
     #[tokio::test(start_paused = true)]
@@ -6638,5 +6732,171 @@ mod tests {
                 acceptor.refuse(reason);
             }
         });
+    }
+
+    /// A departing peer's frames which reached this node's transport before the peer closed its
+    /// connection are all delivered, on streams in use and on streams opened right before the
+    /// close. The runtime's workers are blocked while the last frames and the close arrive, so
+    /// the transport sees both before any reader runs again.
+    #[cfg(feature = "cluster-dev")]
+    #[test]
+    fn a_departing_connection_closed_with_frames_in_the_transport_loses_none() {
+        use crate::cluster::{
+            peer::{Admitted, read_streams},
+            transport::QuicTransport,
+        };
+        use std::{sync::Barrier, thread, time::Instant};
+        use tokio::{runtime, sync::watch};
+
+        const WORKERS: usize = 4;
+        const STREAMS: usize = 16;
+        const FRAMES: u64 = 4;
+        const ROUNDS: u16 = 3;
+
+        let runtime = runtime::Builder::new_multi_thread()
+            .worker_threads(WORKERS)
+            .enable_all()
+            .build()
+            .expect("a runtime builds");
+        let (endpoint, _lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let server = runtime
+            .block_on(async { QuicTransport::dev(loopback) })
+            .expect("server transport");
+        let server_addr = server.local_addr().expect("local address");
+
+        for new_streams in [false, true] {
+            for round in 0..ROUNDS {
+                let leaver = NodeId::new(addr(2_000 + round + if new_streams { 1_000 } else { 0 }));
+                let (target, mailbox) =
+                    SelfRef::<u64>::new(ActorId::new(), MailboxCapacity::Unbounded);
+                endpoint.registry().bind(target.actor_ref());
+                let (incoming_rx, _registration) = mailbox.split();
+                let frames = (0..FRAMES)
+                    .map(|value| {
+                        message(endpoint, target.actor_ref().actor_id(), value)
+                            .encode_into(Vec::new())
+                            .expect("the frame encodes")
+                    })
+                    .collect::<Vec<_>>();
+                let sent = STREAMS * frames.len();
+
+                let (go_tx, go_rx) = oneshot::channel::<()>();
+                let (closed_tx, closed_rx) = oneshot::channel::<()>();
+                let leaving = thread::spawn(move || {
+                    let runtime = runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                        .expect("a runtime builds");
+                    runtime.block_on(async move {
+                        let client = QuicTransport::dev(loopback).expect("client transport");
+                        let ConnectedControl {
+                            connection,
+                            mut control_tx,
+                            control_rx,
+                        } = client
+                            .connect(server_addr, 1 << 20)
+                            .await
+                            .expect("connects");
+                        control_tx.send(b"hello").await.expect("sends");
+                        let mut data = Vec::new();
+                        if !new_streams {
+                            for _ in 0..STREAMS {
+                                let mut stream =
+                                    connection.open_data().await.expect("opens a data stream");
+                                stream.send(&frames[0]).await.expect("sends");
+                                data.push(stream);
+                            }
+                        }
+                        go_rx.await.expect("go");
+                        if new_streams {
+                            for _ in 0..STREAMS {
+                                data.push(
+                                    connection.open_data().await.expect("opens a data stream"),
+                                );
+                            }
+                        }
+                        let first = usize::from(!new_streams);
+                        for stream in &mut data {
+                            for frame in &frames[first..] {
+                                stream.send(frame).await.expect("sends");
+                            }
+                        }
+                        sleep(Duration::from_millis(100)).await;
+                        drop((control_tx, control_rx, data, connection));
+                        sleep(Duration::from_millis(100)).await;
+                        closed_tx.send(()).expect("the reader waits");
+                        drop(client);
+                    });
+                });
+
+                let (received, deferred_after, finished) = runtime.block_on(async {
+                    let connection = server.accept(1 << 20).await.expect("accepts");
+                    let (frame_sender, mut control_rx) = connection
+                        .accept_control()
+                        .await
+                        .expect("accepts the control stream");
+                    assert_eq!(
+                        control_rx.recv().await.expect("receives"),
+                        Some(b"hello".as_slice())
+                    );
+                    endpoint.update(|membership, _| membership.add_up(leaver));
+                    let MemberAdmission::Member(inbound) = endpoint.admit_member(leaver) else {
+                        panic!("the leaver is admitted as a member");
+                    };
+                    membership::on_gossip(endpoint, &[Member::new(leaver, MemberState::Left)]);
+                    assert!(endpoint.departure_deferred(leaver));
+                    let liveness = endpoint.track_liveness(leaver);
+                    let (_shutdown_tx, shutdown_rx) = watch::channel(());
+                    let reader = task::spawn(read_streams(
+                        connection,
+                        control_rx,
+                        frame_sender,
+                        leaver,
+                        Admitted { liveness, inbound },
+                        endpoint,
+                        shutdown_rx,
+                    ));
+
+                    let mut received = 0;
+                    if !new_streams {
+                        let started = Instant::now();
+                        while received < STREAMS && started.elapsed() < Duration::from_secs(10) {
+                            received += incoming_rx.try_iter().count();
+                            sleep(Duration::from_millis(5)).await;
+                        }
+                        assert_eq!(received, STREAMS, "the first frames arrive while open");
+                    }
+
+                    let barrier = Arc::new(Barrier::new(WORKERS + 1));
+                    for _ in 0..WORKERS {
+                        let barrier = barrier.clone();
+                        task::spawn(async move {
+                            barrier.wait();
+                            thread::sleep(Duration::from_millis(600));
+                        });
+                    }
+                    barrier.wait();
+                    go_tx.send(()).expect("the leaver waits");
+                    closed_rx.await.expect("the leaver closed");
+                    let finished = timeout(Duration::from_secs(10), reader).await.is_ok();
+                    received += incoming_rx.try_iter().count();
+                    (received, endpoint.departure_deferred(leaver), finished)
+                });
+                leaving.join().expect("the leaver ran");
+
+                assert!(finished, "read_streams ends, new streams {new_streams}");
+                assert!(
+                    !deferred_after,
+                    "the departure ends, new streams {new_streams}"
+                );
+                assert_eq!(
+                    received, sent,
+                    "every frame is delivered, new streams {new_streams}, round {round}"
+                );
+            }
+        }
     }
 }

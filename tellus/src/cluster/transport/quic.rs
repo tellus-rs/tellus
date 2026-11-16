@@ -5,8 +5,8 @@ use crate::cluster::transport::{
     TransportError,
 };
 use quinn::{
-    ClientConfig, ConnectionError, Endpoint, IdleTimeout, RecvStream, SendStream, ServerConfig,
-    TransportConfig, VarInt, VarIntBoundsExceeded,
+    ClientConfig, ConnectionError, Endpoint, IdleTimeout, ReadError, ReadExactError, RecvStream,
+    SendStream, ServerConfig, TransportConfig, VarInt, VarIntBoundsExceeded,
     crypto::rustls::{NoInitialCipherSuite, QuicClientConfig, QuicServerConfig},
 };
 #[cfg(feature = "cluster-dev")]
@@ -609,10 +609,23 @@ pub struct QuicFrameReceiver {
 impl FrameReceiver for QuicFrameReceiver {
     async fn recv(&mut self) -> Result<Option<&[u8]>, TransportError> {
         let mut len = [0; 4];
-        match self.stream.read_exact(&mut len).await {
-            Ok(()) => {}
-            Err(quinn::ReadExactError::FinishedEarly(0)) => return Ok(None),
-            Err(error) => return Err(TransportError::other(error)),
+        let mut filled = 0;
+        while filled < len.len() {
+            match self.stream.read(&mut len[filled..]).await {
+                Ok(Some(read)) => filled += read,
+
+                Ok(None) if filled == 0 => return Ok(None),
+
+                Ok(None) => {
+                    return Err(TransportError::other(ReadExactError::FinishedEarly(filled)));
+                }
+
+                Err(ReadError::ConnectionLost(
+                    ConnectionError::ApplicationClosed(_) | ConnectionError::LocallyClosed,
+                )) if filled == 0 => return Ok(None),
+
+                Err(error) => return Err(TransportError::other(error)),
+            }
         }
 
         let len = usize::try_from(u32::from_be_bytes(len)).map_err(TransportError::other)?;
@@ -739,7 +752,7 @@ fn parse_identity(certificates: &[CertificateDer<'_>]) -> PeerIdentity {
 #[cfg(all(test, feature = "cluster-dev"))]
 mod tests {
     use crate::cluster::transport::{
-        ConnectedControl, Connection, FrameReceiver, FrameSender, Transport,
+        ConnectedControl, Connection, FrameReceiver, FrameSender, Transport, TransportError,
         quic::{
             ASSEMBLED_WRITE_LIMIT, KEEP_ALIVE_INTERVAL, QuicConfig, QuicTransport,
             QuicTransportError, certs, parse_identity,
@@ -930,6 +943,90 @@ mod tests {
                 Some(b"second".to_vec())
             )
         );
+    }
+
+    /// A graceful close of the connection ends a stream after the frames which arrived before it,
+    /// on a stream with frames still buffered and on one without, as it ends `accept_data`.
+    #[tokio::test]
+    async fn a_closed_connection_ends_its_streams_after_the_buffered_frames() {
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let server = QuicTransport::dev(loopback).expect("server transport");
+        let addr = server.local_addr().expect("local address");
+        let client = QuicTransport::dev(loopback).expect("client transport");
+        let (accepted_tx, accepted_rx) = oneshot::channel();
+        let (closed_tx, closed_rx) = oneshot::channel::<()>();
+
+        let accepting = tokio::spawn(async move {
+            let connection = server.accept(MAX_FRAME_SIZE).await.expect("accepts");
+            let (_sender, mut control) = connection
+                .accept_control()
+                .await
+                .expect("accepts the control stream");
+            let first = control.recv().await.expect("receives").map(<[u8]>::to_vec);
+            assert_eq!(first, Some(b"control".to_vec()));
+            let mut data = connection
+                .accept_data()
+                .await
+                .expect("accepts a data stream")
+                .expect("the connection is alive");
+            accepted_tx.send(()).expect("the dialer waits");
+            closed_rx.await.expect("the dialer closed");
+            tokio::time::sleep(Duration::from_millis(300)).await;
+
+            let control_after = control.recv().await.map(|frame| frame.map(<[u8]>::to_vec));
+            let mut data_after = Vec::new();
+            loop {
+                match data.recv().await {
+                    Ok(Some(frame)) => data_after.push(frame.to_vec()),
+                    Ok(None) => break,
+                    Err(error) => panic!("the data stream failed after {data_after:?}: {error}"),
+                }
+            }
+            let next_stream = connection
+                .accept_data()
+                .await
+                .map(|stream| stream.is_some());
+            (control_after, data_after, next_stream)
+        });
+
+        let ConnectedControl {
+            connection,
+            mut control_tx,
+            control_rx,
+        } = client
+            .connect(addr, MAX_FRAME_SIZE)
+            .await
+            .expect("connects");
+        control_tx.send(b"control").await.expect("sends");
+        let mut data = connection.open_data().await.expect("opens a data stream");
+        data.send(b"first").await.expect("sends");
+        accepted_rx.await.expect("the acceptor has the data stream");
+        data.send(b"second").await.expect("sends");
+        data.send(b"third").await.expect("sends");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop((control_tx, control_rx, data, connection));
+        closed_tx.send(()).expect("the acceptor waits");
+
+        let (control_after, data_after, next_stream) = timeout(TIMEOUT, accepting)
+            .await
+            .expect("in time")
+            .expect("accept task");
+        assert!(matches!(control_after, Ok(None)), "{control_after:?}");
+        assert_eq!(
+            data_after,
+            [b"first".to_vec(), b"second".to_vec(), b"third".to_vec()]
+        );
+        assert!(matches!(next_stream, Ok(false)), "{next_stream:?}");
+    }
+
+    /// A connection closed in the middle of a frame, within its length or its body, fails the
+    /// stream: the frame is lost.
+    #[tokio::test]
+    async fn a_connection_closed_within_a_frame_fails_the_stream() {
+        for partial in [&[0, 0][..], &[0, 0, 0, 10, 1, 2, 3]] {
+            let received = closed_after(partial).await;
+            assert!(received.is_err(), "{partial:?}: {received:?}");
+        }
     }
 
     /// The stream halves keep the connection open once the connection value is dropped, and
@@ -1544,5 +1641,54 @@ mod tests {
         let identity = parse_identity(&[garbage]);
         assert!(identity.dns_names.is_empty());
         assert!(identity.ip_addresses.is_empty());
+    }
+
+    /// What the acceptor's data stream answers once the dialer wrote `bytes` on it and closed the
+    /// connection.
+    async fn closed_after(bytes: &[u8]) -> Result<Option<Vec<u8>>, TransportError> {
+        let loopback = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+        let server = QuicTransport::dev(loopback).expect("server transport");
+        let addr = server.local_addr().expect("local address");
+        let client = QuicTransport::dev(loopback).expect("client transport");
+        let (closed_tx, closed_rx) = oneshot::channel::<()>();
+
+        let accepting = tokio::spawn(async move {
+            let connection = server.accept(MAX_FRAME_SIZE).await.expect("accepts");
+            let (_sender, _control) = connection
+                .accept_control()
+                .await
+                .expect("accepts the control stream");
+            let mut data = connection
+                .accept_data()
+                .await
+                .expect("accepts a data stream")
+                .expect("the connection is alive");
+            closed_rx.await.expect("the dialer closed");
+            tokio::time::sleep(Duration::from_millis(300)).await;
+            data.recv().await.map(|frame| frame.map(<[u8]>::to_vec))
+        });
+
+        let ConnectedControl {
+            connection,
+            mut control_tx,
+            control_rx,
+        } = client
+            .connect(addr, MAX_FRAME_SIZE)
+            .await
+            .expect("connects");
+        control_tx.send(b"control").await.expect("sends");
+        let mut data = connection.open_data().await.expect("opens a data stream");
+        data.stream
+            .write_all(bytes)
+            .await
+            .expect("writes part of a frame");
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        drop((control_tx, control_rx, data, connection));
+        closed_tx.send(()).expect("the acceptor waits");
+
+        timeout(TIMEOUT, accepting)
+            .await
+            .expect("in time")
+            .expect("accept task")
     }
 }

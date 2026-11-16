@@ -188,17 +188,19 @@ where
     Self: Send + 'static,
 {
     /// Receive the next frame; `None` once the peer has closed the stream and every frame sent on
-    /// it has been received. The bytes borrow the receiver, valid until the next call, so a frame
-    /// can be decoded without a copy per frame.
+    /// it has been received, or once the connection was closed, by either side, between two
+    /// frames and every frame which arrived before the close has been received. The bytes borrow
+    /// the receiver, valid until the next call, so a frame can be decoded without a copy per
+    /// frame.
     ///
-    /// A connection closing is not a closed stream. Once the connection is closed, gracefully or
-    /// not, before the peer has closed the stream, frames sent on it may be lost. `recv` then
-    /// fails rather than returning `None`, unlike [Connection::accept_data].
+    /// A closed connection ends the stream like [Connection::accept_data]: what the stream
+    /// buffers is received first. Frames the peer sent which had not arrived at the close are
+    /// lost; only a stream the peer closed proves that none were.
     ///
     /// # Errors
-    /// Implementations fail if the stream failed, if the connection failed or closed before the
-    /// peer closed the stream, or if the peer sent a frame exceeding the maximum frame size; a
-    /// closed stream is `None`.
+    /// Implementations fail if the stream failed, if the connection failed rather than closed,
+    /// e.g. timed out or was reset, if the connection closed in the middle of a frame, or if the
+    /// peer sent a frame exceeding the maximum frame size; a closed stream is `None`.
     async fn recv(&mut self) -> Result<Option<&[u8]>, TransportError>;
 }
 
