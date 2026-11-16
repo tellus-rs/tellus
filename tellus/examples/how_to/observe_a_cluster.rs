@@ -1,5 +1,6 @@
-//! How-to example: observe a cluster. The first node prints every membership transition it sees
-//! while a second node joins and then leaves.
+//! How-to example: observe a cluster. The first node prints its lifecycle as it forms the
+//! cluster, then every membership transition it sees while a second node joins and then leaves,
+//! together with any broken link or foreign cluster a state reports.
 //!
 //! The transitions are printed to stdout by the first node; tellus logs to stderr, configured via
 //! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev
@@ -15,7 +16,9 @@ use std::{
 };
 use tellus::{
     Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed,
-    cluster::{self, Change, EndpointConfig, Transition, transport::QuicTransport},
+    cluster::{
+        self, Change, ClusterState, EndpointConfig, Lifecycle, Transition, transport::QuicTransport,
+    },
 };
 use tokio::{
     process::{self, Child},
@@ -61,7 +64,9 @@ async fn first_node() -> anyhow::Result<()> {
             .context("reading the cluster state")?
             .current(),
     );
+    print_lifecycle()?;
     cluster::form().context("forming the cluster")?;
+    print_lifecycle()?;
     let mut second_node = spawn_second_node(addrs[1], addrs[0])?;
 
     let name = |addr| {
@@ -76,6 +81,7 @@ async fn first_node() -> anyhow::Result<()> {
             let Change::State(state) = changes.next().await else {
                 continue;
             };
+            print_health(&state);
             for transition in state.diff(&previous) {
                 let member = transition.member().addr();
                 println!("{}: {}", name(member), describe(&transition));
@@ -98,6 +104,38 @@ async fn first_node() -> anyhow::Result<()> {
     Ok(())
 }
 // ANCHOR_END: first-node
+
+// ANCHOR: lifecycle
+fn print_lifecycle() -> anyhow::Result<()> {
+    let lifecycle = cluster::lifecycle().context("reading the lifecycle")?;
+    let description = match lifecycle {
+        Lifecycle::Unformed => "a member of no cluster yet",
+        Lifecycle::Formed => "a member of a cluster",
+        Lifecycle::Downed => "downed or left for good",
+    };
+    println!("first node: {description}");
+    Ok(())
+}
+// ANCHOR_END: lifecycle
+
+// ANCHOR: health
+fn print_health(state: &ClusterState) {
+    for link in state.broken_links() {
+        println!(
+            "broken link: {} cannot reach {} directly",
+            link.observer().addr(),
+            link.subject().addr()
+        );
+    }
+    for foreign in state.foreign_clusters() {
+        println!(
+            "foreign cluster {} answered at {}",
+            foreign.cluster(),
+            foreign.addr()
+        );
+    }
+}
+// ANCHOR_END: health
 
 // ANCHOR: describe
 fn describe(transition: &Transition) -> &'static str {

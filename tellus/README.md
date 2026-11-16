@@ -393,7 +393,12 @@ serde`). Evolving a stored event (`how_to_evolve_events`) and event-sourced chil
 (`how_to_persist_child_actors`) need `--features persistence-in-memory`. Shutting a node down
 gracefully (`how_to_shut_down_gracefully`) and observing a cluster (`how_to_observe_a_cluster`)
 need `--features cluster-dev`; securing it with mutual TLS (`how_to_secure_with_mutual_tls`) needs
-`--features cluster,serde`. The guides for
+`--features cluster,serde`. Five more cluster examples need `--features cluster-dev` as well:
+publishing to a topic (`how_to_publish_to_a_topic`), rolling out a new message shape
+(`how_to_roll_out_a_new_message_shape`), removing a member by leaving and by downing
+(`how_to_remove_a_member`), handing over an actor reference out of band
+(`how_to_hand_over_a_reference`) and forming a cluster although the lowest seed never starts
+(`how_to_form_without_the_lowest_seed`). The guides for
 running on Kubernetes and for serving the cluster state over HTTP use examples in
 [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s/examples) and
 [`tellus-cluster-inspect`](../tellus-cluster-inspect/examples).
