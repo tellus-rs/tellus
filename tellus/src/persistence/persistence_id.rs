@@ -2,7 +2,7 @@ use derive_more::Display;
 use std::{str::FromStr, sync::Arc};
 use thiserror::Error;
 
-const MAX_SEGMENT_LEN: usize = 255;
+pub(crate) const MAX_SEGMENT_LEN: usize = 255;
 
 /// The stable identity of an event stream, chosen by the application and unchanged across
 /// incarnations: every spawn for the same entity names the same stream. It is unrelated to
