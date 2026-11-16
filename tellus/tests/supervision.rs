@@ -13,10 +13,11 @@ use tellus::{
 use thiserror::Error;
 use tokio::{
     sync::mpsc,
-    time::{Instant, sleep, timeout},
+    time::{Instant, advance, sleep, timeout},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+const RESET_AFTER: Duration = Duration::from_secs(10);
 
 /// `Restart` replaces the state of the failed actor with a newly initialized one. The count of one
 /// proves both halves: two of them would mean the state survived, none that it was never counted.
@@ -167,6 +168,70 @@ async fn running_resets_the_restart_count() {
         .expect("actor did not report its count")
         .expect("reported channel closed");
     assert_eq!(count, 1);
+}
+
+/// A failure after exactly `max_restarts` counted restarts stops the actor, and not before: the
+/// actor restarts on each of the first two failures, answering with a fresh count, and stops on
+/// the third.
+#[tokio::test]
+async fn the_restart_limit_allows_exactly_max_restarts() {
+    let (counter, mut reported_rx) = counter(FailureTrigger::Err);
+    let system = ActorSystem::with_config(
+        counter,
+        config(restart_strategy(2, Duration::from_secs(3600))),
+    );
+
+    for _ in 0..2 {
+        system.root().tell(CounterMessage::Bump);
+        system.root().tell(CounterMessage::Fail);
+        system.root().tell(CounterMessage::Report);
+        let count = timeout(TIMEOUT, reported_rx.recv())
+            .await
+            .expect("the restarted actor did not report its count")
+            .expect("reported channel closed");
+        assert_eq!(count, 0, "the failure did not restart the actor");
+    }
+
+    system.root().tell(CounterMessage::Fail);
+    timeout(TIMEOUT, system.terminated())
+        .await
+        .expect("actor system did not terminate after exceeding the restart limit")
+        .expect("watching the root actor failed");
+}
+
+/// Running for just under a nonzero `reset_after` keeps the restart count: the paused clock
+/// advances by a millisecond less than `reset_after` between the restart and the next failure,
+/// which therefore exceeds the limit of one.
+#[tokio::test(start_paused = true)]
+async fn running_just_under_reset_after_keeps_the_restart_count() {
+    let system = restarted_once(RESET_AFTER).await;
+
+    advance(RESET_AFTER - Duration::from_millis(1)).await;
+    system.root().tell(CounterMessage::Fail);
+
+    timeout(TIMEOUT, system.terminated())
+        .await
+        .expect("actor system did not terminate with its restart count kept")
+        .expect("watching the root actor failed");
+}
+
+/// Running for exactly a nonzero `reset_after` resets the restart count: the paused clock advances
+/// by `reset_after` between the restart and the next failure, which is hence restarted although
+/// the limit of one is used up.
+#[tokio::test(start_paused = true)]
+async fn running_for_reset_after_resets_the_restart_count() {
+    let (system, mut reported_rx) = restarted_once_reporting(RESET_AFTER).await;
+
+    advance(RESET_AFTER).await;
+    system.root().tell(CounterMessage::Bump);
+    system.root().tell(CounterMessage::Fail);
+    system.root().tell(CounterMessage::Report);
+
+    let count = timeout(TIMEOUT, reported_rx.recv())
+        .await
+        .expect("the actor was not restarted once its restart count was reset")
+        .expect("reported channel closed");
+    assert_eq!(count, 0);
 }
 
 /// Restart delays grow exponentially from `min_backoff` and are capped at `max_backoff`: three
@@ -325,6 +390,29 @@ async fn terminates_after_failing_reinitialization(fail: FailureTrigger) {
         4,
         "expected the initial init plus max_restarts failing retries"
     );
+}
+
+/// A [Counter] under a restart limit of one with the given `reset_after`, which has failed and
+/// restarted once, its restarted incarnation having started at the current instant.
+async fn restarted_once(reset_after: Duration) -> ActorSystem<CounterMessage> {
+    restarted_once_reporting(reset_after).await.0
+}
+
+async fn restarted_once_reporting(
+    reset_after: Duration,
+) -> (ActorSystem<CounterMessage>, mpsc::Receiver<u32>) {
+    let (counter, mut reported_rx) = counter(FailureTrigger::Err);
+    let system = ActorSystem::with_config(counter, config(restart_strategy(1, reset_after)));
+
+    system.root().tell(CounterMessage::Fail);
+    system.root().tell(CounterMessage::Report);
+    let count = timeout(TIMEOUT, reported_rx.recv())
+        .await
+        .expect("the restarted actor did not report its count")
+        .expect("reported channel closed");
+    assert_eq!(count, 0);
+
+    (system, reported_rx)
 }
 
 /// A counter reporting through a fresh channel, the pair every failure test starts from.

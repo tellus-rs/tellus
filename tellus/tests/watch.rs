@@ -1,3 +1,6 @@
+mod logs;
+
+use crate::logs::Logs;
 use std::{
     convert::Infallible,
     hint,
@@ -236,6 +239,35 @@ async fn watch_racing_termination_still_signals() {
 
         assert_terminates(system, "actor system did not terminate").await;
     }
+}
+
+/// A terminating watcher deregisters from everything it still watches, so dead watchers never
+/// accumulate: the watched actor, terminating later, has no watcher left which it fails to signal.
+#[tokio::test]
+async fn a_terminated_watcher_is_deregistered() {
+    let target = ActorSystem::new(Target);
+    let mut logs = Logs::of(target.root().actor_id());
+
+    let deserter = ActorSystem::new(Deserter);
+    deserter.root().tell(target.root().clone());
+    assert_terminates(deserter, "the watcher did not terminate").await;
+
+    target.stop();
+    assert_terminates(target, "the watched actor did not terminate").await;
+    let unsignaled = logs
+        .until("terminated")
+        .await
+        .into_iter()
+        .filter(|fields| {
+            fields
+                .get("message")
+                .is_some_and(|message| message == "cannot send terminated signal")
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        unsignaled.is_empty(),
+        "the terminated watcher was still registered: {unsignaled:?}"
+    );
 }
 
 async fn recv<T>(rx: &mut mpsc::Receiver<T>, not_received: &str) -> T {
@@ -909,6 +941,33 @@ impl Actor for Target {
 }
 
 struct Stop;
+
+/// Watch the actor it is told about, then stop at once.
+struct Deserter;
+
+impl Actor for Deserter {
+    type Message = ActorRef<Stop>;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        _: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        if let Incoming::Message(target) = incoming {
+            context.watch(&target);
+        }
+        Ok(Control::Stop)
+    }
+}
 
 /// Watch the target up front and report back, so the round only starts once the terminating target
 /// has this many signals to send after draining its mailbox.

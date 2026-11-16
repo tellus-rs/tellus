@@ -18,10 +18,11 @@ use thiserror::Error;
 use tokio::{
     sync::mpsc,
     task::{block_in_place, spawn},
-    time::timeout,
+    time::{advance, timeout},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+const ARM_DELAY: Duration = Duration::from_secs(1);
 
 /// Stashed messages are handled when the actor unstashes, ahead of messages which arrived later:
 /// the read stashed while closed runs before the open and the write queued behind it, and the
@@ -199,19 +200,42 @@ async fn a_terminated_signal_stashed_after_unwatch_is_received_after_unstashing(
     assert_eq!(events.recv().await, None);
 }
 
-/// Unstashed items are received before a due timer: they arrived before its deadline.
-#[tokio::test]
+/// Unstashed items are received before a due timer: they arrived before its deadline. The timer
+/// fires while `Release` is queued, so its position is reached once `Release` has been received,
+/// right when its `unstash_all` hands the stashed item back.
+#[tokio::test(start_paused = true)]
 async fn unstashed_items_are_received_before_a_due_timer() {
     let (system, mut events) = probe_system(ActorConfig::default());
 
     system.root().tell(ProbeMessage::Hold);
     system.root().tell(ProbeMessage::Keep(3));
-    system.root().tell(ProbeMessage::ReleaseWithTimer);
-
+    system.root().tell(ProbeMessage::Arm);
     assert_eq!(next_event(&mut events).await, ProbeEvent::Stashed(3));
+    assert_eq!(next_event(&mut events).await, ProbeEvent::Armed);
+    // Tokio polls this task before the actor processes the passed deadline; the tell relies on it.
+    advance(ARM_DELAY).await;
+    system.root().tell(ProbeMessage::Release);
+
     assert_eq!(next_event(&mut events).await, ProbeEvent::Kept(3, 1));
     assert_eq!(next_event(&mut events).await, ProbeEvent::Fired);
     stop(system).await;
+}
+
+/// Stashed items whose destructors panic are dropped under containment at termination: every
+/// destructor runs, and the system still terminates.
+#[tokio::test]
+async fn panicking_stashed_item_destructors_are_contained() {
+    let dropped = Arc::new(AtomicU32::new(0));
+    let (stashed_tx, mut stashed) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Hoarder(stashed_tx));
+
+    for _ in 0..2 {
+        system.root().tell(Bomb(dropped.clone()));
+        next_event(&mut stashed).await;
+    }
+
+    stop(system).await;
+    assert_eq!(dropped.load(SeqCst), 2);
 }
 
 /// A stop by the parent is received ahead of the unstashed items: the first of two unstashed items
@@ -309,10 +333,9 @@ impl Actor for Probe {
                 context.unstash_all();
             }
 
-            Incoming::Message(ProbeMessage::ReleaseWithTimer) => {
-                holding.holding = false;
-                context.start_timer("fired", ProbeMessage::Fired, Duration::ZERO);
-                context.unstash_all();
+            Incoming::Message(ProbeMessage::Arm) => {
+                context.start_timer("fired", ProbeMessage::Fired, ARM_DELAY);
+                self.emit(ProbeEvent::Armed);
             }
 
             Incoming::Message(ProbeMessage::Fill(count)) => {
@@ -421,7 +444,7 @@ impl Holding {
 enum ProbeMessage {
     Hold,
     Release,
-    ReleaseWithTimer,
+    Arm,
     Fill(u32),
     Watch,
     WatchAndUnwatch(UnwatchOrder),
@@ -447,12 +470,54 @@ enum ProbeEvent {
     StashedAsk,
     StashedTerminated,
     Terminated,
+    Armed,
     Fired,
 }
 
 #[derive(Debug, Error)]
 #[error("probe failed on purpose")]
 struct Failed;
+
+/// Stashes every message and reports each one stashed.
+struct Hoarder(mpsc::UnboundedSender<()>);
+
+impl Actor for Hoarder {
+    type Message = Bomb;
+    type Timers = Untimed;
+    type Stash = Stashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(
+        &self,
+        _: &ActorContext<Self::Message, Untimed, Stashed>,
+    ) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message, Untimed, Stashed>,
+        incoming: Incoming<Self::Message>,
+        (): Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        if context.stash(incoming).is_err() {
+            unreachable!("the stash is unbounded");
+        }
+        self.0.send(()).expect("test dropped the receiver");
+        Ok(Control::Continue(()))
+    }
+}
+
+/// Counts its drop, then panics.
+struct Bomb(Arc<AtomicU32>);
+
+impl Drop for Bomb {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, SeqCst);
+        panic!("stashed item destructor panics on purpose");
+    }
+}
 
 /// Stop on the first message.
 struct Stopper;

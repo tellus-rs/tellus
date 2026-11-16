@@ -1,3 +1,6 @@
+mod logs;
+
+use crate::logs::Logs;
 use std::{
     convert::Infallible,
     future::Future,
@@ -122,6 +125,41 @@ async fn an_unanswered_ask_fails_as_timeout() {
         .expect_err("a kept request must not produce a reply");
     assert!(matches!(error, AskError::Timeout(within) if within == TIMEOUT));
 
+    system.root().tell(KeeperMessage::Stop);
+    assert_terminates(system, "actor system did not terminate").await;
+}
+
+/// A reply which arrives once the ask has timed out is dropped as a dead letter, logged at warn
+/// level with the responder's ID, and the responder carries on.
+#[tokio::test(start_paused = true)]
+async fn a_late_reply_is_a_dead_letter() {
+    let system = ActorSystem::new(Keeper);
+    let mut logs = Logs::of(system.root().actor_id());
+
+    let error = system
+        .root()
+        .ask(TIMEOUT, KeeperMessage::Keep)
+        .await
+        .expect_err("a kept request must not produce a reply in time");
+    assert!(matches!(error, AskError::Timeout(_)));
+
+    system.root().tell(KeeperMessage::ReplyNow);
+    let events = logs.until("dead letter").await;
+    let dead_letter = events
+        .last()
+        .expect("`until` returns the event it waited for");
+    assert_eq!(dead_letter.get("level"), Some(&"WARN".to_string()));
+    assert_eq!(
+        dead_letter.get("error"),
+        Some(&"asker no longer awaits the reply".to_string())
+    );
+
+    let probed = system
+        .root()
+        .ask(TIMEOUT, KeeperMessage::Probe)
+        .await
+        .expect("the responder did not carry on");
+    assert_eq!(probed, 99);
     system.root().tell(KeeperMessage::Stop);
     assert_terminates(system, "actor system did not terminate").await;
 }

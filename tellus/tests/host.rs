@@ -1,16 +1,20 @@
+mod logs;
+
+use crate::logs::Logs;
 use std::{
     convert::Infallible,
     num::NonZeroUsize,
     sync::{
         Arc, Condvar, Mutex,
         atomic::{AtomicUsize, Ordering},
+        mpsc as std_mpsc,
     },
     time::Duration,
 };
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Host, HostConfig,
-    HostEnvelope, Hosted, Incoming, InvalidHostConfig, MailboxCapacity, ReplyTo, Unstashed,
-    Untimed,
+    HostEnvelope, Hosted, Incoming, InvalidHostConfig, MailboxCapacity, Nothing, ReplyTo, Timed,
+    Unstashed, Untimed,
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
@@ -338,6 +342,81 @@ async fn an_ask_reaches_the_entity() {
     assert_eq!(entities.note().await.0, entity);
 }
 
+/// Messages told to an entity's reference directly and its own timers do not count as use: an
+/// entity busy with both, every quarter of the idle timeout, is still passivated.
+#[tokio::test(start_paused = true)]
+async fn direct_tells_and_timers_do_not_count_as_use() {
+    let (entity_tx, mut entity_rx) = mpsc::unbounded_channel();
+    let (passivated_tx, mut passivated_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Host::new(idle_config(), move |_, context| {
+        let entity = context.spawn(Busy(passivated_tx.clone()));
+        let _ = entity_tx.send(entity.clone());
+        entity
+    }));
+
+    system.root().tell(HostEnvelope {
+        key: 1,
+        message: BusyMessage::Poke,
+    });
+    let entity = timeout(TIMEOUT, entity_rx.recv())
+        .await
+        .expect("no entity spawned in time")
+        .expect("the host keeps the sender");
+    tokio::spawn(async move {
+        loop {
+            sleep(IDLE_TIMEOUT / 4).await;
+            entity.tell(BusyMessage::Poke.into());
+        }
+    });
+
+    let (pokes, ticks) = timeout(TIMEOUT, passivated_rx.recv())
+        .await
+        .expect("the busy entity was not passivated")
+        .expect("the entity keeps the sender");
+    assert!(pokes >= 3, "only {pokes} pokes before the passivation");
+    assert!(ticks >= 3, "only {ticks} ticks before the passivation");
+}
+
+/// An entity which stopped on its own is taken for live until the host has received its
+/// terminated signal, so a message routed to it meanwhile is a dead letter. Here the entity has
+/// closed its mailbox and waits for its child, which the test holds in its destructor.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_message_for_an_entity_which_stopped_on_its_own_is_a_dead_letter() {
+    let (notes_tx, mut notes_rx) = mpsc::unbounded_channel();
+    let (clinging_tx, mut clinging_rx) = mpsc::unbounded_channel();
+    let (release_tx, release_rx) = std_mpsc::channel();
+    let release_rx = Arc::new(Mutex::new(Some(release_rx)));
+    let system = ActorSystem::new(Host::new(HostConfig::new(BUFFER), move |_, context| {
+        context.spawn(Lingering {
+            notes: notes_tx.clone(),
+            clinging: clinging_tx.clone(),
+            release: release_rx.clone(),
+        })
+    }));
+    let host = system.root().clone();
+
+    host.tell(linger(1, LingerMessage::Note("eins")));
+    let (entity, _) = timeout(TIMEOUT, notes_rx.recv())
+        .await
+        .expect("no note arrives in time")
+        .expect("the entity keeps the sender");
+    let mut logs = Logs::of(entity);
+
+    host.tell(linger(1, LingerMessage::Die));
+    timeout(TIMEOUT, clinging_rx.recv())
+        .await
+        .expect("the entity's child did not start stopping")
+        .expect("the child keeps the sender");
+
+    host.tell(linger(1, LingerMessage::Note("zwei")));
+    let events = logs.until("dead letter").await;
+    release_tx.send(()).expect("the child awaits the release");
+    let dead_letter = events
+        .last()
+        .expect("`until` returns the event it waited for");
+    assert_eq!(dead_letter.get("level"), Some(&"WARN".to_string()));
+}
+
 /// A zero idle timeout is refused: it would have the host sweeping without pause, and leaving the
 /// timeout unset is how passivation is switched off.
 #[test]
@@ -364,6 +443,10 @@ fn host(config: HostConfig, entities: Entities) -> ActorRef<HostEnvelope<u8, Mes
     drop(system);
 
     host
+}
+
+fn linger(key: u8, message: LingerMessage) -> HostEnvelope<u8, LingerMessage> {
+    HostEnvelope { key, message }
 }
 
 fn idle_config() -> HostConfig {
@@ -496,6 +579,146 @@ impl Actor for Entity {
 impl Drop for Entity {
     fn drop(&mut self) {
         let _ = self.entities.stopped.send(self.key);
+    }
+}
+
+/// Keeps itself busy with a timer every quarter of the idle timeout, counts the pokes told to it
+/// and its ticks, and reports both once asked to passivate, which it then does.
+struct Busy(mpsc::UnboundedSender<(u32, u32)>);
+
+impl Actor for Busy {
+    type Message = Hosted<BusyMessage>;
+    type Timers = Timed;
+    type Stash = Unstashed;
+    type State = (u32, u32);
+    type Error = Infallible;
+
+    fn init(
+        &self,
+        context: &ActorContext<Self::Message, Timed>,
+    ) -> Result<Self::State, Self::Error> {
+        context.start_timer("tick", BusyMessage::Tick.into(), IDLE_TIMEOUT / 4);
+        Ok((0, 0))
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message, Timed>,
+        incoming: Incoming<Self::Message>,
+        (pokes, ticks): Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(Hosted::Message(BusyMessage::Poke)) => {
+                Ok(Control::Continue((pokes + 1, ticks)))
+            }
+
+            Incoming::Message(Hosted::Message(BusyMessage::Tick)) => {
+                context.start_timer("tick", BusyMessage::Tick.into(), IDLE_TIMEOUT / 4);
+                Ok(Control::Continue((pokes, ticks + 1)))
+            }
+
+            Incoming::Message(Hosted::Passivate) => {
+                let _ = self.0.send((pokes, ticks));
+                Ok(Control::Stop)
+            }
+
+            Incoming::Terminated(_) => Ok(Control::Continue((pokes, ticks))),
+        }
+    }
+}
+
+enum BusyMessage {
+    Poke,
+    Tick,
+}
+
+/// Reports its notes and stops on `Die`, its termination held up by a [Clinging] child.
+struct Lingering {
+    notes: mpsc::UnboundedSender<(ActorId, &'static str)>,
+    clinging: mpsc::UnboundedSender<()>,
+    release: Arc<Mutex<Option<std_mpsc::Receiver<()>>>>,
+}
+
+impl Actor for Lingering {
+    type Message = Hosted<LingerMessage>;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        let release = self
+            .release
+            .lock()
+            .expect("the release is not poisoned")
+            .take();
+        context.spawn(Clinging {
+            clinging: self.clinging.clone(),
+            release,
+        });
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(Hosted::Message(LingerMessage::Note(note))) => {
+                let _ = self.notes.send((context.self_ref().actor_id(), note));
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Message(Hosted::Message(LingerMessage::Die)) => Ok(Control::Stop),
+
+            Incoming::Message(Hosted::Passivate) | Incoming::Terminated(_) => {
+                Ok(Control::Continue(state))
+            }
+        }
+    }
+}
+
+enum LingerMessage {
+    Note(&'static str),
+    Die,
+}
+
+/// Reports when its actor value is dropped and, if it holds the release, blocks the dropping
+/// thread until released; `Drop` is synchronous, hence this blocks rather than awaits.
+struct Clinging {
+    clinging: mpsc::UnboundedSender<()>,
+    release: Option<std_mpsc::Receiver<()>>,
+}
+
+impl Actor for Clinging {
+    type Message = Nothing;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Continue(state))
+    }
+}
+
+impl Drop for Clinging {
+    fn drop(&mut self) {
+        if let Some(release) = &self.release {
+            let _ = self.clinging.send(());
+            let _ = release.recv_timeout(TIMEOUT);
+        }
     }
 }
 

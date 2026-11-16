@@ -5,7 +5,7 @@ use std::{
     marker::PhantomData,
     sync::{
         Arc, Once,
-        atomic::{AtomicBool, Ordering::SeqCst},
+        atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
         mpsc as std_mpsc,
     },
     thread,
@@ -335,6 +335,64 @@ async fn panicking_error_display_and_drop_are_contained_separately() {
     }
 }
 
+/// The actor value is dropped before the watchers are signaled, since a terminated signal must
+/// prove that the actor's destructors have run. The subject's destructor tells its watcher, and
+/// that message shares the FIFO with the signal, so it must arrive first.
+#[tokio::test]
+async fn the_actor_value_is_dropped_before_the_watchers_are_signaled() {
+    let (witnessed_tx, mut witnessed_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Witness(witnessed_tx));
+
+    let mut witnessed = Vec::new();
+    for _ in 0..2 {
+        witnessed.push(recv_unbounded(&mut witnessed_rx, "the witness saw too little").await);
+    }
+    assert_eq!(witnessed, [Witnessed::Dropped, Witnessed::Terminated]);
+    assert_terminates(system).await;
+}
+
+/// A stopped actor drops its state before it stops its children: the root's state reports its
+/// drop ahead of the child's actor value, which the child drops only on its way out.
+#[tokio::test]
+async fn the_state_is_dropped_before_the_children_are_stopped() {
+    let (lifecycle_tx, mut lifecycle_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(StatefulParent(lifecycle_tx));
+    assert_eq!(
+        recv_unbounded(&mut lifecycle_rx, "the parent did not start").await,
+        Lifecycle::Started
+    );
+
+    system.stop();
+    assert_terminates(system).await;
+
+    let mut lifecycle = Vec::new();
+    while let Ok(event) = lifecycle_rx.try_recv() {
+        lifecycle.push(event);
+    }
+    assert_eq!(
+        lifecycle,
+        [Lifecycle::StateDropped, Lifecycle::ChildDropped]
+    );
+}
+
+/// Queued messages whose destructors panic are dropped under containment at termination: every
+/// destructor runs, and the system still terminates.
+#[tokio::test]
+async fn panicking_queued_message_destructors_are_contained() {
+    let dropped = Arc::new(AtomicUsize::new(0));
+    let system = ActorSystem::new(Hoarder);
+
+    system.root().tell(Hoarded::Stop);
+    for _ in 0..2 {
+        system.root().tell(Hoarded::Bomb {
+            _bomb: Bomb(dropped.clone()),
+        });
+    }
+
+    assert_terminates(system).await;
+    assert_eq!(dropped.load(SeqCst), 2);
+}
+
 async fn assert_failure_terminates(failing: Failing, panics: Panics) -> Arc<Hooks> {
     // A logged error is formatted only under a subscriber which formats fields!
     init_tracing();
@@ -639,6 +697,192 @@ enum Event {
     UnbornDropped,
     ParentDropped,
     Terminated(ActorId),
+}
+
+/// Spawns a [Subject], watches it and tells it to stop, then reports what it receives.
+struct Witness(mpsc::UnboundedSender<Witnessed>);
+
+impl Actor for Witness {
+    type Message = ();
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        let subject = context.spawn(Subject(context.self_ref().clone()));
+        context.watch(&subject);
+        subject.tell(());
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(()) => {
+                let _ = self.0.send(Witnessed::Dropped);
+                Ok(Control::Continue(state))
+            }
+
+            Incoming::Terminated(_) => {
+                let _ = self.0.send(Witnessed::Terminated);
+                Ok(Control::Stop)
+            }
+        }
+    }
+}
+
+/// Stops on its first message and tells its [Witness] when its actor value is dropped.
+struct Subject(ActorRef<()>);
+
+impl Actor for Subject {
+    type Message = ();
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        _: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Stop)
+    }
+}
+
+impl Drop for Subject {
+    fn drop(&mut self) {
+        self.0.tell(());
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Witnessed {
+    Dropped,
+    Terminated,
+}
+
+/// Holds a state which reports its drop and spawns a [ReportingChild]; never stops on its own.
+struct StatefulParent(mpsc::UnboundedSender<Lifecycle>);
+
+impl Actor for StatefulParent {
+    type Message = ();
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ReportingState;
+    type Error = Infallible;
+
+    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        context.spawn(ReportingChild(self.0.clone()));
+        let _ = self.0.send(Lifecycle::Started);
+        Ok(ReportingState(self.0.clone()))
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Continue(state))
+    }
+}
+
+struct ReportingState(mpsc::UnboundedSender<Lifecycle>);
+
+impl Drop for ReportingState {
+    fn drop(&mut self) {
+        let _ = self.0.send(Lifecycle::StateDropped);
+    }
+}
+
+/// Reports the drop of its actor value.
+struct ReportingChild(mpsc::UnboundedSender<Lifecycle>);
+
+impl Actor for ReportingChild {
+    type Message = Nothing;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Continue(state))
+    }
+}
+
+impl Drop for ReportingChild {
+    fn drop(&mut self) {
+        let _ = self.0.send(Lifecycle::ChildDropped);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Lifecycle {
+    Started,
+    StateDropped,
+    ChildDropped,
+}
+
+/// Stops on [Hoarded::Stop], leaving whatever is queued behind it to the termination.
+struct Hoarder;
+
+impl Actor for Hoarder {
+    type Message = Hoarded;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(Hoarded::Stop) => Ok(Control::Stop),
+            _ => Ok(Control::Continue(state)),
+        }
+    }
+}
+
+enum Hoarded {
+    Stop,
+    Bomb { _bomb: Bomb },
+}
+
+/// Counts its drop, then panics.
+struct Bomb(Arc<AtomicUsize>);
+
+impl Drop for Bomb {
+    fn drop(&mut self) {
+        self.0.fetch_add(1, SeqCst);
+        panic!("queued message destructor panics on purpose");
+    }
 }
 
 /// Blocks inside `receive` until released, so a test can stop the system while a message is being

@@ -181,37 +181,52 @@ mod tests {
         assert_eq!(policy.reset_after, RestartPolicy::DEFAULT_RESET_AFTER);
     }
 
-    /// Each setter overwrites its own field and leaves the others as they were.
+    /// Each setter overwrites its own field and leaves the others as they were, whichever setter
+    /// comes first.
     #[test]
     fn a_config_setter_only_overwrites_its_own_field() {
-        let config = ActorConfig::default()
-            .with_mailbox_capacity(MailboxCapacity::Bounded(NonZeroUsize::MIN))
-            .with_supervision_strategy(SupervisionStrategy::Restart(RestartPolicy::new(
-                NonZeroU32::MIN,
-            )));
+        let mailbox_capacity = MailboxCapacity::Bounded(NonZeroUsize::MIN);
+        let supervision_strategy =
+            SupervisionStrategy::Restart(RestartPolicy::new(NonZeroU32::MIN));
 
-        assert!(matches!(
-            config.mailbox_capacity,
-            MailboxCapacity::Bounded(capacity) if capacity == NonZeroUsize::MIN
-        ));
-        assert!(matches!(
-            config.supervision_strategy,
-            SupervisionStrategy::Restart(_)
-        ));
+        for config in [
+            ActorConfig::default()
+                .with_mailbox_capacity(mailbox_capacity)
+                .with_supervision_strategy(supervision_strategy),
+            ActorConfig::default()
+                .with_supervision_strategy(supervision_strategy)
+                .with_mailbox_capacity(mailbox_capacity),
+        ] {
+            assert!(matches!(
+                config.mailbox_capacity,
+                MailboxCapacity::Bounded(capacity) if capacity == NonZeroUsize::MIN
+            ));
+            assert!(matches!(
+                config.supervision_strategy,
+                SupervisionStrategy::Restart(policy) if policy.max_restarts == NonZeroU32::MIN
+            ));
+        }
     }
 
-    /// Each setter overwrites its own field and leaves the others as they were.
+    /// Each setter overwrites its own field and leaves the others as they were, whichever setter
+    /// comes first.
     #[test]
     fn a_policy_setter_only_overwrites_its_own_field() {
         let backoff = Backoff::new(MIN_BACKOFF, MAX_BACKOFF).expect("the bounds are valid");
-        let policy = RestartPolicy::new(NonZeroU32::MIN)
-            .with_backoff(backoff)
-            .with_reset_after(Duration::ZERO);
 
-        assert_eq!(policy.max_restarts, NonZeroU32::MIN);
-        assert_eq!(policy.backoff.min(), MIN_BACKOFF);
-        assert_eq!(policy.backoff.max(), MAX_BACKOFF);
-        assert_eq!(policy.reset_after, Duration::ZERO);
+        for policy in [
+            RestartPolicy::new(NonZeroU32::MIN)
+                .with_backoff(backoff)
+                .with_reset_after(Duration::ZERO),
+            RestartPolicy::new(NonZeroU32::MIN)
+                .with_reset_after(Duration::ZERO)
+                .with_backoff(backoff),
+        ] {
+            assert_eq!(policy.max_restarts, NonZeroU32::MIN);
+            assert_eq!(policy.backoff.min(), MIN_BACKOFF);
+            assert_eq!(policy.backoff.max(), MAX_BACKOFF);
+            assert_eq!(policy.reset_after, Duration::ZERO);
+        }
     }
 
     /// The snake_case variant names, the per-field defaults and the humantime duration format are
