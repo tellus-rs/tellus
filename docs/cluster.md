@@ -426,8 +426,9 @@ is yet to open. While the departure is deferred, this member admits the leaver's
 to drain, and only that one. That connection carries everything the leaver queued for this member,
 and its streams are not ordered against the control stream the departure rides. So every stream of
 the connection is read to its end, and a closed connection ends no reader early: what a stream still
-buffers is delivered first. Data streams which ended before the leaver's `Drained` marker count
-toward the number it announces, and so do streams accepted only after it. Once that number has
+buffers is delivered first. A stream which the close cut within a frame ends there, and the other
+streams are still read to their end. Data streams which ended before the leaver's `Drained` marker
+count toward the number it announces, and so do streams accepted only after it. Once that number has
 ended, this member answers with a `DrainAck` and keeps the connection open until the leaver closes
 it. The wait is bounded by this member's own `leave_timeout`, counted from when it learned the
 departure and not restarted by the marker; past it, no `DrainAck` is sent. Then the death runs,
@@ -616,7 +617,8 @@ reconnect path. Opened on demand, a stream that was never granted would instead 
 queue happened to hash onto it, silently and forever, since these streams live as long as the
 connection. For the same reason a stream failing at the receiver, with an oversize or truncated
 frame or a reset, ends the whole connection there. The other streams are not left running beside a
-dead one, and only a stream its sender finished ends quietly.
+dead one, and only a stream its sender finished ends quietly. The one exception is the connection of
+a departing node, see Leaving, whose other streams are read to their end.
 
 A departing node ends each of its connections with two control frames, see Leaving. `Drained`
 is the last frame on its control stream, sent after every data stream is finished, and names how
