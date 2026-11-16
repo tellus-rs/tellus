@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794853135961,
+  "lastUpdate": 1794853137765,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -30705,6 +30705,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5634316,
             "range": "± 406833",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "55089799b11703f7d215054dd5325e0002873ea3",
+          "message": "Merge pull request #435 from tellus-rs/fix/passivation-example-wait\n\nfix(examples): wait for the passivation instead of sleeping",
+          "timestamp": "2026-11-16T19:10:37+01:00",
+          "tree_id": "642e8c2b61cdf67bf524c9aa31b850a5401782de",
+          "url": "https://github.com/tellus-rs/tellus/commit/55089799b11703f7d215054dd5325e0002873ea3"
+        },
+        "date": 1794853137335,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30598183,
+            "range": "± 2068620",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30485446,
+            "range": "± 1562390",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5186166,
+            "range": "± 214315",
             "unit": "ns/iter"
           }
         ]
