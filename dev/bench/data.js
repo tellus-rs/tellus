@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794840785965,
+  "lastUpdate": 1794840788824,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27253,6 +27253,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 108444,
             "range": "± 2963",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "76e2e414ed2070af463d5f9a20fbe617d596b1fd",
+          "message": "Merge pull request #430 from tellus-rs/test/bounded-test-waits\n\ntest: bound test waits, pin workers and require gated test features",
+          "timestamp": "2026-11-16T15:44:46+01:00",
+          "tree_id": "de04ffce10f9f9ffd8d27e2e6e710ac8e860d95f",
+          "url": "https://github.com/tellus-rs/tellus/commit/76e2e414ed2070af463d5f9a20fbe617d596b1fd"
+        },
+        "date": 1794840788395,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4027318,
+            "range": "± 222990",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3880612,
+            "range": "± 140709",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1147895,
+            "range": "± 11095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 136768,
+            "range": "± 4591",
             "unit": "ns/iter"
           }
         ]
