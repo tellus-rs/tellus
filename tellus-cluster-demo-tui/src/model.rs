@@ -3,10 +3,13 @@ use crate::{
     sources::{Input, NodeInput, StreamInput, VerifierInput},
 };
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
+use std::{collections::BTreeSet, mem, net::SocketAddr, time::Duration};
 use tellus::cluster::{ClusterState, Member, MemberState, Transition, receptionist::Settlement};
 use tellus_cluster_demo::{NodeEvent, Phase, ProbeReport, VerifierEvent, VerifierStatus};
-use tellus_cluster_inspect::{InspectEvent, events::Stamped};
+use tellus_cluster_inspect::{
+    InspectEvent,
+    events::{Cursor, Stamped},
+};
 
 const TIMELINE_KEPT: usize = 1_000;
 
@@ -165,12 +168,20 @@ impl App {
                 self.nodes[index].connection = Connection::Disconnected(reason);
             }
 
-            NodeInput::Stream(StreamInput::Event(Stamped { at, event })) => {
+            NodeInput::Stream(StreamInput::Event(Stamped { at, event }, _)) => {
                 self.node_event(index, at, event);
             }
 
+            NodeInput::Stream(StreamInput::Unreadable(error, _)) => self.record(
+                now,
+                source,
+                Severity::Warn,
+                format!("{label} stream skipped an unreadable event: {error}"),
+            ),
+
             NodeInput::Inspect(StreamInput::Connected) => {
                 let node = &mut self.nodes[index];
+                node.recovery = Some(Recovery::default());
                 if !matches!(node.inspect_connection, Connection::Connected { .. }) {
                     node.inspect_connection = Connection::Connected { since: now };
                     node.stale_since = None;
@@ -194,11 +205,23 @@ impl App {
                         format!("{label} inspect stream lost: {reason}"),
                     );
                 }
+                self.nodes[index].recovery = None;
                 self.nodes[index].inspect_connection = Connection::Disconnected(reason);
             }
 
-            NodeInput::Inspect(StreamInput::Event(Stamped { at, event })) => {
-                self.inspect_event(index, at, event);
+            NodeInput::Inspect(StreamInput::Event(stamped, cursor)) => {
+                self.inspect_item(index, Some(stamped), cursor, now);
+            }
+
+            NodeInput::Inspect(StreamInput::Unreadable(error, cursor)) => {
+                self.nodes[index].seeded = false;
+                self.record(
+                    now,
+                    source,
+                    Severity::Warn,
+                    format!("{label} inspect stream skipped an unreadable event: {error}"),
+                );
+                self.inspect_item(index, None, cursor, now);
             }
 
             // The poll fills only what the streams have not said: theirs is the newer.
@@ -273,6 +296,145 @@ impl App {
                 node.subscribers = Some(subscribers);
             }
         }
+    }
+
+    /// Applies an inspect stream item, `None` for one which could not be read, at most once per
+    /// sequence number of the node's log. A recovery's items carry no id but its last, the
+    /// latest sequence number, so they are held until it arrives and numbered back from it.
+    fn inspect_item(
+        &mut self,
+        index: usize,
+        stamped: Option<Stamped<InspectEvent>>,
+        cursor: Option<Cursor>,
+        now: u64,
+    ) {
+        let node = &mut self.nodes[index];
+        if let Some(Stamped {
+            event: InspectEvent::Hello { resumed, .. },
+            ..
+        }) = &stamped
+        {
+            node.recovery = (!resumed).then(|| Recovery {
+                opened: true,
+                held: Vec::new(),
+            });
+        } else if let Some(recovery) = &mut node.recovery {
+            if !recovery.opened {
+                recovery.opened = true;
+                return;
+            }
+            match cursor {
+                None => {
+                    recovery.held.push(stamped);
+                    return;
+                }
+
+                Some(cursor) => {
+                    let held = mem::take(&mut recovery.held);
+                    node.recovery = None;
+                    self.recover(index, held, stamped, cursor.seq, now);
+                    return;
+                }
+            }
+        } else if let Some(cursor) = cursor {
+            if node.shown(cursor.seq) {
+                return;
+            }
+            node.show_through(cursor.seq);
+        }
+
+        if let Some(Stamped { at, event }) = stamped {
+            self.inspect_event(index, at, event);
+        }
+    }
+
+    /// The pair is the current state, then the current verdict, each only once one exists, so it
+    /// ends with the verdict and holds a state too exactly when any state was ever recorded.
+    fn recover(
+        &mut self,
+        index: usize,
+        mut held: Vec<Option<Stamped<InspectEvent>>>,
+        last: Option<Stamped<InspectEvent>>,
+        anchor: u64,
+        now: u64,
+    ) {
+        let is_state = |item: &Option<Stamped<InspectEvent>>| {
+            matches!(
+                item,
+                Some(Stamped {
+                    event: InspectEvent::State(_),
+                    ..
+                })
+            )
+        };
+        let pair_has_state = match &last {
+            Some(Stamped {
+                event: InspectEvent::State(_),
+                ..
+            }) => Some(false),
+
+            Some(Stamped {
+                event: InspectEvent::Settled(_),
+                ..
+            }) if held.iter().any(is_state) => Some(true),
+
+            Some(Stamped {
+                event: InspectEvent::Settled(_),
+                ..
+            }) if held.iter().all(Option::is_some) => Some(false),
+
+            _ if held.is_empty() => {
+                let node = &mut self.nodes[index];
+                if !node.shown(anchor) {
+                    node.show_through(anchor);
+                    if let Some(Stamped { at, event }) = last {
+                        self.inspect_event(index, at, event);
+                    }
+                }
+                return;
+            }
+
+            _ => None,
+        };
+        let pair_state = match pair_has_state {
+            Some(true) => held.pop().flatten(),
+            Some(false) => None,
+            None => return self.unaligned(index, anchor, now),
+        };
+        let first = u64::try_from(held.len())
+            .ok()
+            .and_then(|len| (anchor + 1).checked_sub(len));
+        let Some(first) = first else {
+            return self.unaligned(index, anchor, now);
+        };
+
+        for (seq, item) in (first..).zip(held) {
+            let node = &mut self.nodes[index];
+            if node.shown(seq) {
+                continue;
+            }
+            node.show_through(seq);
+            if let Some(Stamped { at, event }) = item {
+                self.inspect_event(index, at, event);
+            }
+        }
+        self.nodes[index].show_through(anchor);
+        for Stamped { at, event } in pair_state.into_iter().chain(last) {
+            self.inspect_event(index, at, event);
+        }
+    }
+
+    fn unaligned(&mut self, index: usize, anchor: u64, now: u64) {
+        let node = &mut self.nodes[index];
+        node.seeded = false;
+        node.show_through(anchor);
+        let label = node.label().to_string();
+        self.record(
+            now,
+            Source::Node(index),
+            Severity::Warn,
+            format!("{label} recovery could not be numbered, its history is not shown"),
+        );
     }
 
     fn inspect_event(&mut self, index: usize, at: u64, event: InspectEvent) {
@@ -399,9 +561,16 @@ impl App {
                 self.verifier.connection = Connection::Disconnected(reason);
             }
 
-            VerifierInput::Stream(StreamInput::Event(Stamped { at, event })) => {
+            VerifierInput::Stream(StreamInput::Event(Stamped { at, event }, _)) => {
                 self.verifier_event(at, event);
             }
+
+            VerifierInput::Stream(StreamInput::Unreadable(error, _)) => self.record(
+                now,
+                Source::Verifier,
+                Severity::Warn,
+                format!("verifier stream skipped an unreadable event: {error}"),
+            ),
 
             VerifierInput::Status(status) => self.verifier.status = Some(status),
         }
@@ -525,6 +694,8 @@ pub struct NodeSource {
     pub probes: Option<ProbeReport>,
     pub stale_since: Option<u64>,
     seeded: bool,
+    shown_through: Option<u64>,
+    recovery: Option<Recovery>,
 }
 
 impl NodeSource {
@@ -547,6 +718,8 @@ impl NodeSource {
             probes: None,
             stale_since: None,
             seeded: false,
+            shown_through: None,
+            recovery: None,
         }
     }
 
@@ -567,7 +740,22 @@ impl NodeSource {
         self.snapshot = None;
         self.settlement = None;
         self.seeded = false;
+        self.shown_through = None;
     }
+
+    fn shown(&self, seq: u64) -> bool {
+        self.shown_through.is_some_and(|through| seq <= through)
+    }
+
+    fn show_through(&mut self, seq: u64) {
+        self.shown_through = Some(self.shown_through.map_or(seq, |through| through.max(seq)));
+    }
+}
+
+#[derive(Default)]
+struct Recovery {
+    opened: bool,
+    held: Vec<Option<Stamped<InspectEvent>>>,
 }
 
 pub struct VerifierSource {
@@ -669,6 +857,7 @@ fn describe(transition: &Transition) -> (Severity, String) {
 mod tests {
     use super::*;
     use serde_json::{Value, json};
+    use std::iter;
     use tellus_cluster_demo::ClusterView;
 
     const NOW: u64 = 1_700_000_000_000;
@@ -745,17 +934,43 @@ mod tests {
         app.apply(
             Input::Node(
                 index,
-                NodeInput::Stream(StreamInput::Event(Stamped { at, event })),
+                NodeInput::Stream(StreamInput::Event(Stamped { at, event }, None)),
             ),
             NOW,
         );
     }
 
+    /// Numbered by its stamp, as live events are, except a hello, which carries no id.
     fn inspect(app: &mut App, index: usize, at: u64, event: InspectEvent) {
+        let seq = (!matches!(event, InspectEvent::Hello { .. })).then_some(at);
+        inspect_numbered(app, index, at, event, seq);
+    }
+
+    fn inspect_numbered(
+        app: &mut App,
+        index: usize,
+        at: u64,
+        event: InspectEvent,
+        seq: Option<u64>,
+    ) {
+        let cursor = seq.map(|seq| Cursor {
+            started_at: 100,
+            seq,
+        });
         app.apply(
             Input::Node(
                 index,
-                NodeInput::Inspect(StreamInput::Event(Stamped { at, event })),
+                NodeInput::Inspect(StreamInput::Event(Stamped { at, event }, cursor)),
+            ),
+            NOW,
+        );
+    }
+
+    fn inspect_disconnected(app: &mut App, index: usize) {
+        app.apply(
+            Input::Node(
+                index,
+                NodeInput::Inspect(StreamInput::Disconnected("gone".to_string())),
             ),
             NOW,
         );
@@ -1010,6 +1225,141 @@ mod tests {
         );
     }
 
+    /// A recovery interrupted before its last item is repeated in full, without ids but for the
+    /// pair's last: what was shown is not shown again, and what was not is.
+    #[test]
+    fn a_repeated_recovery_shows_each_entry_once() {
+        let live = [
+            (3, InspectEvent::Settled(settlement(1, false))),
+            (4, InspectEvent::Settled(settlement(1, true))),
+            (5, InspectEvent::Gap { dropped: 2 }),
+            (
+                6,
+                InspectEvent::State(state(2, vec![up(7001), down(7002)], vec![])),
+            ),
+            (7, InspectEvent::Settled(settlement(2, true))),
+        ];
+        let mut app = App::new(&config());
+        node1(&mut app);
+        for (at, event) in live.clone() {
+            inspect(&mut app, 0, at, event);
+        }
+        let shown = texts(&app).len();
+        let history = iter::once((
+            2,
+            InspectEvent::State(state(1, vec![up(7001), up(7002)], vec![])),
+        ))
+        .chain(live)
+        .chain([(9, InspectEvent::Settled(settlement(2, false)))])
+        .collect::<Vec<_>>();
+
+        inspect_disconnected(&mut app, 0);
+        inspect(&mut app, 0, 8, inspect_hello(100, false));
+        for (at, event) in history[..4].iter().cloned() {
+            inspect_numbered(&mut app, 0, at, event, None);
+        }
+        inspect_disconnected(&mut app, 0);
+        inspect(&mut app, 0, 8, inspect_hello(100, false));
+        for (at, event) in history.iter().cloned() {
+            inspect_numbered(&mut app, 0, at, event, None);
+        }
+        inspect_numbered(
+            &mut app,
+            0,
+            6,
+            InspectEvent::State(state(2, vec![up(7001), down(7002)], vec![])),
+            None,
+        );
+        inspect_numbered(
+            &mut app,
+            0,
+            9,
+            InspectEvent::Settled(settlement(2, false)),
+            Some(8),
+        );
+
+        assert_eq!(
+            texts(&app)[..shown],
+            [
+                "node1 settled false at v1",
+                "node1 settled true at v1",
+                "node1 fell behind by 2 changes",
+                "node1 settled true at v2",
+            ]
+        );
+        assert_eq!(
+            texts(&app)[shown..],
+            [
+                "node1 history lost, replaying what is retained",
+                "node1 history lost, replaying what is retained",
+                "node1 settled false at v2",
+            ]
+        );
+    }
+
+    /// A settlement and a gap stamped in the same millisecond are two events: a recovery cut off
+    /// between them shows the gap once the repeated recovery delivers it.
+    #[test]
+    fn a_gap_sharing_a_stamp_with_a_shown_settlement_is_shown() {
+        let v1 = || InspectEvent::State(state(1, vec![up(7001), up(7002)], vec![]));
+        let settled = || InspectEvent::Settled(settlement(1, true));
+        let mut app = App::new(&config());
+        node1(&mut app);
+        inspect_numbered(&mut app, 0, 10, settled(), Some(3));
+
+        inspect_disconnected(&mut app, 0);
+        inspect(&mut app, 0, 11, inspect_hello(100, false));
+        inspect_numbered(&mut app, 0, 2, v1(), None);
+        inspect_numbered(&mut app, 0, 10, settled(), None);
+
+        inspect_disconnected(&mut app, 0);
+        inspect(&mut app, 0, 12, inspect_hello(100, false));
+        inspect_numbered(&mut app, 0, 2, v1(), None);
+        inspect_numbered(&mut app, 0, 10, settled(), None);
+        inspect_numbered(&mut app, 0, 10, InspectEvent::Gap { dropped: 4 }, None);
+        inspect_numbered(&mut app, 0, 2, v1(), None);
+        inspect_numbered(&mut app, 0, 10, settled(), Some(4));
+        inspect_numbered(
+            &mut app,
+            0,
+            13,
+            InspectEvent::Settled(settlement(1, false)),
+            Some(5),
+        );
+
+        let texts = texts(&app);
+        let count = |entry: &str| texts.iter().filter(|text| **text == entry).count();
+        assert_eq!(count("node1 fell behind by 4 changes"), 1);
+        assert_eq!(count("node1 settled true at v1"), 1);
+        assert_eq!(count("node1 settled false at v1"), 1);
+    }
+
+    /// The state after an unreadable one is a new baseline, not a diff across the one skipped.
+    #[test]
+    fn an_unreadable_inspect_event_reseeds_without_transitions() {
+        let mut app = App::new(&config());
+        node1(&mut app);
+        app.apply(
+            Input::Node(
+                0,
+                NodeInput::Inspect(StreamInput::Unreadable("bad".to_string(), None)),
+            ),
+            NOW,
+        );
+        inspect(
+            &mut app,
+            0,
+            4,
+            InspectEvent::State(state(3, vec![up(7001), down(7002)], vec![])),
+        );
+
+        assert_eq!(
+            texts(&app),
+            vec!["node1 inspect stream skipped an unreadable event: bad"]
+        );
+        assert_eq!(app.cell(0, addr(7002)), Cell::Down);
+    }
+
     #[test]
     fn the_poll_supplies_what_the_streams_have_not_said() {
         let mut app = App::new(&config());
@@ -1093,14 +1443,17 @@ mod tests {
     fn a_mixed_verification_says_so_on_the_timeline() {
         let mut app = App::new(&config());
         let verified = |mixed| {
-            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
-                at: 1,
-                event: VerifierEvent::Verified {
-                    violations: 0,
-                    mixed,
-                    quiet_for_millis: 30_000,
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(
+                Stamped {
+                    at: 1,
+                    event: VerifierEvent::Verified {
+                        violations: 0,
+                        mixed,
+                        quiet_for_millis: 30_000,
+                    },
                 },
-            })))
+                None,
+            )))
         };
         app.apply(verified(false), NOW);
         app.apply(verified(true), NOW);
@@ -1125,12 +1478,15 @@ mod tests {
             },
         );
         app.apply(
-            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
-                at: 20,
-                event: VerifierEvent::Chaos {
-                    value: "quiet".to_string(),
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(
+                Stamped {
+                    at: 20,
+                    event: VerifierEvent::Chaos {
+                        value: "quiet".to_string(),
+                    },
                 },
-            }))),
+                None,
+            ))),
             NOW,
         );
         demo(
@@ -1164,13 +1520,16 @@ mod tests {
     fn a_verifier_restart_drops_the_cached_status() {
         let mut app = App::new(&config());
         let hello = |started_at| {
-            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
-                at: 1,
-                event: VerifierEvent::Hello {
-                    started_at,
-                    resumed: false,
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(
+                Stamped {
+                    at: 1,
+                    event: VerifierEvent::Hello {
+                        started_at,
+                        resumed: false,
+                    },
                 },
-            })))
+                None,
+            )))
         };
         app.apply(hello(100), NOW);
         app.apply(
@@ -1217,12 +1576,15 @@ mod tests {
         );
         // Replayed from another source with an older stamp: hidden while paused all the same.
         app.apply(
-            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
-                at: 1,
-                event: VerifierEvent::Chaos {
-                    value: "quiet".to_string(),
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(
+                Stamped {
+                    at: 1,
+                    event: VerifierEvent::Chaos {
+                        value: "quiet".to_string(),
+                    },
                 },
-            }))),
+                None,
+            ))),
             NOW,
         );
         assert_eq!(texts(&app), vec!["node1 is a member"]);

@@ -1,9 +1,10 @@
-/// A server-sent events parser; an `id` field applies to every later message until the next one.
+/// A server-sent events parser. A message carries the id of its own `id` field only, so the
+/// caller keeps the last one for `Last-Event-ID`.
 #[derive(Debug, Default)]
 pub struct SseParser {
     buffer: Vec<u8>,
     data: String,
-    last_id: Option<String>,
+    id: Option<String>,
 }
 
 impl SseParser {
@@ -26,11 +27,12 @@ impl SseParser {
     fn line(&mut self, line: &str) -> Option<SseMessage> {
         if line.is_empty() {
             if self.data.is_empty() {
+                self.id = None;
                 return None;
             }
             let data = std::mem::take(&mut self.data);
             return Some(SseMessage {
-                id: self.last_id.clone(),
+                id: self.id.take(),
                 data,
             });
         }
@@ -48,7 +50,7 @@ impl SseParser {
                 self.data.push_str(value);
             }
 
-            "id" => self.last_id = Some(value.to_string()),
+            "id" => self.id = Some(value.to_string()),
 
             _ => {}
         }
@@ -111,12 +113,12 @@ mod tests {
     }
 
     #[test]
-    fn the_id_persists_across_messages() {
+    fn an_id_belongs_to_its_own_message() {
         let mut parser = SseParser::default();
         let messages = parser.push(b"data: a\nid: 1:1\n\ndata: b\n\n");
         assert_eq!(
             messages,
-            vec![message(Some("1:1"), "a"), message(Some("1:1"), "b")]
+            vec![message(Some("1:1"), "a"), message(None, "b")]
         );
     }
 }

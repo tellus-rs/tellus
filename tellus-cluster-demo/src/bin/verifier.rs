@@ -12,7 +12,7 @@
 //! Violations are logged, counted and served at `/violations`, which keeps the latest 200; the
 //! process keeps running, since this is a forever test rather than a run to completion.
 
-use anyhow::Context;
+use anyhow::{Context, bail};
 use axum::{Json, Router, extract::State, http::HeaderMap, response::IntoResponse, routing::get};
 use reqwest::Client;
 use std::{
@@ -22,13 +22,13 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     sync::Arc,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::Duration,
 };
 use tellus::cluster::AppVersion;
 use tellus_cluster_demo::{
     ClusterView, Phase, ProbeOutcome, ProbeReport, VerifierEvent, VerifierStatus, Violation,
 };
-use tellus_cluster_inspect::events::{self, EventLog, now_millis};
+use tellus_cluster_inspect::events::{self, EventLog, Stamped, now_millis};
 use tokio::{
     fs,
     net::TcpListener,
@@ -43,6 +43,8 @@ const CHECK_INTERVAL: Duration = Duration::from_secs(2);
 const LB_INTERVAL: Duration = Duration::from_millis(500);
 const HTTP_TIMEOUT: Duration = Duration::from_secs(3);
 const PROBE_TIMEOUT: Duration = Duration::from_secs(10);
+const VERDICT_ATTEMPTS: usize = 5;
+const VERDICT_RETRY_INTERVAL: Duration = Duration::from_millis(500);
 const VIOLATIONS_KEPT: usize = 200;
 const EVENTS_KEPT: NonZeroUsize = NonZeroUsize::new(1024).unwrap();
 const QUIET: &str = "quiet";
@@ -73,11 +75,7 @@ struct Config {
 
 impl Config {
     fn from_env() -> anyhow::Result<Self> {
-        let nodes = var("TELLUS_NODES")?
-            .split(',')
-            .map(|node| node.trim().to_string())
-            .filter(|node| !node.is_empty())
-            .collect::<Vec<_>>();
+        let nodes = nodes(&var("TELLUS_NODES")?)?;
         let lb = var("TELLUS_LB")?;
         let chaos_state = var("TELLUS_CHAOS_STATE")?.into();
         let settle = seconds("TELLUS_SETTLE_SECS")?;
@@ -190,7 +188,7 @@ impl VerifierState {
 
     fn record_violation(&self, report: &mut Report, detail: String) {
         error!(detail, "VIOLATION");
-        let at = now();
+        let at = now_millis();
         report.violations += 1;
         report.recent_violations.push(Violation {
             at,
@@ -199,7 +197,10 @@ impl VerifierState {
         if report.recent_violations.len() > VIOLATIONS_KEPT {
             report.recent_violations.remove(0);
         }
-        self.events.push(VerifierEvent::Violation { at, detail });
+        self.events.push_stamped(Stamped {
+            at,
+            event: VerifierEvent::Violation { at, detail },
+        });
     }
 }
 
@@ -289,6 +290,19 @@ fn init_tracing() {
 
 fn var(name: &str) -> anyhow::Result<String> {
     env::var(name).with_context(|| format!("{name} is not set"))
+}
+
+fn nodes(value: &str) -> anyhow::Result<Vec<String>> {
+    let nodes = value
+        .split(',')
+        .map(|node| node.trim().trim_end_matches('/').to_string())
+        .filter(|node| !node.is_empty())
+        .collect::<Vec<_>>();
+    if nodes.is_empty() {
+        bail!("TELLUS_NODES names no node");
+    }
+
+    Ok(nodes)
 }
 
 fn seconds(name: &str) -> anyhow::Result<Duration> {
@@ -547,91 +561,44 @@ async fn verify_cluster(client: &Client, nodes: &[String]) -> (Vec<String>, Opti
 
     let expected = views.iter().map(ClusterView::addr).collect::<BTreeSet<_>>();
     for view in &views {
-        if view.phase != Phase::Member {
-            violations.push(format!("{} is {:?}, not a member", view.name, view.phase));
-        }
-
-        let up = view.up_addrs();
-        if up != expected {
-            let missing = expected.difference(&up).collect::<Vec<_>>();
-            violations.push(format!("{} does not see {missing:?} as Up", view.name));
-        }
-
-        if !view.state.unreachable().is_empty() {
-            let unreachable = view
-                .state
-                .unreachable()
-                .iter()
-                .map(|member| member.addr())
-                .collect::<Vec<_>>();
-            violations.push(format!(
-                "{} derives {unreachable:?} as unreachable",
-                view.name
-            ));
-        }
-        if !view.state.broken_links().is_empty() {
-            let broken_links = view
-                .state
-                .broken_links()
-                .iter()
-                .map(|link| (link.observer().addr(), link.subject().addr()))
-                .collect::<Vec<_>>();
-            violations.push(format!(
-                "{} derives {broken_links:?} as broken links",
-                view.name
-            ));
-        }
-        if view.workers != nodes.len() {
-            violations.push(format!(
-                "{} resolves {} workers, not {}",
-                view.name,
-                view.workers,
-                nodes.len()
-            ));
-        }
-        if !view.settlement.settled() || view.settlement.version() != view.state.version() {
-            violations.push(format!(
-                "{}'s receptionist is not settled at version {}: {:?}",
-                view.name,
-                view.state.version(),
-                view.settlement
-            ));
-        }
-        if view.subscribers != nodes.len() {
-            violations.push(format!(
-                "{} resolves {} subscribers, not {}",
-                view.name,
-                view.subscribers,
-                nodes.len()
-            ));
-        }
-        if view.publishers != expected {
-            let missing = expected.difference(&view.publishers).collect::<Vec<_>>();
-            violations.push(format!(
-                "{} has not heard from {missing:?} on the topic",
-                view.name
-            ));
-        }
+        violations.extend(view_violations(view, &expected, nodes.len()));
     }
 
-    for node in nodes {
+    for (node, view) in nodes.iter().zip(&views) {
         match probe_report(client, node).await {
-            Ok(report) => {
-                for probe in report.probes {
-                    if let ProbeOutcome::Failed { error } = probe.outcome {
-                        violations.push(format!(
-                            "{} cannot message {}: {error}",
-                            report.name, probe.addr
-                        ));
-                    }
-                }
-            }
-
+            Ok(report) => violations.extend(probe_violations(&report, view.addr(), &expected)),
             Err(error) => violations.push(format!("{node} did not answer a probe: {error}")),
         }
     }
 
     (violations, Some(versions))
+}
+
+/// Asked again, a bounded number of times, while the verdict judges an older version than the
+/// state: a node reads the verdict first, and the receptionist judges a version once it is
+/// published.
+async fn cluster_view(client: &Client, node: &str) -> anyhow::Result<ClusterView> {
+    let mut attempts = 1;
+    loop {
+        let view = fetch_cluster_view(client, node).await?;
+        if attempts == VERDICT_ATTEMPTS || view.settlement.version() >= view.state.version() {
+            return Ok(view);
+        }
+        attempts += 1;
+        sleep(VERDICT_RETRY_INTERVAL).await;
+    }
+}
+
+async fn fetch_cluster_view(client: &Client, node: &str) -> anyhow::Result<ClusterView> {
+    let view = client
+        .get(format!("{node}/cluster"))
+        .send()
+        .await?
+        .error_for_status()?
+        .json()
+        .await?;
+
+    Ok(view)
 }
 
 /// Two members whose Up sets do not overlap are two clusters, which never merge on their own. It
@@ -659,16 +626,100 @@ fn split_brain(views: &[ClusterView]) -> Option<String> {
     None
 }
 
-async fn cluster_view(client: &Client, node: &str) -> anyhow::Result<ClusterView> {
-    let view = client
-        .get(format!("{node}/cluster"))
-        .send()
-        .await?
-        .error_for_status()?
-        .json()
-        .await?;
+/// What one node's view falls short of, given the addresses the nodes advertise and their number.
+fn view_violations(
+    view: &ClusterView,
+    expected: &BTreeSet<SocketAddr>,
+    node_count: usize,
+) -> Vec<String> {
+    let mut violations = Vec::new();
 
-    Ok(view)
+    if view.phase != Phase::Member {
+        violations.push(format!("{} is {:?}, not a member", view.name, view.phase));
+    }
+
+    let (missing, unexpected) = differences(expected, &view.up_addrs());
+    if !missing.is_empty() {
+        violations.push(format!("{} does not see {missing:?} as Up", view.name));
+    }
+    if !unexpected.is_empty() {
+        violations.push(format!(
+            "{} sees {unexpected:?} as Up, which no node advertises",
+            view.name
+        ));
+    }
+
+    if !view.state.unreachable().is_empty() {
+        let unreachable = view
+            .state
+            .unreachable()
+            .iter()
+            .map(|member| member.addr())
+            .collect::<Vec<_>>();
+        violations.push(format!(
+            "{} derives {unreachable:?} as unreachable",
+            view.name
+        ));
+    }
+    if !view.state.broken_links().is_empty() {
+        let broken_links = view
+            .state
+            .broken_links()
+            .iter()
+            .map(|link| (link.observer().addr(), link.subject().addr()))
+            .collect::<Vec<_>>();
+        violations.push(format!(
+            "{} derives {broken_links:?} as broken links",
+            view.name
+        ));
+    }
+    if view.workers != node_count {
+        violations.push(format!(
+            "{} resolves {} workers, not {node_count}",
+            view.name, view.workers
+        ));
+    }
+    if !view.settlement.settled() || view.settlement.version() != view.state.version() {
+        violations.push(format!(
+            "{}'s receptionist is not settled at version {}: {:?}",
+            view.name,
+            view.state.version(),
+            view.settlement
+        ));
+    }
+    if view.subscribers != node_count {
+        violations.push(format!(
+            "{} resolves {} subscribers, not {node_count}",
+            view.name, view.subscribers
+        ));
+    }
+
+    let (missing, unexpected) = differences(expected, &view.publishers);
+    if !missing.is_empty() {
+        violations.push(format!(
+            "{} has not heard from {missing:?} on the topic",
+            view.name
+        ));
+    }
+    if !unexpected.is_empty() {
+        violations.push(format!(
+            "{} has heard from {unexpected:?} on the topic, which no node advertises",
+            view.name
+        ));
+    }
+
+    violations
+}
+
+/// The addresses expected but not found, and those found but not expected.
+fn differences(
+    expected: &BTreeSet<SocketAddr>,
+    found: &BTreeSet<SocketAddr>,
+) -> (Vec<SocketAddr>, Vec<SocketAddr>) {
+    (
+        expected.difference(found).copied().collect(),
+        found.difference(expected).copied().collect(),
+    )
 }
 
 async fn probe_report(client: &Client, node: &str) -> anyhow::Result<ProbeReport> {
@@ -684,19 +735,44 @@ async fn probe_report(client: &Client, node: &str) -> anyhow::Result<ProbeReport
     Ok(report)
 }
 
+/// What one node's probes fall short of: every other advertised address must have been probed, and
+/// every probe must have been answered.
+fn probe_violations(
+    report: &ProbeReport,
+    addr: SocketAddr,
+    expected: &BTreeSet<SocketAddr>,
+) -> Vec<String> {
+    let mut violations = Vec::new();
+
+    let mut others = expected.clone();
+    others.remove(&addr);
+    let probed = report
+        .probes
+        .iter()
+        .map(|probe| probe.addr)
+        .collect::<BTreeSet<_>>();
+    let (missing, _) = differences(&others, &probed);
+    if !missing.is_empty() {
+        violations.push(format!("{} did not probe {missing:?}", report.name));
+    }
+
+    for probe in &report.probes {
+        if let ProbeOutcome::Failed { error } = &probe.outcome {
+            violations.push(format!(
+                "{} cannot message {}: {error}",
+                report.name, probe.addr
+            ));
+        }
+    }
+
+    violations
+}
+
 fn client() -> Client {
     Client::builder()
         .timeout(HTTP_TIMEOUT)
         .build()
         .expect("HTTP client")
-}
-
-/// Seconds since the epoch.
-fn now() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("after the epoch")
-        .as_secs()
 }
 
 fn millis(duration: Duration) -> u64 {
@@ -705,11 +781,25 @@ fn millis(duration: Duration) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use crate::{LbState, Roll, VerifierState, lb_transition, roll_transition, split_brain};
-    use serde_json::json;
-    use std::{collections::BTreeSet, net::SocketAddr, time::Duration};
-    use tellus_cluster_demo::{ClusterView, Phase, VerifierEvent};
-    use tokio::time::Instant;
+    use crate::{
+        LbState, Roll, VERDICT_ATTEMPTS, VerifierState, client, cluster_view, lb_transition, nodes,
+        probe_violations, roll_transition, split_brain, view_violations,
+    };
+    use axum::{Json, Router, extract::State, routing::get};
+    use serde_json::{Value, json};
+    use std::{
+        collections::BTreeSet,
+        net::SocketAddr,
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+    use tellus_cluster_demo::{
+        ClusterView, Phase, Probe, ProbeOutcome, ProbeReport, VerifierEvent,
+    };
+    use tokio::{net::TcpListener, time::Instant};
 
     const LB_OUTAGE: Duration = Duration::from_secs(5);
     const CLUSTER: &str = "019a0000-0000-7000-8000-0000000000c1";
@@ -723,13 +813,18 @@ mod tests {
     }
 
     fn view(name: &str, port: u16, phase: Phase, up: &[u16]) -> ClusterView {
+        serde_json::from_value(view_json(name, port, phase, up))
+            .expect("a cluster view deserializes")
+    }
+
+    fn view_json(name: &str, port: u16, phase: Phase, up: &[u16]) -> Value {
         let members = up
             .iter()
             .map(|port| {
                 json!({ "addr": addr(*port), "incarnation": incarnation(*port), "state": "up" })
             })
             .collect::<Vec<_>>();
-        serde_json::from_value(json!({
+        json!({
             "name": name,
             "phase": phase,
             "app_version": "1.0.0",
@@ -746,8 +841,149 @@ mod tests {
             "workers": up.len(),
             "subscribers": up.len(),
             "publishers": up.iter().map(|port| addr(*port)).collect::<Vec<_>>(),
-        }))
-        .expect("a cluster view deserializes")
+        })
+    }
+
+    fn addrs(ports: &[u16]) -> BTreeSet<SocketAddr> {
+        ports.iter().map(|port| addr(*port)).collect()
+    }
+
+    #[test]
+    fn no_node_is_no_configuration() {
+        assert!(nodes("").is_err());
+        assert!(nodes(" , ").is_err());
+        assert_eq!(
+            nodes("http://node1:8080/, http://node2:8080").expect("two nodes"),
+            vec!["http://node1:8080", "http://node2:8080"]
+        );
+    }
+
+    #[test]
+    fn a_healthy_view_has_no_violation() {
+        let view = view("node1", 1, Phase::Member, &[1, 2, 3]);
+
+        assert_eq!(
+            view_violations(&view, &addrs(&[1, 2, 3]), 3),
+            Vec::<String>::new()
+        );
+    }
+
+    /// An Up member or a publisher no node advertises is named, not reported as nothing missing.
+    #[test]
+    fn an_unexpected_up_member_and_publisher_are_named() {
+        let view = view("node1", 1, Phase::Member, &[1, 2, 3, 4]);
+
+        assert_eq!(
+            view_violations(&view, &addrs(&[1, 2, 3]), 3),
+            vec![
+                "node1 sees [127.0.0.1:4] as Up, which no node advertises",
+                "node1 resolves 4 workers, not 3",
+                "node1 resolves 4 subscribers, not 3",
+                "node1 has heard from [127.0.0.1:4] on the topic, which no node advertises",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_missing_up_member_and_publisher_are_named() {
+        let view = view("node1", 1, Phase::Member, &[1, 2]);
+
+        assert_eq!(
+            view_violations(&view, &addrs(&[1, 2, 3]), 3),
+            vec![
+                "node1 does not see [127.0.0.1:3] as Up",
+                "node1 resolves 2 workers, not 3",
+                "node1 resolves 2 subscribers, not 3",
+                "node1 has not heard from [127.0.0.1:3] on the topic",
+            ]
+        );
+    }
+
+    /// Messaging is verified only for the members actually probed: a report probing fewer is a
+    /// violation, not a pass.
+    #[test]
+    fn a_member_not_probed_is_a_violation() {
+        let report = ProbeReport {
+            name: "node1".to_string(),
+            probes: vec![
+                Probe {
+                    addr: addr(2),
+                    outcome: ProbeOutcome::Ok {
+                        millis: 1,
+                        up_members: 3,
+                        app_version: None,
+                    },
+                },
+                Probe {
+                    addr: addr(4),
+                    outcome: ProbeOutcome::Failed {
+                        error: "timeout".to_string(),
+                    },
+                },
+            ],
+        };
+
+        assert_eq!(
+            probe_violations(&report, addr(1), &addrs(&[1, 2, 3, 4])),
+            vec![
+                "node1 did not probe [127.0.0.1:3]",
+                "node1 cannot message 127.0.0.1:4: timeout",
+            ]
+        );
+    }
+
+    async fn serve_views(views: Vec<Value>) -> (String, Arc<AtomicUsize>) {
+        let asked = Arc::new(AtomicUsize::new(0));
+        let state = (Arc::new(views), asked.clone());
+        let router = Router::new()
+            .route(
+                "/cluster",
+                get(
+                    |State((views, asked)): State<(Arc<Vec<Value>>, Arc<AtomicUsize>)>| async move {
+                        let index = asked.fetch_add(1, Ordering::SeqCst).min(views.len() - 1);
+                        Json(views[index].clone())
+                    },
+                ),
+            )
+            .with_state(state);
+        let listener = TcpListener::bind("127.0.0.1:0").await.expect("bind");
+        let url = format!("http://{}", listener.local_addr().expect("local address"));
+        tokio::spawn(async move { axum::serve(listener, router).await });
+        (url, asked)
+    }
+
+    fn lagging(mut view: Value) -> Value {
+        view["state"]["version"] = json!(2);
+        view
+    }
+
+    /// A verdict judging an older version than the state is asked again, so a node read between
+    /// a change and its verdict is no violation.
+    #[tokio::test]
+    async fn a_lagging_verdict_is_asked_again() {
+        let healthy = view_json("node1", 1, Phase::Member, &[1]);
+        let (url, asked) = serve_views(vec![lagging(healthy.clone()), healthy]).await;
+
+        let view = cluster_view(&client(), &url).await.expect("a view");
+
+        assert_eq!(asked.load(Ordering::SeqCst), 2);
+        assert_eq!(view.state.version(), view.settlement.version());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn a_verdict_lagging_on_every_attempt_is_checked_as_it_is() {
+        let lagging = lagging(view_json("node1", 1, Phase::Member, &[1]));
+        let (url, asked) = serve_views(vec![lagging]).await;
+
+        let view = cluster_view(&client(), &url).await.expect("a view");
+
+        assert_eq!(asked.load(Ordering::SeqCst), VERDICT_ATTEMPTS);
+        assert_eq!(
+            view_violations(&view, &addrs(&[1]), 1),
+            vec![
+                "node1's receptionist is not settled at version 2: Settlement { version: 1, settled: true }"
+            ]
+        );
     }
 
     /// Two members which do not see each other are two clusters.

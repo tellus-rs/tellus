@@ -54,7 +54,7 @@ use tellus_cluster_inspect::{
 use tokio::{
     join,
     net::TcpListener,
-    signal::unix::{SignalKind, signal},
+    signal::unix::{Signal, SignalKind, signal},
     sync::watch,
     task::JoinSet,
     time::{sleep, timeout},
@@ -81,6 +81,7 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(2);
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     init_tracing();
+    let mut shutdown = ShutdownSignals::new()?;
 
     let Config {
         node_name,
@@ -106,7 +107,7 @@ async fn main() -> anyhow::Result<()> {
     match generation {
         Generation::Legacy => {
             let worker = LegacyWorker { addr, heard };
-            run::<LegacyJob, _>(seeds, bootstrap, state, inspect, worker).await
+            run::<LegacyJob, _>(seeds, bootstrap, state, inspect, worker, &mut shutdown).await
         }
 
         Generation::Current => {
@@ -115,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
                 heard,
                 app_version,
             };
-            run::<Job, _>(seeds, bootstrap, state, inspect, worker).await
+            run::<Job, _>(seeds, bootstrap, state, inspect, worker, &mut shutdown).await
         }
     }
 }
@@ -195,6 +196,29 @@ impl NodeState {
 enum Bootstrap {
     Member,
     Shutdown,
+}
+
+/// SIGTERM and SIGINT, listened to from the start, so a signal arriving between two waits for it
+/// is not lost.
+struct ShutdownSignals {
+    terminate: Signal,
+    interrupt: Signal,
+}
+
+impl ShutdownSignals {
+    fn new() -> anyhow::Result<Self> {
+        Ok(Self {
+            terminate: signal(SignalKind::terminate()).context("SIGTERM handler")?,
+            interrupt: signal(SignalKind::interrupt()).context("SIGINT handler")?,
+        })
+    }
+
+    async fn recv(&mut self) {
+        tokio::select! {
+            _ = self.terminate.recv() => (),
+            _ = self.interrupt.recv() => (),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -534,6 +558,7 @@ async fn run<J, A>(
     state: Arc<NodeState>,
     inspect: Router,
     worker: A,
+    shutdown: &mut ShutdownSignals,
 ) -> anyhow::Result<()>
 where
     J: Probing,
@@ -546,14 +571,14 @@ where
     let bootstrap = match seeds {
         Seeds::Dns(query) => {
             let seeds = DnsSeeds::new(query).context("DNS seed discovery")?;
-            bootstrap_or_shutdown(seeds, bootstrap).await?
+            bootstrap_or_shutdown(seeds, bootstrap, shutdown).await?
         }
 
         Seeds::K8s(pods) => {
             let seeds = K8sSeeds::new(pods)
                 .await
                 .context("Kubernetes seed discovery")?;
-            bootstrap_or_shutdown(seeds, bootstrap).await?
+            bootstrap_or_shutdown(seeds, bootstrap, shutdown).await?
         }
     };
     if matches!(bootstrap, Bootstrap::Shutdown) {
@@ -575,7 +600,7 @@ where
             Err(anyhow!("downed by the cluster"))
         }
 
-        () = await_shutdown_signal() => {
+        () = shutdown.recv() => {
             state.set_phase(Phase::Leaving);
             info!("shutdown requested, leaving the cluster");
             publishing.abort();
@@ -770,7 +795,11 @@ async fn events(State(state): State<Arc<NodeState>>, headers: HeaderMap) -> impl
     )
 }
 
-async fn bootstrap_or_shutdown<D>(seeds: D, config: BootstrapConfig) -> anyhow::Result<Bootstrap>
+async fn bootstrap_or_shutdown<D>(
+    seeds: D,
+    config: BootstrapConfig,
+    shutdown: &mut ShutdownSignals,
+) -> anyhow::Result<Bootstrap>
 where
     D: SeedDiscovery,
 {
@@ -780,7 +809,7 @@ where
             Ok(Bootstrap::Member)
         }
 
-        () = await_shutdown_signal() => Ok(Bootstrap::Shutdown),
+        () = shutdown.recv() => Ok(Bootstrap::Shutdown),
     }
 }
 
@@ -919,16 +948,6 @@ async fn await_downed() {
     }
 }
 
-async fn await_shutdown_signal() {
-    let mut terminate = signal(SignalKind::terminate()).expect("SIGTERM handler");
-    let mut interrupt = signal(SignalKind::interrupt()).expect("SIGINT handler");
-
-    tokio::select! {
-        _ = terminate.recv() => (),
-        _ = interrupt.recv() => (),
-    }
-}
-
 fn up_addrs() -> BTreeSet<SocketAddr> {
     members()
         .into_iter()
@@ -943,9 +962,18 @@ fn members() -> Vec<Member> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{Config, Generation, Job, LegacyJob, LegacyPong, Pong, PongV0, Seeds, generation};
+    use crate::{
+        Config, Generation, Job, LegacyJob, LegacyPong, Pong, PongV0, Seeds, ShutdownSignals,
+        generation,
+    };
     use configured::{Configured, LoadOptions};
-    use std::{env, net::SocketAddr, num::NonZeroU16};
+    use std::{
+        env,
+        net::SocketAddr,
+        num::NonZeroU16,
+        process::{self, Command},
+        time::Duration,
+    };
     use tellus::{
         SchemaVersion,
         cluster::{
@@ -955,6 +983,7 @@ mod tests {
     };
     use tellus_bootstrap_dns::Query;
     use tellus_bootstrap_k8s::{Pods, Port};
+    use tokio::time::timeout;
 
     const CODEC: Codec = Codec::Postcard;
 
@@ -1085,5 +1114,20 @@ mod tests {
         let stop = CODEC.encode(&Job::Stop).expect("encodes");
         assert_eq!(legacy_stop, stop);
         assert_eq!(LegacyJob::VERSION, Job::VERSION);
+    }
+
+    /// A signal which arrives before anything waits for it is kept for the next wait.
+    #[tokio::test]
+    async fn a_signal_before_the_wait_is_not_lost() {
+        let mut shutdown = ShutdownSignals::new().expect("signal handlers");
+        let status = Command::new("kill")
+            .args(["-TERM", &process::id().to_string()])
+            .status()
+            .expect("kill runs");
+        assert!(status.success());
+
+        timeout(Duration::from_secs(5), shutdown.recv())
+            .await
+            .expect("the signal is received");
     }
 }

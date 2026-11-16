@@ -498,36 +498,45 @@ mod tests {
         app.apply(
             Input::Node(
                 0,
-                NodeInput::Stream(StreamInput::Event(Stamped {
-                    at: 1,
-                    event: NodeEvent::Hello {
-                        name: "node1".to_string(),
-                        addr,
-                        app_version: "1.0.0".to_string(),
-                        started_at: 1,
-                        resumed: false,
+                NodeInput::Stream(StreamInput::Event(
+                    Stamped {
+                        at: 1,
+                        event: NodeEvent::Hello {
+                            name: "node1".to_string(),
+                            addr,
+                            app_version: "1.0.0".to_string(),
+                            started_at: 1,
+                            resumed: false,
+                        },
                     },
-                })),
+                    None,
+                )),
             ),
             1,
         );
         app.apply(
             Input::Node(
                 0,
-                NodeInput::Inspect(StreamInput::Event(Stamped {
-                    at: 2,
-                    event: InspectEvent::State(state),
-                })),
+                NodeInput::Inspect(StreamInput::Event(
+                    Stamped {
+                        at: 2,
+                        event: InspectEvent::State(state),
+                    },
+                    None,
+                )),
             ),
             2,
         );
         app.apply(
-            Input::Verifier(VerifierInput::Stream(StreamInput::Event(Stamped {
-                at: 3,
-                event: VerifierEvent::Chaos {
-                    value: "partition".to_string(),
+            Input::Verifier(VerifierInput::Stream(StreamInput::Event(
+                Stamped {
+                    at: 3,
+                    event: VerifierEvent::Chaos {
+                        value: "partition".to_string(),
+                    },
                 },
-            }))),
+                None,
+            ))),
             3,
         );
         app

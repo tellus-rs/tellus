@@ -4,7 +4,9 @@
 # state file the verifier reads, so the cluster is only held to its promises once it has had a
 # quiet window to recover.
 
-set -eu
+# shellcheck shell=busybox
+
+set -euo pipefail
 
 NODE_COUNT=${NODE_COUNT:-5}
 CONTAINER_PREFIX=${CONTAINER_PREFIX:-tellus-demo-node}
@@ -26,14 +28,41 @@ PARTITION_SECS=${PARTITION_SECS:-30}
 RECOVERY_SECS=${RECOVERY_SECS:-25}
 RETRY_SECS=${RETRY_SECS:-10}
 STOP_WAIT_SECS=${STOP_WAIT_SECS:-30}
+CHAOS_LABEL=${CHAOS_LABEL:-tellus-demo-chaos}
 
 state() {
     echo "$1" > "$STATE_FILE"
     echo "chaos: $1"
 }
 
+# A trap runs only once the foreground command has returned, so long waits run in the background.
+interruptible() {
+    "$@" &
+    wait "$!"
+}
+
+pause() {
+    interruptible sleep "$1"
+}
+
 pumba() {
-    docker run --rm -v /var/run/docker.sock:/var/run/docker.sock "$PUMBA_IMAGE" "$@"
+    docker run --rm --label "$CHAOS_LABEL" -v /var/run/docker.sock:/var/run/docker.sock \
+        "$PUMBA_IMAGE" "$@"
+}
+
+# A partition outlives this agent in pumba's containers until its duration ends, and a node this
+# agent stopped stays stopped, since no restart policy undoes a manual stop; this runs at startup
+# and on every exit.
+heal() {
+    pumbas=$(docker ps -q --filter "label=$CHAOS_LABEL") || pumbas=
+    if [ -n "$pumbas" ]; then
+        # shellcheck disable=SC2086
+        docker stop $pumbas > /dev/null || echo "chaos: cannot stop pumba" >&2
+    fi
+    for node in $(seq 1 "$NODE_COUNT"); do
+        docker start "$(container "$node")" > /dev/null ||
+            echo "chaos: cannot start $(container "$node")" >&2
+    done
 }
 
 container() {
@@ -49,7 +78,7 @@ ip_of() {
 kill_node() {
     state "kill $(container "$1")"
     pumba kill --signal SIGKILL "$(container "$1")" || echo "pumba kill failed"
-    sleep "$DEAD_SECS"
+    pause "$DEAD_SECS"
     revive "$1"
 }
 
@@ -58,7 +87,7 @@ kill_node() {
 leave_node() {
     state "leave $(container "$1")"
     docker kill --signal SIGTERM "$(container "$1")" || echo "docker kill failed"
-    sleep "$DEAD_SECS"
+    pause "$DEAD_SECS"
     revive "$1"
 }
 
@@ -66,7 +95,7 @@ leave_node() {
 # undoes; only a node exiting on its own, e.g. once the cluster has downed it, is restarted.
 revive() {
     docker start "$(container "$1")" || echo "docker start failed"
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # Runs a command until it succeeds. The state file keeps naming the fault meanwhile, so a step
@@ -74,7 +103,7 @@ revive() {
 until_done() {
     until "$@"; do
         echo "chaos: '$*' failed, retrying in ${RETRY_SECS}s" >&2
-        sleep "$RETRY_SECS"
+        pause "$RETRY_SECS"
     done
 }
 
@@ -87,15 +116,15 @@ stop_node() {
             false) return 0 ;;
             true)
                 if docker kill --signal SIGTERM "$1" > /dev/null; then
-                    timeout "$STOP_WAIT_SECS" docker wait "$1" > /dev/null || true
+                    interruptible timeout "$STOP_WAIT_SECS" docker wait "$1" > /dev/null || true
                 else
                     echo "chaos: cannot signal $1, retrying in ${RETRY_SECS}s"
-                    sleep "$RETRY_SECS"
+                    pause "$RETRY_SECS"
                 fi
                 ;;
             *)
                 echo "chaos: cannot inspect $1, retrying in ${RETRY_SECS}s"
-                sleep "$RETRY_SECS"
+                pause "$RETRY_SECS"
                 ;;
         esac
     done
@@ -119,7 +148,7 @@ roll_nodes() {
     for node in $(seq "$NODE_COUNT" -1 1); do
         if [ "$node" -ne "$NODE_COUNT" ]; then
             state quiet
-            sleep "$ROLL_QUIET_SECS"
+            pause "$ROLL_QUIET_SECS"
         fi
         roll_node "$node" "$target" "$verb"
     done
@@ -134,7 +163,7 @@ roll_node() {
     state "$3 $(container "$1") to $2"
     stop_node "$(container "$1")"
     until_done docker start "$(container "$1")" > /dev/null
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # Drops everything between the two sides in both directions, which is what makes it a partition
@@ -152,10 +181,12 @@ partition() {
     majority="${majority# }"
 
     state "partition [$minority] from [$majority]"
+    # shellcheck disable=SC2086
     netem_side "$(ips $majority)" "$(containers $minority)"
+    # shellcheck disable=SC2086
     netem_side "$(ips $minority)" "$(containers $majority)"
     wait || true
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # The cluster network's interface is not named the same way in every container, so the rules go
@@ -188,13 +219,14 @@ containers() {
     done
 }
 
-docker pull "$PUMBA_IMAGE" || echo "cannot pull $PUMBA_IMAGE, chaos actions will fail"
+trap heal EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
-# An agent which died mid fault leaves a node stopped, so nothing is decided before every node
-# is running again.
-for node in $(seq 1 "$NODE_COUNT"); do
-    docker start "$(container "$node")" > /dev/null 2>&1 || true
-done
+state startup
+heal
+interruptible docker pull "$PUMBA_IMAGE" > /dev/null ||
+    echo "cannot pull $PUMBA_IMAGE, chaos actions will fail"
 
 # The version the cluster runs, so an agent restarted mid roll rolls away from it, not toward it.
 if [ -r "$VERSION_FILE" ]; then
@@ -203,14 +235,13 @@ else
     version=$OLD_VERSION
 fi
 
-state startup
 echo "waiting ${STARTUP_SECS}s for the cluster to form"
-sleep "$STARTUP_SECS"
+pause "$STARTUP_SECS"
 
 cycle=0
 while true; do
     state quiet
-    sleep "$QUIET_SECS"
+    pause "$QUIET_SECS"
 
     cycle=$((cycle + 1))
     node=$(((cycle / 4) % NODE_COUNT + 1))

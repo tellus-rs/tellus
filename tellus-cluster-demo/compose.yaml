@@ -142,6 +142,8 @@ services:
     container_name: tellus-demo-chaos
     entrypoint: [ "/bin/sh", "/chaos.sh" ]
     restart: unless-stopped
+    # Must outlast chaos.sh's exit trap, which stops pumba and starts every node.
+    stop_grace_period: 30s
     environment:
       STARTUP_SECS: "45"
       QUIET_SECS: "45"
