@@ -1085,6 +1085,20 @@ impl EndpointInner {
             .coordinate(|coordinator| coordinator.pin(addr, cluster));
     }
 
+    /// How this node refuses a `Join`, or `None` if it is formed and judges the join. One lock, so
+    /// a join committing in between never makes a pinned node answer `NoCluster`!
+    pub(crate) fn join_refusal(&self) -> Option<RefusalReason> {
+        self.lifecycle.coordinate(|coordinator| {
+            if coordinator.lifecycle == Lifecycle::Formed {
+                None
+            } else if coordinator.pinned.is_some() {
+                Some(RefusalReason::Joining)
+            } else {
+                Some(RefusalReason::NoCluster)
+            }
+        })
+    }
+
     pub(crate) fn pinned_cluster(&self) -> Option<SocketAddr> {
         self.lifecycle
             .coordinate(|coordinator| coordinator.pinned.map(|(addr, _)| addr))
@@ -2082,11 +2096,13 @@ impl Coordinator {
                 Err(ConnectError::Refused(RefusalReason::Down))
             }
 
-            Err(ConnectError::Refused(RefusalReason::NoCluster)) => {
+            Err(ConnectError::Refused(
+                reason @ (RefusalReason::NoCluster | RefusalReason::Joining),
+            )) => {
                 if self.pinned.is_some_and(|(pinned, _)| pinned == addr) {
                     self.pinned = None;
                 }
-                Err(ConnectError::Refused(RefusalReason::NoCluster))
+                Err(ConnectError::Refused(reason))
             }
 
             Err(error) => Err(error),
@@ -4403,6 +4419,21 @@ mod tests {
             addr(1),
             Err(ConnectError::Refused(RefusalReason::NoCluster)),
         );
+        assert_eq!(coordinator.pinned, None);
+    }
+
+    /// The pinned address refusing as joining has restarted since it admitted this node, just like
+    /// one answering that it is no cluster, so it releases the pin.
+    #[test]
+    fn the_pinned_address_answering_joining_releases_the_pin() {
+        let mut coordinator = Coordinator {
+            join_in_flight: true,
+            pinned: Some((addr(1), ClusterId::new())),
+            ..Default::default()
+        };
+
+        coordinator.finish_join(addr(1), Err(ConnectError::Refused(RefusalReason::Joining)));
+
         assert_eq!(coordinator.pinned, None);
     }
 

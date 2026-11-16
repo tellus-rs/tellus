@@ -149,15 +149,18 @@ machinery is needed.
 rounds, no internal timeout, until one admits the joiner. It fails at once with `NoSeeds` when the
 seeds hold no address but this node's own, since joining never forms. A join rides one dedicated
 connection: the handshake names the joiner with `Join` intent, the seed admits it as Up and answers
-with its member snapshot, which the joiner merges as *one* snapshot once its last chunk has
-arrived. Reading that snapshot is bounded by `heartbeat_interval`; a seed which takes longer counts
-as a failed attempt. A connection lost mid stream hence leaves no fragment of a cluster the joiner
-never joined. Every further frame rides ordinary lanes. Only a node which is itself a member admits
-a join; a node which is not answers `NoCluster`, which is retryable, so a seed list shared by nodes
-that are all still starting forms nothing on its own. The joiner's own address is skipped in every
-position. A cluster is the transitive closure of joins. Independent clusters must not share seeds:
-a joiner becomes a member of whichever seed admits it first, and the two clusters never merge,
-since every handshake names its cluster (see cluster identity below).
+with its member snapshot, which the joiner merges as *one* snapshot once its last chunk has arrived.
+Reading that snapshot is bounded by `heartbeat_interval`; a seed which takes longer counts as a
+failed attempt. A connection lost mid stream hence leaves no fragment of a cluster the joiner never
+joined. Every further frame rides ordinary lanes. Only a node which is itself a member admits a
+join; a node which is not answers `NoCluster`, which is retryable, so a seed list shared by nodes
+that are all still starting forms nothing on its own. A node which a cluster has admitted, but whose
+snapshot is still pending, answers `Joining` instead. That is retryable too, and formation counts it
+as unavailable: the node is pinned to that cluster (see below), so it is no evidence that no cluster
+exists. The joiner's own address is skipped in every position. A cluster is the transitive closure
+of joins. Independent clusters must not share seeds: a joiner becomes a member of whichever seed
+admits it first, and the two clusters never merge, since every handshake names its cluster (see
+cluster identity below).
 
 *Join holdback*: a member holds back joins while any Up member is outside its reachability
 component, the same members `ClusterState::unreachable` reports. A broken link between two members
@@ -178,8 +181,8 @@ sent by then. From the `Join` handshake on it runs to its conclusion, since the 
 count this node from that moment. Once a seed's handshake, address and identity have been validated,
 that address is *pinned*: it is the only one tried afterward, and nothing may be formed beside it,
 because no other seed can be proven to be that same cluster. The pin is released by a completed
-join, by that address answering `NoCluster`, by this node being downed, or by bootstrap seeing the
-address leave a newly settled discovery view. A round in which the pinned address answers
+join, by that address answering `NoCluster` or `Joining`, by this node being downed, or by bootstrap
+seeing the address leave a newly settled discovery view. A round in which the pinned address answers
 `NoCluster` goes on to the other seeds. The process at that address has restarted since, but the
 cluster which admitted this node may live on in the other seeds. Formation is hence decided on a
 round over every seed, not on that answer alone.
@@ -195,8 +198,8 @@ these cases, so the endpoint records the address as *ambiguous* and logs a warni
 address is ambiguous, `cluster::form` fails with `FormError::JoinAmbiguous`, and bootstrap reports
 that as a declined formation. Joins continue through any seed, unlike under a pin, since nothing
 proves which cluster, if any, admitted this node. The record ends once that address answers a join
-definitively (`NoCluster`, `UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster` or a reply naming
-another cluster), once bootstrap sees it leave a settled discovery view, or once
+definitively (`NoCluster`, `Joining`, `UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster` or a
+reply naming another cluster), once bootstrap sees it leave a settled discovery view, or once
 `EndpointConfig::ambiguous_join_bound` (see [Configuration](#configuration)) has passed. A
 definitive refusal proves that the seed did not admit this node, so initial formation proceeds
 normally after one.
@@ -228,22 +231,23 @@ outstanding. Otherwise `cluster::bootstrap` decides through a `FormationProvider
 like the `DowningProvider`; its provided implementations are `Majority` (the default),
 `MajorityWithFallback`, `Unanimous` and `Explicit`. The provider sees the *universe*, every resolved
 address united with this node's own, what each attempted address answered and when the round ended.
-An answer is `NoCluster`, `Held` (a cluster holding back joins) or `Unavailable`. Bootstrap passes
-every round which did not admit this node to `observe`, including the rounds which must not form. It
-asks `form` only on a round over a settled view which no seed admitted. `form` answers
-`Decision::Form` or `Decision::Decline` with a reason: `NotLowest`, `NoMajority`, `Explicit` or
-`Other` for a custom provider, while bootstrap adds `Ambiguous` for a formation the endpoint
-refused. A decline is logged at warn level when its reason or its universe differs from the previous
-decline, at debug level otherwise, so a node waiting for others says why once. `Majority` forms once
-a strict majority of the universe, this node included, is known to be no cluster, and only at the
-lowest address of the universe. The lowest-address condition ensures that only one node forms for a
-shared universe. The majority stops a partitioned minority from re-forming. Both conditions are on
-the universe rather than on who answered, so a node which cannot reach the lowest address forms
-nothing. Formation liveness is hence a requirement on discovery, which must stop resolving nodes
-that are gone. A reduced view must still satisfy `min_nodes` for the next-lowest address to inherit
-the role. `Unanimous` forms only once every address of the universe is known to be no cluster, again
-at the lowest, so any one unreachable address blocks a cold start. `Explicit` never forms: the
-deployment calls `cluster::form` on one node, and bootstrap only ever joins.
+An answer is `NoCluster`, `Held` (a cluster holding back joins) or `Unavailable`, which includes a
+seed answering `Joining`. Bootstrap passes every round which did not admit this node to `observe`,
+including the rounds which must not form. It asks `form` only on a round over a settled view which
+no seed admitted. `form` answers `Decision::Form` or `Decision::Decline` with a reason: `NotLowest`,
+`NoMajority`, `Explicit` or `Other` for a custom provider, while bootstrap adds `Ambiguous` for a
+formation the endpoint refused. A decline is logged at warn level when its reason or its universe
+differs from the previous decline, at debug level otherwise, so a node waiting for others says why
+once. `Majority` forms once a strict majority of the universe, this node included, is known to be no
+cluster, and only at the lowest address of the universe. The lowest-address condition ensures that
+only one node forms for a shared universe. The majority stops a partitioned minority from
+re-forming. Both conditions are on the universe rather than on who answered, so a node which cannot
+reach the lowest address forms nothing. Formation liveness is hence a requirement on discovery,
+which must stop resolving nodes that are gone. A reduced view must still satisfy `min_nodes` for the
+next-lowest address to inherit the role. `Unanimous` forms only once every address of the universe
+is known to be no cluster, again at the lowest, so any one unreachable address blocks a cold start.
+`Explicit` never forms: the deployment calls `cluster::form` on one node, and bootstrap only ever
+joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
 gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict
