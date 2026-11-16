@@ -83,7 +83,9 @@ updates:
           - "*"
 
   - package-ecosystem: github-actions
-    directory: "/"
+    directories:
+      - "/"
+      - "/.github/actions/hotpath-profile"
     schedule:
       interval: weekly
     cooldown:

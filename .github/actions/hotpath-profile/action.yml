@@ -1,0 +1,93 @@
+name: hotpath profile
+description: >-
+  Runs a just recipe natively and then under Callgrind, merges both into one hotpath report at
+  report.json in the workspace, and with upload uploads it to hotpath Cloud.
+
+inputs:
+  benchmark:
+    description: The hotpath benchmark name
+    required: true
+  recipe:
+    description: The just recipe and its arguments, separated by spaces, without the hotpath features
+    required: true
+  criterion-id:
+    description: The Criterion benchmark ID the report must name; empty for a profile example
+    required: false
+    default: ""
+  upload:
+    description: Whether to upload the merged report, failing on a failed upload
+    required: false
+    default: "false"
+  valgrind-version:
+    description: The pinned Valgrind package version
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Output toolchain
+      id: toolchain
+      shell: bash
+      run: |
+        stable=$(grep channel rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/')
+        echo "stable=$stable" | tee -a "$GITHUB_OUTPUT"
+
+    - name: Install Rust
+      uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # master
+      with:
+        toolchain: ${{ steps.toolchain.outputs.stable }}
+
+    - name: Install just
+      uses: taiki-e/install-action@b80e2bb2635f28eb98b9fce1e2f0887e1535c6b2 # v2.90.0
+      with:
+        tool: just
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+
+    - name: Install valgrind
+      shell: bash
+      env:
+        VALGRIND_VERSION: ${{ inputs.valgrind-version }}
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y "valgrind=1:${VALGRIND_VERSION}-0ubuntu1"
+        valgrind --version
+
+    - name: Profile natively
+      shell: bash
+      env:
+        RECIPE: ${{ inputs.recipe }}
+        HOTPATH_BENCHMARK: ${{ inputs.benchmark }}
+        HOTPATH_OUTPUT_FORMAT: json
+        HOTPATH_OUTPUT_PATH: ${{ runner.temp }}/native.json
+      run: |
+        read -ra args <<< "$RECIPE"
+        just "${args[@]}" hotpath-callgrind hotpath-cloud
+
+    - name: Profile under Callgrind and merge the reports
+      shell: bash
+      env:
+        RECIPE: ${{ inputs.recipe }}
+        CRITERION_ID: ${{ inputs.criterion-id }}
+        UPLOAD: ${{ inputs.upload }}
+        HOTPATH_UPLOAD: ${{ inputs.upload == 'true' && 'fail-on-error' || '0' }}
+        HOTPATH_UPLOAD_RESPONSE_PATH: ${{ runner.temp }}/upload-response.json
+        HOTPATH_BENCHMARK: ${{ inputs.benchmark }}
+        HOTPATH_USER_METADATA: runner=${{ runner.os }}-${{ runner.arch }},toolchain=${{ steps.toolchain.outputs.stable }},profile=release,valgrind=${{ inputs.valgrind-version }}
+        HOTPATH_OUTPUT_FORMAT: json
+        HOTPATH_OUTPUT_PATH: ${{ github.workspace }}/report.json
+        HOTPATH_MERGE_REPORT: ${{ runner.temp }}/native.json
+        HOTPATH_CALLGRIND_OUT_FILE: ${{ runner.temp }}/callgrind.out.%p
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER: valgrind -q --tool=callgrind --instr-atstart=no --callgrind-out-file=${{ runner.temp }}/callgrind.out.%p
+      run: |
+        read -ra args <<< "$RECIPE"
+        just "${args[@]}" hotpath-callgrind hotpath-cloud
+        test -s "$HOTPATH_OUTPUT_PATH"
+        jq -e --arg id "$CRITERION_ID" \
+          '.meta.run == "merged" and (.functions_icount.data | length > 0) and (.functions_timing.data | length > 0) and ($id == "" or .meta.criterion.benchmark == $id)' \
+          "$HOTPATH_OUTPUT_PATH" > /dev/null
+        # hotpath writes the response file only for a report it uploaded.
+        if [ "$UPLOAD" = true ]; then
+          test -s "$HOTPATH_UPLOAD_RESPONSE_PATH"
+        fi

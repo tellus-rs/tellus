@@ -1,9 +1,11 @@
+import io
 import os
 import sys
 import unittest
+from contextlib import redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from report import decide, verdict
+from report import decide, figure, main, verdict
 
 
 class Verdicts(unittest.TestCase):
@@ -45,6 +47,15 @@ class Verdicts(unittest.TestCase):
         self.assertEqual(verdict([(0.0, 0.0)] * 5 + [(0.0, 0.05)] * 3, 2)[0], "inconclusive (too few jobs)")
         self.assertEqual(verdict([(-0.04, 0.0)] * 4 + [(0.03, 0.0)] * 4, 2)[0], "inconclusive (spread)")
 
+    def test_an_aa_figure_of_exactly_the_limit_is_retained(self):
+        result, _, _, retained = verdict([(0.0, 0.03), (0.0, -0.03), (0.0, 0.03), (0.0, 0.0301)], 1)
+        self.assertEqual((result, retained), ("pass", 3))
+
+    def test_a_spread_of_exactly_the_limit_is_not_inconclusive(self):
+        result, _, spread, _ = verdict([(-0.03, 0.0), (0.0, 0.0), (0.0, 0.0), (0.03, 0.0)], 1)
+        self.assertEqual((result, spread), ("pass", 0.06))
+        self.assertEqual(verdict([(-0.03, 0.0), (0.0, 0.0), (0.0, 0.0), (0.0301, 0.0)], 1)[0],
+                         "inconclusive (spread)")
 
 
 class Stages(unittest.TestCase):
@@ -72,6 +83,69 @@ class Stages(unittest.TestCase):
     def test_a_borderline_row_without_an_extra_run_stays_borderline(self):
         stage, (result, _, _, _), _ = decide(self.BORDERLINE, [])
         self.assertEqual((stage, result), (1, "borderline"))
+
+
+def lines(row, base, candidate, aa):
+    return [
+        {"binary": binary, "repetition": 0, "shift": 0, "row": row, "median_ns": median_ns}
+        for binary, median_ns in (("B", base), ("C", candidate), ("A", aa))
+    ]
+
+
+def jobs(*job_lines):
+    metadata = lambda job: {"run_id": "1", "job": job, "cpu": "cpu", "runner": "ubuntu-latest"}
+    return {("c", "messaging", "ubuntu-latest"): [(0, metadata(job), lines) for job, lines in enumerate(job_lines)]}
+
+
+class Figures(unittest.TestCase):
+    def test_a_zero_base_median_raises(self):
+        with self.assertRaisesRegex(ValueError, "base median"):
+            figure(lines("r", 0, 100, 0), "r", "C")
+
+    def test_a_missing_row_raises(self):
+        with self.assertRaisesRegex(ValueError, "no line of B for s"):
+            figure(lines("r", 100, 100, 100), "s", "C")
+
+
+class Main(unittest.TestCase):
+    def run_main(self, jobs):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            try:
+                main(["1"], download=lambda _: jobs)
+            except SystemExit as exit:
+                return str(exit.code), stdout.getvalue()
+        return None, stdout.getvalue()
+
+    def test_passing_rows_exit_zero(self):
+        code, output = self.run_main(jobs(*[lines("r", 100, 100, 100)] * 4))
+        self.assertIsNone(code)
+        self.assertIn("| `r` | pass, stage 1 |", output)
+
+    def test_a_failing_row_exits_non_zero(self):
+        code, output = self.run_main(jobs(*[lines("r", 100, 110, 100) + lines("s", 100, 100, 100)] * 4))
+        self.assertEqual(code, "failing rows: r (c, messaging, ubuntu-latest)")
+        self.assertIn("| `s` | pass, stage 1 |", output)
+
+    def test_borderline_and_inconclusive_rows_exit_zero(self):
+        code, output = self.run_main(jobs(*[lines("r", 100, 104, 100) + lines("s", 100, 100, 110)] * 4))
+        self.assertIsNone(code)
+        self.assertIn("| `r` | borderline, stage 1 |", output)
+        self.assertIn("| `s` | inconclusive (too few jobs), stage 1 |", output)
+
+    def test_a_row_missing_in_one_job_fails(self):
+        both = lines("r", 100, 100, 100) + lines("s", 100, 100, 100)
+        code, _ = self.run_main(jobs(both, both, both, lines("r", 100, 100, 100)))
+        self.assertRegex(code, "^error: run 1 job 3 on ubuntu-latest measured")
+
+    def test_a_row_only_in_a_later_job_fails(self):
+        both = lines("r", 100, 100, 100) + lines("s", 100, 100, 100)
+        code, _ = self.run_main(jobs(lines("r", 100, 100, 100), both, both, both))
+        self.assertRegex(code, "^error: run 1 job 1 on ubuntu-latest measured")
+
+    def test_a_zero_base_median_fails(self):
+        code, _ = self.run_main(jobs(*[lines("r", 0, 100, 0)] * 4))
+        self.assertEqual(code, "error: the base median of r is 0 ns")
 
 
 unittest.main()

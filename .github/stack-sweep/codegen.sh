@@ -96,7 +96,7 @@ done
 
 status=0
 echo "## fncounts.py, $bench, ${base:0:7} against ${candidate:0:7}"
-python3 -I "$scripts/fncounts.py" "$work/base.bin" "$work/candidate.bin" "${renames[@]}" || status=1
+python3 -I "$scripts/fncounts.py" "$work/base.bin" "$work/candidate.bin" --select "tellus|flume|$bench" "${renames[@]}" || status=1
 echo
 echo "## fndiff.py, the per-message path"
 python3 -I "$scripts/fndiff.py" "$work/base.bin" "$work/candidate.bin" "${patterns[@]}" "${renames[@]}" || status=1

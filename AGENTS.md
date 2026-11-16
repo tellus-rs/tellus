@@ -59,7 +59,9 @@ Tasks are defined in the [justfile](justfile):
   three must name the same version; a mismatch fails the build loudly.
 - `just fmt`: formats Rust (nightly rustfmt, the justfile derives the matching nightly from the
   installed stable) and TOML (taplo). Plain `cargo fmt` is not enough; the rustfmt config uses
-  unstable options.
+  unstable options. `just fmt-check` checks both without writing, and CI runs it.
+- `just fix` / `just lint-fix`: apply the compiler's and clippy's suggestions to the default
+  workspace members with all features, so the feature-gated code is reached too.
 - Single test: `cargo test -p tellus --test watch <test_name>`; a persistence test needs the
   features its file is gated on, or it silently runs none (`--features persistence-in-memory` for
   `persistence.rs`, `host_persistence.rs` and `persistence_tests.rs`, which also needs
@@ -96,7 +98,7 @@ Benchmarks:
   absolute regressions.
 - `just profile-alloc-gate`: run the profiling workload with allocation tracking and fail unless
   `tell`, `reserve` and `receive_incoming` allocate exactly 0 bytes; `profile-alloc-check <file>`
-  applies that check to an existing JSON report. CI (`profile.yml`) runs each workload twice on a pinned runner image, toolchain and Valgrind package (`VALGRIND_VERSION`), since instruction counts compare only within one such environment. The first run is native and writes `native.json`. The second runs under Callgrind (x86_64 Linux only) with `HOTPATH_MERGE_REPORT` pointing at it. The merged report takes everything but the instruction counts from the native run. Instruction counts complement Criterion and do not show contention, since Valgrind serializes threads. It uploads the merged reports to hotpath Cloud as the `profile` and `profile_persistence` series (PR reports go through `hotpath-relay.yml`), which comments on every PR and posts a `hotpath / <benchmark>` check on its head commit. Under `pr_check = "fail"` in `hotpath/<benchmark>-policy.toml` that check fails only when a zero-alloc rule (an `alloc.total = "0 B"` budget) breaks; allocation regressions above 2% and instruction count changes above 3% are reported in the comment without failing it, and timing is listed (`judged = false`) but never judged. The profile jobs themselves pass unless a report is not merged or lacks instruction counts or timing; make the check required to block merging.
+  applies that check to an existing JSON report. CI (`profile.yml`) runs each workload twice on a pinned runner image, toolchain and Valgrind package (`VALGRIND_VERSION`), since instruction counts compare only within one such environment. The first run is native and writes `native.json`. The second runs under Callgrind (x86_64 Linux only) with `HOTPATH_MERGE_REPORT` pointing at it. The merged report takes everything but the instruction counts from the native run. Instruction counts complement Criterion and do not show contention, since Valgrind serializes threads. It uploads the merged reports to hotpath Cloud as the `profile` and `profile_persistence` series (PR reports go through `hotpath-relay.yml`), which comments on every PR and posts a `hotpath / <benchmark>` check on its head commit. Under `pr_check = "fail"` in `hotpath/<benchmark>-policy.toml` that check fails only when a zero-alloc rule (an `alloc.total = "0 B"` budget) breaks; allocation regressions above 2% and instruction count changes above 3% are reported in the comment without failing it, and timing is listed (`judged = false`) but never judged. The profile jobs themselves pass unless a report is not merged or lacks instruction counts or timing, or, on `main`, the upload fails (`HOTPATH_UPLOAD=fail-on-error`, and the job checks that hotpath wrote the upload's response); make the check required to block merging. The steps of every profile job live in the composite action `.github/actions/hotpath-profile`.
 - `just profile-persistence` / `just profile-persistence-alloc`: the same for the persistence code
   (`tellus/examples/profile_persistence.rs`, features `hotpath` plus `persistence` and
   `persistence-in-memory`): command
@@ -106,10 +108,10 @@ Benchmarks:
   `replay_page`, which must stay allocation-free: `just profile-persistence-alloc-gate` runs the
   workload and fails on a violation, `profile-persistence-alloc-check <file>` applies that check
   to an existing JSON report, and CI enforces it as a budget that fails the `hotpath / profile_persistence` check in the same way.
-- `just criterion-profile <bench> <id> <iterations> [features]`: run one criterion benchmark
+- `just profile-criterion <bench> <id> <iterations> [features]`: run one criterion benchmark
   through hotpath's criterion adapter (the benches import `hotpath::criterion`), executing its
   routine exactly `iterations` times in criterion's test mode and writing one hotpath report.
-  CI (`criterion-profile.yml`) runs it for `ping_pong/pairs/1` the same way `profile.yml` runs the
+  CI (`profile-criterion.yml`) runs it for `ping_pong/pairs/1` the same way `profile.yml` runs the
   profile examples (native run, then a merged Callgrind run on the same pinned environment), as the
   `criterion-ping_pong-pairs-1` series, judged under `hotpath/criterion-ping_pong-pairs-1-policy.toml`
   with `pr_check = "fail"` and relayed by `hotpath-relay.yml`. It covers what the profile examples
@@ -154,9 +156,11 @@ Benchmarks:
   sweeps the base against itself. It runs the bench at 16 worker-stack positions on `ubuntu-latest`
   and `ubuntu-24.04-arm`, 4 jobs each with an A/A control. Where a worker stack lies moves single
   rows by tens of percent either way (`docs/investigations/actor-id-alignment/`), so a regression
-  from one stack position, the PR comparison included, needs this before it counts. A `Report` job
-  applies `report.py`'s fixed limits (below +3% passes, above +5% fails, borderline rows get a
-  second run whose ID is passed as well); `test_report.py` pins them, and CI runs it.
+  from one stack position, the PR comparison included, needs this before it counts. The rows are
+  every benchmark the base's bench lists. A `Report` job applies `report.py`'s fixed limits (below
+  +3% passes, above +5% fails, borderline rows get a second run whose ID is passed as well) and
+  fails if a row fails. The scripts which measure and judge come from the base, never from the
+  candidate. `test_sweep.py` and `test_report.py` pin them, and CI runs both.
   `.github/stack-sweep/codegen.sh <base> <candidate>` compares the generated code of a bench of two
   commits per function, a diagnostic and never a verdict; `test_codegen.py` pins its comparison
   rules.
@@ -184,7 +188,9 @@ Releases:
   released tag and puts the notes added since the crate's previous tag in front of the generated
   changelog of its GitHub release. Nothing else edits a release, and note files are never deleted.
   Given a tag which does not exist yet, the script previews the next release from `HEAD`;
-  `test_release_notes.py` pins its rules, and CI runs it.
+  `test_release_notes.py` pins its rules, and CI runs it together with `release_notes.py --check`,
+  which fails unless every note opens with a `###` heading. `gh workflow run release-plz.yml -f
+  tags="<tag> ..."` reruns the notes step for released tags without releasing anything.
 - The website [tellus-rs.github.io](https://github.com/tellus-rs/tellus-rs.github.io) pins
   tellus as a submodule at a release tag. It shows code from the examples and tests of the pinned
   tag and reads the version it displays from there. Its daily `pin-tellus.yml` workflow notices a

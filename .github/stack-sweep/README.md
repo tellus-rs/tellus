@@ -18,7 +18,10 @@ benchmark lands. Only the stack sweep decides.
    API. Otherwise the feature's pull request names a comparable baseline workload on `main` or a
    separate feature-cost comparison, as #185 compared its `timers` group against the plain cursor.
 
-The rules change only in a commit of their own, never while a case is being decided.
+The rules change only in a commit of their own, never while a case is being decided. A sweep takes
+the scripts which measure and judge (`stack_shift.c`, `probe.c`, `probe.sh`, `sweep.py` and
+`report.py`) from the base, so a commit changing them is judged by the rules before it. The workflow
+file itself comes from the pull request's merge ref, or from the ref a sweep is started on by hand.
 
 ## The stack sweep
 
@@ -30,14 +33,17 @@ The rules change only in a commit of their own, never while a case is being deci
   the label and add it again.
 - **By hand:** `gh workflow run stack-sweep.yml -f base=<full parent ID> -f candidate=<full commit
   ID> [-f bench=persistence|stash]`. The candidate must be exactly one commit on top of the base and
-  pushed, as a branch or a pull request head. `--ref <branch>` takes the workflow and these scripts
-  from that branch, the code from the two commits.
+  pushed, as a branch or a pull request head. `--ref <branch>` takes the workflow from that branch;
+  the scripts come from the base and the code from the two commits.
 - **The report:** the `Report` job runs `report.py` once every sweep job has succeeded and writes it
-  to the run's summary. `python3 -I .github/stack-sweep/report.py <run ID>` does the same locally.
+  to the run's summary. It fails if a row fails; borderline and inconclusive rows leave it green.
+  `python3 -I .github/stack-sweep/report.py <run ID>` does the same locally.
 - **Locally on aarch64:** build the shift library and the probe as the workflow does, check the
-  probe with `probe.sh`, and run `sweep.py run --bench <bench>`. The binaries go before `--rows`
-  and `--shifts`, since both take a variable number of values.
+  probe with `probe.sh`, and run `sweep.py run`. The binaries go before `--rows` and `--shifts`,
+  since both take a variable number of values.
 
+The rows are the benchmarks the base's bench lists (`--list`), in its order. The candidate and the
+copy must list each of them; a row only the candidate lists is named in the log and not swept.
 A messaging run sweeps every row of the messaging bench, the groups `flood`, `ping_pong`, `fan_out`,
 `queued` and `timers`: 2304 bench runs per job, 16 rows. A persistence run sweeps every row of the
 persistence bench, the groups `persist` and `recover`: 576 runs, 4 rows. A stash run sweeps every
@@ -54,7 +60,7 @@ row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows
   - The probe checks first that the shift moves a new thread's stack by exactly that amount.
   - Every bench run must report `stack_shift=<shift>` and `stack_shift_threads` of at least the
     bench's 4 Tokio workers, so the bench's own threads went through the shift.
-- **Schedule:** 3 repetitions. Within each, the shifts ascend, the rows follow in a fixed order,
+- **Schedule:** 3 repetitions. Within each, the shifts ascend, the rows follow in the bench's order,
   and the binary order rotates by one per repetition.
 - **Job figure:** per row, the median of the candidate's 48 runs over the median of the base's,
   minus 1. The A/A figure is the same for the copy.
@@ -66,7 +72,8 @@ row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows
 - **Scope:** the figure is the median across the 16 sampled positions. The grid can miss narrow
   penalties or hit them systematically, so it says nothing about robustness.
 
-`report.py` applies these rules, and `test_report.py` pins them.
+`report.py` applies these rules, and `test_report.py` pins them. `test_sweep.py` pins how
+`sweep.py` lists, schedules and checks the bench runs.
 
 ### A borderline row
 

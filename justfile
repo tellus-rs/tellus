@@ -1,6 +1,7 @@
-set shell := ["bash", "-uc"]
+set shell := ["bash", "-euo", "pipefail", "-c"]
 
-nightly := `rustc --version | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sed 's/^/nightly-/'`
+# Never fails, since every recipe evaluates it; `_nightly` checks it where it is used.
+nightly := `rustc --version | grep -oE '[0-9]{4}-[0-9]{2}-[0-9]{2}' | sed 's/^/nightly-/' || true`
 
 rust_version := `grep channel rust-toolchain.toml | sed -r 's/channel = "(.*)"/\1/'`
 
@@ -30,14 +31,15 @@ check:
     cargo check      -p tellus-cluster-demo-tui     --all-targets
 
 fix:
-    cargo fix --all-targets --allow-dirty --allow-staged
+    cargo fix --all-targets --all-features --allow-dirty --allow-staged
 
-fmt:
+fmt: _nightly
     cargo +{{ nightly }} fmt
     RUST_LOG=error taplo fmt
 
-fmt-check:
+fmt-check: _nightly
     cargo +{{ nightly }} fmt --check
+    RUST_LOG=error taplo fmt --check
 
 lint:
     cargo hack clippy -p tellus                      --all-targets --no-deps {{ powerset }}     -- -D warnings
@@ -51,9 +53,9 @@ lint:
     cargo clippy      -p tellus-cluster-demo-tui     --all-targets --no-deps                    -- -D warnings
 
 lint-fix:
-    cargo clippy --all-targets --no-deps --allow-dirty --allow-staged --fix
+    cargo clippy --all-targets --all-features --no-deps --allow-dirty --allow-staged --fix
 
-test:
+test: _nightly
     cargo test                     -p tellus
     cargo test                     -p tellus                      --features persistence-tests,persistence-in-memory,cluster-dev,serde,test-util
     cargo +{{ nightly }} hack test -p tellus                      --doc {{ powerset }}
@@ -64,7 +66,7 @@ test:
     cargo test                     -p tellus-cluster-demo
     cargo test                     -p tellus-cluster-demo-tui
 
-doc:
+doc: _nightly
     RUSTDOCFLAGS="-D warnings --cfg docsrs" cargo +{{ nightly }} doc --no-deps --all-features
 
 all: check fmt lint test doc
@@ -148,8 +150,8 @@ profile-persistence-alloc *features:
     cargo run --release -p tellus --example profile_persistence --features "hotpath-alloc,persistence,persistence-in-memory {{ features }}"
 
 # One Criterion benchmark as a hotpath report: the routine of `id` runs exactly `iterations` times.
-# Example: just criterion-profile messaging flood/bounded 10
-criterion-profile bench id iterations *features:
+# Example: just profile-criterion messaging flood/bounded 10
+profile-criterion bench id iterations *features:
     HOTPATH_CRITERION_ITERATIONS={{ iterations }} cargo bench -p tellus --bench {{ bench }} --features "hotpath-alloc {{ features }}" -- --test --exact "{{ id }}"
 
 profile-alloc-gate out="target/hotpath/profile.json":
@@ -236,7 +238,7 @@ start-cluster-demo-k8s discovery="dns":
         command -v "$tool" > /dev/null || { echo "$tool is not installed" >&2; exit 1; }
     done
     # The kubelet backoff field and kindnetd's policy enforcement need a current kind.
-    kind version | grep -qE 'v0\.(3[3-9]|[4-9][0-9])' || { echo "kind v0.33 or later is required" >&2; exit 1; }
+    kind version | grep -qE ' v(0\.(3[3-9]|[4-9][0-9]|[1-9][0-9]{2,})|[1-9][0-9]*)\.' || { echo "kind v0.33 or later is required" >&2; exit 1; }
     kind create cluster --config tellus-cluster-demo/k8s/kind.yaml
     docker build --build-arg RUST_VERSION={{ rust_version }} \
         -t tellus-cluster-demo:latest -f tellus-cluster-demo/Dockerfile .
@@ -270,12 +272,16 @@ logs-cluster-demo-k8s *args:
     fi
 
 status-cluster-demo:
-    curl -s localhost:8080/cluster | jq
-    curl -s localhost:8080/inspect/cluster | jq
-    curl -s localhost:8081/status | jq
+    curl -sSf localhost:8080/cluster | jq
+    curl -sSf localhost:8080/inspect/cluster | jq
+    curl -sSf localhost:8081/status | jq
 
 violations-cluster-demo:
-    curl -s localhost:8081/violations | jq
+    curl -sSf localhost:8081/violations | jq
 
 run-cluster-demo-tui:
     cargo run -p tellus-cluster-demo-tui
+
+[private]
+_nightly:
+    @[[ "{{ nightly }}" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "no nightly derived from rustc --version: '{{ nightly }}'" >&2; exit 1; }
