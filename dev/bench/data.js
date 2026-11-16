@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794865980799,
+  "lastUpdate": 1794865983536,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -29941,6 +29941,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 81949,
             "range": "± 3667",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "461adfabc1a6106099129ea25f00ade0872b1dd7",
+          "message": "Merge pull request #455 from tellus-rs/docs/read-frames-gate-order\n\ndocs(cluster): state the order of gate and check in read_frames",
+          "timestamp": "2026-11-16T22:43:10+01:00",
+          "tree_id": "ec8af1fb447fb275d64a6d8cea25b31527e3802e",
+          "url": "https://github.com/tellus-rs/tellus/commit/461adfabc1a6106099129ea25f00ade0872b1dd7"
+        },
+        "date": 1794865983269,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3976634,
+            "range": "± 232635",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4175540,
+            "range": "± 211385",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1081544,
+            "range": "± 10502",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 134827,
+            "range": "± 3755",
             "unit": "ns/iter"
           }
         ]
