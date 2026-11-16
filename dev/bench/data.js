@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794860488583,
+  "lastUpdate": 1794860491365,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28765,6 +28765,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105287,
             "range": "± 2790",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "0e9bacb7ac5671905f162988ec3f170733652b7e",
+          "message": "Merge pull request #449 from tellus-rs/test/confusable-separators\n\ntest(persistence): check stream isolation against separator-joined keys",
+          "timestamp": "2026-11-16T21:14:17+01:00",
+          "tree_id": "2387520251883bdf350305c3f3474cdd9570dbfb",
+          "url": "https://github.com/tellus-rs/tellus/commit/0e9bacb7ac5671905f162988ec3f170733652b7e"
+        },
+        "date": 1794860491148,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3324059,
+            "range": "± 51040",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3272169,
+            "range": "± 41861",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 727313,
+            "range": "± 14718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105730,
+            "range": "± 8995",
             "unit": "ns/iter"
           }
         ]
