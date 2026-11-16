@@ -1,7 +1,8 @@
 //! Step 5 of the clustered actors tutorial: the device manager the first node uses stops on
 //! request, and its node leaves the cluster instead of being killed. The watch fires with a real
 //! termination, the cluster lists the node as left without detecting a failure, and the first
-//! node turns to the other device manager.
+//! node turns to the other device manager. The leaving node fails unless every peer acknowledged
+//! its departure, and the first node checks its exit status.
 //!
 //! The first node prints to stdout; tellus logs to stderr, configured via `RUST_LOG`, e.g.
 //! `RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev --example
@@ -40,6 +41,7 @@ const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
 const FIND_TIMEOUT: Duration = Duration::from_secs(10);
 const LEAVE_TIMEOUT: Duration = Duration::from_secs(10);
 const ASK_TIMEOUT: Duration = Duration::from_secs(5);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 // ANCHOR: main
 #[tokio::main]
@@ -67,7 +69,7 @@ fn init_tracing() {
 
 // ANCHOR: first-node
 async fn first_node() -> anyhow::Result<()> {
-    let seeds = reserved_addrs(NODES)?;
+    let seeds = free_addrs(NODES)?;
     let mut manager_nodes = seeds[1..]
         .iter()
         .map(|addr| spawn_node(MANAGER_NODE_ARG, *addr, &seeds))
@@ -99,9 +101,9 @@ async fn first_node() -> anyhow::Result<()> {
         .context("awaiting the watcher's termination")?;
     await_left(seeds[1]).await?;
     println!("State of the second node: {}", member_state(seeds[1])?);
-    let status = manager_nodes[0]
-        .wait()
+    let status = timeout(EXIT_TIMEOUT, manager_nodes[0].wait())
         .await
+        .context("the second node did not exit within the timeout")?
         .context("awaiting the second node's exit")?;
     anyhow::ensure!(status.success(), "the second node failed: {status}");
 
@@ -152,9 +154,15 @@ async fn manager_node() -> anyhow::Result<()> {
     let system = ActorSystem::new(DeviceManager);
     cluster::register(&Key::new(MANAGER_KEY), system.root())
         .context("registering the device manager")?;
-    cluster::leave_on_terminated(system)
+    let departure = cluster::leave_on_terminated(system)
         .await
         .context("leaving the cluster")?;
+    anyhow::ensure!(
+        departure.is_acknowledged(),
+        "departure not acknowledged by {:?}, timed out for {:?}",
+        departure.unacknowledged(),
+        departure.timed_out()
+    );
     Ok(())
 }
 // ANCHOR_END: manager-node
@@ -261,14 +269,15 @@ fn node_args() -> anyhow::Result<(SocketAddr, Vec<SocketAddr>)> {
     Ok((addr, seeds))
 }
 
-fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+fn free_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+    // Every socket stays bound until the last address is read, else a port could repeat!
     let sockets = (0..count)
         .map(|_| UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
         .collect::<Result<Vec<_>, _>>()
-        .context("reserving loopback ports")?;
+        .context("binding free loopback ports")?;
     sockets
         .iter()
-        .map(|socket| socket.local_addr().context("reserved local address"))
+        .map(|socket| socket.local_addr().context("free local address"))
         .collect()
 }
 

@@ -53,6 +53,8 @@ const WORKER_POOL_KEY: &str = "worker-pool";
 const LOOKUP_INTERVAL: Duration = Duration::from_millis(50);
 const LOOKUP_TIMEOUT: Duration = Duration::from_secs(10);
 const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
+const GATHER_TIMEOUT: Duration = Duration::from_secs(10);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -188,20 +190,21 @@ async fn gatherer_node() -> anyhow::Result<()> {
     let seed = start_endpoint(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))?;
     cluster::form().context("forming the cluster")?;
 
-    let worker_addr = reserved_addr()?;
+    let worker_addr = free_addr()?;
     let mut worker_node = spawn_worker_node(worker_addr, seed)?;
     let worker_pool = lookup_worker_pool(worker_addr).await?;
 
     let system = ActorSystem::new(Gatherer { worker_pool });
-    system
-        .terminated()
+    timeout(GATHER_TIMEOUT, system.terminated())
         .await
+        .context("not every partial result gathered within the timeout")?
         .context("awaiting actor system termination")?;
 
-    worker_node
-        .wait()
+    let status = timeout(EXIT_TIMEOUT, worker_node.wait())
         .await
+        .context("the worker node did not exit within the timeout")?
         .context("awaiting the worker node process")?;
+    anyhow::ensure!(status.success(), "the worker node failed: {status}");
     Ok(())
 }
 
@@ -273,11 +276,12 @@ fn start_endpoint(bind_addr: SocketAddr) -> anyhow::Result<SocketAddr> {
 }
 
 /// A port the OS has just handed out and nothing holds anymore, so the worker node about to be
-/// spawned can bind it: the gatherer has to name that address before the node exists.
-fn reserved_addr() -> anyhow::Result<SocketAddr> {
+/// spawned can bind it: the gatherer has to name that address before the node exists. Nothing
+/// reserves the port, so another process may take it before the worker node binds it.
+fn free_addr() -> anyhow::Result<SocketAddr> {
     let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .context("reserving a loopback port")?;
-    let addr = socket.local_addr().context("reserved local address")?;
+        .context("binding a free loopback port")?;
+    let addr = socket.local_addr().context("free local address")?;
     Ok(addr)
 }
 

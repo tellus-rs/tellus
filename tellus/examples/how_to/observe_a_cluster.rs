@@ -27,6 +27,7 @@ const SECOND_NODE_ARG: &str = "second-node";
 const JOIN_TIMEOUT: Duration = Duration::from_secs(10);
 const OBSERVE_TIMEOUT: Duration = Duration::from_secs(20);
 const MEMBERSHIP_TIME: Duration = Duration::from_secs(1);
+const EXIT_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -52,7 +53,7 @@ fn init_tracing() {
 
 // ANCHOR: first-node
 async fn first_node() -> anyhow::Result<()> {
-    let addrs = reserved_addrs(2)?;
+    let addrs = free_addrs(2)?;
     start_endpoint(addrs[0])?;
     let mut changes = cluster::changes().context("subscribing to the changes")?;
     let mut previous = Arc::unwrap_or_clone(
@@ -89,10 +90,11 @@ async fn first_node() -> anyhow::Result<()> {
         .await
         .context("the second node did not leave within the timeout")?;
 
-    second_node
-        .wait()
+    let status = timeout(EXIT_TIMEOUT, second_node.wait())
         .await
+        .context("the second node did not exit within the timeout")?
         .context("awaiting the second node's exit")?;
+    anyhow::ensure!(status.success(), "the second node failed: {status}");
     Ok(())
 }
 // ANCHOR_END: first-node
@@ -130,9 +132,15 @@ async fn second_node() -> anyhow::Result<()> {
     let system = ActorSystem::new(Idle);
     sleep(MEMBERSHIP_TIME).await;
     system.stop();
-    cluster::leave_on_terminated(system)
+    let departure = cluster::leave_on_terminated(system)
         .await
         .context("leaving the cluster")?;
+    anyhow::ensure!(
+        departure.is_acknowledged(),
+        "departure not acknowledged by {:?}, timed out for {:?}",
+        departure.unacknowledged(),
+        departure.timed_out()
+    );
     Ok(())
 }
 
@@ -164,14 +172,15 @@ fn start_endpoint(addr: SocketAddr) -> anyhow::Result<()> {
     cluster::start_endpoint(EndpointConfig::new(addr), transport).context("remoting endpoint")
 }
 
-fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+fn free_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
+    // Every socket stays bound until the last address is read, else a port could repeat!
     let sockets = (0..count)
         .map(|_| UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
         .collect::<Result<Vec<_>, _>>()
-        .context("reserving loopback ports")?;
+        .context("binding free loopback ports")?;
     sockets
         .iter()
-        .map(|socket| socket.local_addr().context("reserved local address"))
+        .map(|socket| socket.local_addr().context("free local address"))
         .collect()
 }
 
