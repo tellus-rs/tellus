@@ -120,7 +120,7 @@ pub use crate::{
 
 #[cfg(feature = "persistence")]
 pub use crate::persistence::{
-    Persistence,
+    InvalidPersistence, Persistence,
     codec::{Cbor, Codec, EncodeError, Json, PayloadError},
     effect::Effect,
     event_sourced::EventSourced,

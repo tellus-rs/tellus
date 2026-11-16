@@ -492,7 +492,9 @@ The root actor has no parent, so `ActorSystem::stop` is that channel from the ou
 the very sender which keeps the root alive, shared between the system and the root's watcher
 registry. Dropping a system therefore still stops nothing, since the registry holds the other
 reference. The root stops where it would stop for a parent, between messages and never inside one.
-The message it is handling is finished first and, for an event-sourced actor, so is its settlement.
+The message it is handling is finished first and, for an event-sourced actor, so is its settlement,
+whose store calls each wait at most the store timeout (see
+[persistence.md](persistence.md#store-timeout)).
 Its `then` continuations run once the events are durable, so the acknowledgment of a settled command
 is still sent. The commands still queued are drained, and their asks resolve as `NoReply`. Await
 `ActorSystem::terminated` for the tree to be gone. Without `ActorSystem::stop`, a root actor would

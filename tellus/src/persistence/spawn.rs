@@ -31,13 +31,14 @@ use std::{
     panic::{AssertUnwindSafe, catch_unwind},
     pin::pin,
     sync::Arc,
+    time::Duration,
 };
 use thiserror::Error;
 use tokio::{
     select,
     sync::watch,
     task::{self, consume_budget},
-    time::Instant,
+    time::{Instant, error::Elapsed, timeout_at},
 };
 use tracing::{debug, warn};
 
@@ -173,6 +174,30 @@ enum ReplayError {
 
     #[error(transparent)]
     Overflow(#[from] SeqNoOverflow),
+}
+
+#[derive(Debug, Error)]
+enum StoreCallError<E>
+where
+    E: Error,
+{
+    #[error(transparent)]
+    Store(E),
+
+    #[error("store call timed out after {0:?}")]
+    TimedOut(Duration),
+}
+
+#[derive(Debug, Error)]
+enum AppendFailure<E>
+where
+    E: Error,
+{
+    #[error(transparent)]
+    Append(AppendError<E>),
+
+    #[error("append timed out after {0:?}, whether its events were stored is unknown")]
+    TimedOut(Duration),
 }
 
 #[derive(Debug, Error)]
@@ -516,9 +541,11 @@ where
 {
     let id = catch_panic_and_log(actor_id, FAILED_TO_RECOVER, || actor.persistence_id())?;
 
-    let loaded = catch_panic_and_log_async(actor_id, FAILED_TO_RECOVER, async {
-        persistence.snapshot_store.load(&id).await
-    })
+    let loaded = catch_panic_and_log_async(
+        actor_id,
+        FAILED_TO_RECOVER,
+        load_snapshot(&persistence.snapshot_store, &id, persistence.timeout),
+    )
     .await;
     let snapshot = log_failure(actor_id, FAILED_TO_RECOVER, loaded)?;
 
@@ -581,7 +608,12 @@ where
         let page = catch_panic_and_log_async(
             actor_id,
             FAILED_TO_RECOVER,
-            read_page(&persistence.event_store, &id, next_seq_no),
+            read_page(
+                &persistence.event_store,
+                &id,
+                next_seq_no,
+                persistence.timeout,
+            ),
         )
         .await;
         let Some(page) = log_failure(actor_id, FAILED_TO_RECOVER, page) else {
@@ -651,7 +683,13 @@ where
         let appended_events = catch_panic_and_log_async(
             actor_id,
             FAILED_TO_APPEND,
-            append_events(&persistence.event_store, id, next_seq_no, encoded),
+            append_events(
+                &persistence.event_store,
+                id,
+                next_seq_no,
+                encoded,
+                persistence.timeout,
+            ),
         )
         .await;
         if log_failure(actor_id, FAILED_TO_APPEND, appended_events).is_none() {
@@ -691,6 +729,7 @@ where
                 id,
                 next_seq_no,
                 snapshot,
+                persistence.timeout,
             ))
             .await;
             warn_unless_snapshot_saved(actor_id, saved);
@@ -728,16 +767,34 @@ where
     }
 }
 
+async fn load_snapshot<S>(
+    snapshot_store: &S,
+    id: &PersistenceId,
+    timeout: Duration,
+) -> Result<Option<StoredSnapshot>, StoreCallError<S::Error>>
+where
+    S: SnapshotStore,
+{
+    within(timeout, snapshot_store.load(id))
+        .await
+        .map_err(|_| StoreCallError::TimedOut(timeout))?
+        .map_err(StoreCallError::Store)
+}
+
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 async fn read_page<E>(
     event_store: &E,
     id: &PersistenceId,
     from_seq_no: SeqNo,
-) -> Result<Vec<StoredEvent>, E::Error>
+    timeout: Duration,
+) -> Result<Vec<StoredEvent>, StoreCallError<E::Error>>
 where
     E: EventStore,
 {
-    event_store.read(id, from_seq_no, REPLAY_PAGE).await
+    within(timeout, event_store.read(id, from_seq_no, REPLAY_PAGE))
+        .await
+        .map_err(|_| StoreCallError::TimedOut(timeout))?
+        .map_err(StoreCallError::Store)
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -801,11 +858,15 @@ async fn append_events<E>(
     id: &PersistenceId,
     next_seq_no: SeqNo,
     events: Vec<EncodedEvent>,
-) -> Result<(), AppendError<E::Error>>
+    timeout: Duration,
+) -> Result<(), AppendFailure<E::Error>>
 where
     E: EventStore,
 {
-    event_store.append(id, next_seq_no, events).await
+    within(timeout, event_store.append(id, next_seq_no, events))
+        .await
+        .map_err(|_| AppendFailure::TimedOut(timeout))?
+        .map_err(AppendFailure::Append)
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
@@ -846,9 +907,20 @@ async fn save_snapshot<S>(
     id: &PersistenceId,
     next_seq_no: SeqNo,
     snapshot: EncodedSnapshot,
-) -> Result<(), S::Error>
+    timeout: Duration,
+) -> Result<(), StoreCallError<S::Error>>
 where
     S: SnapshotStore,
 {
-    snapshot_store.save(id, next_seq_no, snapshot).await
+    within(timeout, snapshot_store.save(id, next_seq_no, snapshot))
+        .await
+        .map_err(|_| StoreCallError::TimedOut(timeout))?
+        .map_err(StoreCallError::Store)
+}
+
+async fn within<F>(timeout: Duration, call: F) -> Result<F::Output, Elapsed>
+where
+    F: Future,
+{
+    timeout_at(timers::deadline(Instant::now(), timeout), call).await
 }

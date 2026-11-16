@@ -24,10 +24,11 @@ use thiserror::Error;
 use tokio::{
     sync::mpsc,
     task::spawn,
-    time::{advance, sleep, timeout},
+    time::{Instant, advance, sleep, timeout},
 };
 
 const TIMEOUT: Duration = Duration::from_secs(5);
+const STORE_TIMEOUT: Duration = Duration::from_secs(1);
 
 static TRACING: Once = Once::new();
 
@@ -573,7 +574,7 @@ async fn an_append_store_panic_restarts_and_consumes_the_command() {
 /// whose store read hangs forever aborts the replay instead of stalling termination.
 #[tokio::test]
 async fn a_parent_stop_aborts_a_hung_recovery() {
-    let store = FaultyStore::default().with_hanging_reads();
+    let store = FaultyStore::default().with_hanging_reads(u32::MAX);
     let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
 
     let system = ActorSystem::new(Parent {
@@ -682,8 +683,8 @@ async fn a_recovered_failure_restarts_into_a_working_actor() {
 }
 
 /// An outside stop takes effect between commands, like a parent's, hence an append already under
-/// way settles before the tree terminates: a shutdown can lose the acknowledgment of an event,
-/// never the event.
+/// way, which answers within the store timeout, settles before the tree terminates: such a
+/// shutdown can lose the acknowledgment of an event, never the event.
 #[tokio::test]
 async fn stopping_a_system_lets_an_append_settle() {
     let store = FaultyStore::default().with_append_delay(Duration::from_millis(50));
@@ -713,6 +714,307 @@ async fn stopping_a_system_lets_an_append_settle() {
         Probe::Settled(1)
     );
     assert_terminates(system, "system did not terminate").await;
+}
+
+/// A stop waits for an append which never answers at most the store timeout: the append fails
+/// once the timeout has passed, its command never settles, and the tree terminates.
+#[tokio::test(start_paused = true)]
+async fn a_stop_waits_for_a_hung_append_at_most_the_timeout() {
+    let store = FaultyStore::default().with_hanging_appends(u32::MAX);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced(Counter::new("hung-stop", probe_tx), bounded(&store));
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled
+    );
+    let stopped_at = Instant::now();
+    system.stop();
+
+    assert_terminates(system, "termination must not wait beyond the store timeout").await;
+    assert!(
+        stopped_at.elapsed() >= STORE_TIMEOUT,
+        "the stop must wait for the append until the store timeout has passed"
+    );
+    assert!(
+        probe_rx.try_recv().is_err(),
+        "the command whose append timed out must not settle"
+    );
+}
+
+/// A read which exceeds the store timeout fails recovery into supervision: under `Restart` the
+/// next attempt recovers, and the actor handles commands.
+#[tokio::test(start_paused = true)]
+async fn a_hung_read_fails_recovery_into_supervision() {
+    let store = FaultyStore::default().with_hanging_reads(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+    let started = Instant::now();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("hung-read", probe_tx),
+        bounded(&store),
+        restart_config(),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no init probe after the timed out read").await,
+        Probe::Init
+    );
+    assert!(
+        started.elapsed() >= STORE_TIMEOUT,
+        "the read must fail only once the store timeout has passed"
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(ask_count(&system).await, 1);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// A snapshot load which exceeds the store timeout fails recovery into supervision like a failed
+/// load, rather than falling back to full replay: under `Restart` the next attempt loads the
+/// snapshot.
+#[tokio::test(start_paused = true)]
+async fn a_hung_snapshot_load_fails_recovery_into_supervision() {
+    let store = FaultyStore::default();
+    let id = persistence_id("hung-load");
+    store
+        .inner()
+        .save(
+            &id,
+            SeqNo::ZERO,
+            EncodedSnapshot {
+                manifest: Count::MANIFEST.into(),
+                schema_version: Count::VERSION,
+                payload: Cbor.encode(&Count(7)).expect("the snapshot is encodable"),
+            },
+        )
+        .await
+        .expect("the seeded snapshot is saved");
+    let store = store.with_hanging_loads(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+    let started = Instant::now();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("hung-load", probe_tx),
+        bounded(&store).with_snapshot_store(store.clone()),
+        restart_config(),
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no init from snapshot probe").await,
+        Probe::InitFromSnapshot
+    );
+    assert!(
+        started.elapsed() >= STORE_TIMEOUT,
+        "the load must fail only once the store timeout has passed"
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+    assert_eq!(ask_count(&system).await, 7);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// An append which exceeds the store timeout is an actor failure: under `Stop` the actor stops,
+/// and its command never settles.
+#[tokio::test(start_paused = true)]
+async fn a_hung_append_stops_the_actor_under_stop() {
+    let store = FaultyStore::default().with_hanging_appends(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system =
+        ActorSystem::event_sourced(Counter::new("hung-append-stop", probe_tx), bounded(&store));
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled
+    );
+    let handled_at = Instant::now();
+
+    assert_terminates(system, "the timed out append must stop the actor").await;
+    assert!(
+        handled_at.elapsed() >= STORE_TIMEOUT,
+        "the append must fail only once the store timeout has passed"
+    );
+    assert!(
+        probe_rx.try_recv().is_err(),
+        "the command whose append timed out must not settle"
+    );
+    assert!(
+        store
+            .inner()
+            .events(&persistence_id("hung-append-stop"))
+            .is_empty()
+    );
+}
+
+/// An append which exceeds the store timeout takes the path of a failed append under `Restart`:
+/// the actor restarts, replays and handles the next command, and the timed out command is
+/// consumed.
+#[tokio::test(start_paused = true)]
+async fn a_hung_append_restarts_and_consumes_the_command_under_restart() {
+    let store = FaultyStore::default().with_hanging_appends(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("hung-append-restart", probe_tx),
+        bounded(&store),
+        restart_config(),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled
+    );
+    let handled_at = Instant::now();
+    assert_eq!(
+        recv(&mut probe_rx, "no init probe after the timed out append").await,
+        Probe::Init
+    );
+    assert!(
+        handled_at.elapsed() >= STORE_TIMEOUT,
+        "the append must fail only once the store timeout has passed"
+    );
+    assert_eq!(
+        recv(
+            &mut probe_rx,
+            "no recovered probe after the timed out append"
+        )
+        .await,
+        Probe::Recovered
+    );
+    assert_eq!(
+        ask_count(&system).await,
+        0,
+        "the timed out command's event must not be appended"
+    );
+
+    system.root().tell(Command::Increment(2));
+    assert_eq!(ask_count(&system).await, 2);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// A timed out append is ambiguous: one whose events were stored before it stopped answering
+/// fails the actor all the same, and the replay of the restarted actor picks its events up.
+#[tokio::test(start_paused = true)]
+async fn the_replay_picks_up_a_timed_out_append_which_was_stored() {
+    let store = FaultyStore::default().with_hanging_stored_appends(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("hung-stored-append", probe_tx),
+        bounded(&store),
+        restart_config(),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    for expected in [Probe::Handled, Probe::Init, Probe::Recovered] {
+        assert_eq!(
+            recv(&mut probe_rx, "no probe around the timed out append").await,
+            expected
+        );
+    }
+    assert_eq!(
+        ask_count(&system).await,
+        1,
+        "the replay must pick up the stored events of the timed out append"
+    );
+
+    system.root().tell(Command::Increment(2));
+    assert_eq!(ask_count(&system).await, 3);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// A snapshot save which exceeds the store timeout is logged like a failed save and never fails
+/// the actor: its command settles once the timeout has passed, and the next one settles, too.
+#[tokio::test(start_paused = true)]
+async fn a_hung_snapshot_save_never_fails_the_actor() {
+    let store = FaultyStore::default().with_hanging_saves(1);
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let system = ActorSystem::event_sourced_with_config(
+        Counter::new("hung-save", probe_tx).with_snapshot_every(1),
+        bounded(&store).with_snapshot_store(store.clone()),
+        restart_config(),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    system.root().tell(Command::Increment(1));
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled
+    );
+    let handled_at = Instant::now();
+    system.root().tell(Command::Increment(2));
+    assert_eq!(
+        recv(&mut probe_rx, "no settled probe").await,
+        Probe::Settled(1)
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no handled probe").await,
+        Probe::Handled,
+        "the next command must be handled only once the save has timed out"
+    );
+    assert!(
+        handled_at.elapsed() >= STORE_TIMEOUT,
+        "the save must be given up only once the store timeout has passed"
+    );
+    assert_eq!(
+        recv(&mut probe_rx, "no settled probe").await,
+        Probe::Settled(3)
+    );
+    assert_eq!(ask_count(&system).await, 3);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+    let mut probes = Vec::new();
+    while let Ok(probe) = probe_rx.try_recv() {
+        probes.push(probe);
+    }
+    assert!(
+        !probes.contains(&Probe::Init),
+        "the timed out save must not restart the actor"
+    );
 }
 
 /// Writes are strict: a command is fully settled, its continuations included, before the next one
@@ -1179,6 +1481,13 @@ async fn ask_child_count(child: &ActorRef<Command>) -> u64 {
         .ask(TIMEOUT, Command::Get)
         .await
         .expect("no reply to get")
+}
+
+/// The wiring over the given store, its calls bounded by [STORE_TIMEOUT].
+fn bounded(store: &FaultyStore) -> Persistence<FaultyStore> {
+    Persistence::new(store.clone())
+        .with_timeout(STORE_TIMEOUT)
+        .expect("the store timeout is not zero")
 }
 
 fn restart_config() -> ActorConfig {
@@ -1683,9 +1992,10 @@ impl Actor for TimedParent {
     }
 }
 
-/// An [InMemoryStore] which can be made to misbehave: appends can be delayed, fail or panic a
-/// given number of times, reads can hang forever and snapshot saves can fail. Reads are logged,
-/// so a test can assert which positions a replay asked for.
+/// An [InMemoryStore] which can be made to misbehave: appends can be delayed, and fail, panic or
+/// hang a given number of times, or hang once their events are stored; reads, snapshot loads and
+/// snapshot saves can hang a given number of times, and snapshot saves can fail. Reads are
+/// logged, so a test can assert which positions a replay asked for.
 #[derive(Debug, Clone, Default)]
 struct FaultyStore {
     inner: InMemoryStore,
@@ -1693,7 +2003,11 @@ struct FaultyStore {
     append_delay: Option<Duration>,
     append_failures: Arc<Mutex<u32>>,
     append_panics: Arc<Mutex<u32>>,
-    hang_reads: bool,
+    hanging_appends: Arc<Mutex<u32>>,
+    hanging_stored_appends: Arc<Mutex<u32>>,
+    hanging_reads: Arc<Mutex<u32>>,
+    hanging_loads: Arc<Mutex<u32>>,
+    hanging_saves: Arc<Mutex<u32>>,
     fail_saves: bool,
     error_hooks: Arc<ErrorHooks>,
 }
@@ -1714,8 +2028,28 @@ impl FaultyStore {
         self
     }
 
-    fn with_hanging_reads(mut self) -> Self {
-        self.hang_reads = true;
+    fn with_hanging_appends(mut self, hangs: u32) -> Self {
+        self.hanging_appends = Arc::new(Mutex::new(hangs));
+        self
+    }
+
+    fn with_hanging_stored_appends(mut self, hangs: u32) -> Self {
+        self.hanging_stored_appends = Arc::new(Mutex::new(hangs));
+        self
+    }
+
+    fn with_hanging_reads(mut self, hangs: u32) -> Self {
+        self.hanging_reads = Arc::new(Mutex::new(hangs));
+        self
+    }
+
+    fn with_hanging_loads(mut self, hangs: u32) -> Self {
+        self.hanging_loads = Arc::new(Mutex::new(hangs));
+        self
+    }
+
+    fn with_hanging_saves(mut self, hangs: u32) -> Self {
+        self.hanging_saves = Arc::new(Mutex::new(hangs));
         self
     }
 
@@ -1762,6 +2096,10 @@ impl EventStore for FaultyStore {
             sleep(append_delay).await;
         }
 
+        if take_fault(&self.hanging_appends) {
+            pending::<()>().await;
+        }
+
         {
             let mut failures = self
                 .append_failures
@@ -1791,15 +2129,22 @@ impl EventStore for FaultyStore {
             panic!("append panicked");
         }
 
-        self.inner
-            .append(id, next_seq_no, events)
-            .await
-            .map_err(|error| match error {
-                AppendError::Conflict => AppendError::Conflict,
-                AppendError::Store(error) => {
-                    panic!("the in-memory store failed an append: {error}")
-                }
-            })
+        let appended =
+            self.inner
+                .append(id, next_seq_no, events)
+                .await
+                .map_err(|error| match error {
+                    AppendError::Conflict => AppendError::Conflict,
+                    AppendError::Store(error) => {
+                        panic!("the in-memory store failed an append: {error}")
+                    }
+                });
+
+        if appended.is_ok() && take_fault(&self.hanging_stored_appends) {
+            pending::<()>().await;
+        }
+
+        appended
     }
 
     async fn read(
@@ -1808,7 +2153,7 @@ impl EventStore for FaultyStore {
         from_seq_no: SeqNo,
         limit: NonZeroUsize,
     ) -> Result<Vec<StoredEvent>, Self::Error> {
-        if self.hang_reads {
+        if take_fault(&self.hanging_reads) {
             pending::<()>().await;
         }
 
@@ -1837,6 +2182,10 @@ impl SnapshotStore for FaultyStore {
             return Err(self.error());
         }
 
+        if take_fault(&self.hanging_saves) {
+            pending::<()>().await;
+        }
+
         self.inner
             .save(id, next_seq_no, snapshot)
             .await
@@ -1844,6 +2193,10 @@ impl SnapshotStore for FaultyStore {
     }
 
     async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
+        if take_fault(&self.hanging_loads) {
+            pending::<()>().await;
+        }
+
         self.inner.load(id).await.map_err(|error| match error {})
     }
 }
@@ -1974,5 +2327,16 @@ where
         Command::IncrementAndDefer(..) | Command::Undefer => {
             unreachable!("only a Counter is told to defer")
         }
+    }
+}
+
+/// Whether one of the given remaining faults is due, taking it if so.
+fn take_fault(faults: &Mutex<u32>) -> bool {
+    let mut faults = faults.lock().expect("faults lock poisoned");
+    if *faults > 0 {
+        *faults -= 1;
+        true
+    } else {
+        false
     }
 }

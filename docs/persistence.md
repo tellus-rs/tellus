@@ -54,8 +54,9 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
   effect with events, once its events have been applied and its continuations have run.
 
 Spawning uses dedicated entry points carrying the [`Persistence`](../tellus/src/persistence.rs)
-wiring, an event store plus optional snapshot store and codec: `ActorSystem::event_sourced` for
-the root and `ActorContext::spawn_event_sourced` for children, each with a `_with_config` variant
+wiring, an event store plus optional snapshot store, codec and store timeout (see
+[Store timeout](#store-timeout)): `ActorSystem::event_sourced` for the root and
+`ActorContext::spawn_event_sourced` for children, each with a `_with_config` variant
 taking the ordinary `ActorConfig`. Unlike a plain actor value, which only needs `Send`, an
 event-sourced one must also be `Sync`: it is borrowed across the store awaits during recovery and
 settlement. Everything else, mailboxes, supervision, death watch and termination, works exactly as
@@ -135,30 +136,67 @@ still completes. The mailbox guarantees of [actors.md](actors.md) carry over unc
 from one sender arrive in send order, and a terminated signal arrives behind all messages the
 terminated actor delivered. A parent's stop is honored between commands and at any point during
 recovery, never in the middle of one command settling, and the termination sequence is the same as
-for any actor.
+for any actor. A settlement takes at most the store timeout per store call, so a stop waits for it
+at most that long for the append and that long again for a due snapshot save (see
+[Store timeout](#store-timeout)).
 
 ## Failure and supervision
 
-A failure of `handle`, a failure to encode an event, a failed append, or a panic in `handle`,
-`apply` or a continuation is an actor failure and consults the `SupervisionStrategy`, exactly like a
-failure of `receive` in a plain actor. `Restart` recovers by replaying from the store, which also
-reconciles an ambiguous append. If the append reached the store before the failure, replay picks its
-events up. If not, they were never applied either, since `apply` runs only after the append. There
-is no retry logic besides supervision.
+A failure of `handle`, a failure to encode an event, a failed append, an append exceeding the store
+timeout, or a panic in `handle`, `apply` or a continuation is an actor failure and consults the
+`SupervisionStrategy`, exactly like a failure of `receive` in a plain actor. `Restart` recovers by
+replaying from the store, which also reconciles an ambiguous append. If the append reached the store
+before the replay reads the stream, replay picks its events up. If not, they were never applied
+either, since `apply` runs only after the append. An append which reaches the store only after the
+replay is the one case replay does not reconcile (see [Store timeout](#store-timeout)). There is no
+retry logic besides supervision.
 
 Failures during recovery divide in two. A failure of `init`, `init_from_snapshot`, event decoding or
 `apply`, or a stored event whose sequence number is not the next one expected, is deterministic: a
 restart fails identically, and so it escalates through the restart limit to a stop. An undecodable
 snapshot is the one exception, discarded in favor of full replay (see schema evolution below). A
 failure of `recovered`, or a failure or panic of a store itself while loading the snapshot or
-reading events, is an ordinary startup failure, e.g. a struggling dependency, which a restart with
-backoff may well fix. A failed snapshot load is deliberately not traded for full replay, so a
+reading events, the store timeout included, is an ordinary startup failure, e.g. a struggling
+dependency, which a restart with backoff may well fix. A failed snapshot load is deliberately not traded for full replay, so a
 snapshot store failure surfaces through supervision instead of silently turning every recovery into
 a full replay.
 
-A failure to save a snapshot is logged and never fails the actor: losing a snapshot only makes the
-next recovery replay more events. `NoSnapshots`, the snapshot store of a `Persistence` without one,
-drops an offered snapshot with a warning.
+A failure to save a snapshot, the store timeout included, is logged and never fails the actor:
+losing a snapshot only makes the next recovery replay more events. `NoSnapshots`, the snapshot store
+of a `Persistence` without one, drops an offered snapshot with a warning.
+
+## Store timeout
+
+Every store call is bounded by the timeout of its `Persistence`, which is
+`Persistence::DEFAULT_TIMEOUT`, 10 s, unless `Persistence::with_timeout` sets another. That refuses
+zero. The timeout bounds each call on its own: the snapshot load and every page read of a recovery,
+and the append and the snapshot save of a settlement. A load or read which exceeds it fails
+recovery like a store failure, and an append which exceeds it fails the actor like a failed append.
+A snapshot save which exceeds it is logged like a failed save, and settlement completes.
+
+The timeout gives up on a call by dropping its future. That ends nothing the call has started
+outside the process: a statement sent to a database server runs on there, and an append which the
+actor has given up on may still store its events. The timeout is hence a backstop, not the way a
+call ends. A store bounds its own calls, e.g. by a statement timeout in the server, and the sum of
+its bounds stays below the `Persistence` timeout, so that the store's own failure, which is
+definite, comes first. The README of
+[tellus-persistence-postgres](../tellus-persistence-postgres/README.md#timeouts) says how for
+PostgreSQL.
+
+An append which exceeds the timeout is ambiguous: its events may have been stored or not, and the
+logged error says so. As for any ambiguous append, the replay of the next incarnation decides,
+provided the append has reached the store by the time the replay reads the stream. One case stays
+open whatever the store bounds: a call which fails after the store has begun to commit and before
+its answer has arrived, through a lost connection, a crash, or a stalled commit which the backstop
+ends. Such an append can land after the replay. Its events are then in the stream but not in the
+state. The next append claims the same position, conflicts and fails its command into supervision.
+The restart after that conflict replays the late events, so the state matches the stream again, but
+the command whose append conflicted is lost, like any command whose append fails.
+
+A shutdown waits for a settlement under way, but only as long as its store calls take: at most the
+timeout for the append, and at most the timeout again for a due snapshot save. An append which the
+shutdown gives up on is ambiguous as above. The next incarnation's replay picks its events up if
+they have landed by then. If they land later, they make that incarnation's next append conflict.
 
 ## Fencing
 
@@ -355,6 +393,9 @@ entity, sends a command with `tell` and then reads the store has to wait for the
   exclusive ownership: two live incarnations can alternate as writers.
 - Outward-facing actions are at-most-once: a crash can lose a `then` continuation, never an
   event.
+- Every store call is bounded by the store timeout, and so is a shutdown: it waits for a settlement
+  under way at most the timeout per store call. An append given up on is ambiguous, and the replay
+  of the next incarnation decides unless the append lands after it.
 - Strict writes serialize commands: nothing overlaps a command's settlement, which bounds
   throughput per actor by store latency.
 - Saving a due snapshot is part of settlement, so a command which triggers one also waits for the
