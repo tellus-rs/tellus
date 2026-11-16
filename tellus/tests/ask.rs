@@ -1,4 +1,5 @@
 use std::{
+    assert_matches,
     convert::Infallible,
     future::Future,
     num::{NonZeroU32, NonZeroUsize},
@@ -55,7 +56,7 @@ async fn ask_a_terminated_actor_fails_as_terminated() {
         })
         .await
         .expect_err("ask to a terminated actor must fail");
-    assert!(matches!(error, AskError::ActorTerminated));
+    assert_matches!(error, AskError::ActorTerminated);
 }
 
 /// An ask to a full bounded mailbox fails up front with `AskError::MailboxFull`. The responder,
@@ -85,7 +86,7 @@ async fn ask_a_full_mailbox_fails_as_full() {
         })
         .await
         .expect_err("ask into a full mailbox must fail");
-    assert!(matches!(error, AskError::MailboxFull));
+    assert_matches!(error, AskError::MailboxFull);
 
     unblock_tx.send(()).expect("unblock channel closed");
     assert_terminates(system, "actor system did not terminate").await;
@@ -102,7 +103,7 @@ async fn a_dropped_reply_to_fails_as_no_reply() {
         .ask(TIMEOUT, Request::Discard)
         .await
         .expect_err("a discarded request must not produce a reply");
-    assert!(matches!(error, AskError::NoReply));
+    assert_matches!(error, AskError::NoReply);
 
     system.root().tell(Request::Stop);
     assert_terminates(system, "actor system did not terminate").await;
@@ -120,7 +121,7 @@ async fn an_unanswered_ask_fails_as_timeout() {
         .ask(TIMEOUT, KeeperMessage::Keep)
         .await
         .expect_err("a kept request must not produce a reply");
-    assert!(matches!(error, AskError::Timeout(within) if within == TIMEOUT));
+    assert_matches!(error, AskError::Timeout(within) if within == TIMEOUT);
 
     system.root().tell(KeeperMessage::Stop);
     assert_terminates(system, "actor system did not terminate").await;
@@ -158,7 +159,7 @@ async fn stopping_with_the_ask_still_queued_fails_as_no_reply() {
     let error = ask
         .await
         .expect_err("a drained request must not produce a reply");
-    assert!(matches!(error, AskError::NoReply));
+    assert_matches!(error, AskError::NoReply);
 
     assert_terminates(system, "actor system did not terminate").await;
 }
@@ -261,7 +262,7 @@ async fn a_failing_ask_message_fails_as_no_reply() {
         .ask(TIMEOUT, FragileRequest::PanicWithReply)
         .await
         .expect_err("a request consumed by a failing receive must not produce a reply");
-    assert!(matches!(error, AskError::NoReply));
+    assert_matches!(error, AskError::NoReply);
 
     let reply = system
         .root()
@@ -317,7 +318,7 @@ async fn a_reply_to_a_full_asker_mailbox_is_received_and_counted() {
         .root()
         .ask::<(), _>(TIMEOUT, |_| BlockedAskerMessage::Filler)
         .await;
-    assert!(matches!(refused, Err(AskError::MailboxFull)));
+    assert_matches!(refused, Err(AskError::MailboxFull));
 
     unblock_tx.send(()).expect("unblock channel closed");
 

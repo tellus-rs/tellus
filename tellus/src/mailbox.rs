@@ -151,7 +151,7 @@ mod tests {
         mailbox::{SendError, make_mailbox},
         watch::Watcher,
     };
-    use std::{num::NonZeroUsize, time::Duration};
+    use std::{assert_matches, num::NonZeroUsize, time::Duration};
     use tokio::time::timeout;
 
     #[test]
@@ -160,10 +160,10 @@ mod tests {
             make_mailbox::<()>(MailboxCapacity::Bounded(NonZeroUsize::MIN));
 
         assert!(mailbox_handle.try_send_message(()).is_ok());
-        assert!(matches!(
+        assert_matches!(
             mailbox_handle.try_send_message(()),
             Err(SendError::MailboxFull(_))
-        ));
+        );
     }
 
     /// A bounded mailbox which is full when the actor terminates reports the termination, not the
@@ -176,10 +176,10 @@ mod tests {
         assert!(mailbox_handle.try_send_message(()).is_ok());
         drop(mailbox);
 
-        assert!(matches!(
+        assert_matches!(
             mailbox_handle.try_send_message(()),
             Err(SendError::ActorTerminated(_))
-        ));
+        );
     }
 
     /// Splitting the mailbox already fails sends as terminated while registration stays open, so
@@ -193,10 +193,10 @@ mod tests {
         let (incoming_rx, watcher_registration) = mailbox.split();
         drop(incoming_rx);
 
-        assert!(matches!(
+        assert_matches!(
             mailbox_handle.try_send_message(()),
             Err(SendError::ActorTerminated(_))
-        ));
+        );
 
         let watcher = Watcher::new(ActorId::new(), mailbox_handle.terminated_handler());
         assert!(mailbox_handle.watcher_registry().add(watcher).is_ok());
@@ -232,8 +232,8 @@ mod tests {
         assert!(mailbox_handle.try_send_message(2).is_ok());
         drop(mailbox_handle);
 
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(1))));
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(2))));
+        assert_matches!(mailbox.recv().await, Some(Incoming::Message(1)));
+        assert_matches!(mailbox.recv().await, Some(Incoming::Message(2)));
         assert!(mailbox.recv().await.is_none());
     }
 
@@ -260,10 +260,10 @@ mod tests {
         let clone = mailbox_handle.clone();
 
         assert!(mailbox_handle.try_send_message(()).is_ok());
-        assert!(matches!(
+        assert_matches!(
             clone.try_send_message(()),
             Err(SendError::MailboxFull(_))
-        ));
+        );
     }
 
     /// Cloning a handle shares the watcher registration as well as the capacity: a watcher
@@ -290,10 +290,10 @@ mod tests {
         drop(mailbox);
 
         for _ in 0..2 * capacity.get() {
-            assert!(matches!(
+            assert_matches!(
                 mailbox_handle.try_send_message(()),
                 Err(SendError::ActorTerminated(_))
-            ));
+            );
         }
     }
 
@@ -306,17 +306,17 @@ mod tests {
         assert!(mailbox_handle.try_send_message(()).is_ok());
         assert!(terminated_handler.handle_terminated(ActorId::new()).is_ok());
 
-        assert!(matches!(mailbox.recv().await, Some(Incoming::Message(_))));
-        assert!(matches!(
+        assert_matches!(mailbox.recv().await, Some(Incoming::Message(_)));
+        assert_matches!(
             mailbox.recv().await,
             Some(Incoming::Terminated(_))
-        ));
+        );
 
         assert!(mailbox_handle.try_send_message(()).is_ok());
-        assert!(matches!(
+        assert_matches!(
             mailbox_handle.try_send_message(()),
             Err(SendError::MailboxFull(_))
-        ));
+        );
     }
 
     /// A watcher delivers the terminated signal into the watching actor's mailbox and reports an
@@ -328,10 +328,10 @@ mod tests {
 
         let actor_id = ActorId::new();
         assert!(watcher.handle_terminated(actor_id).is_ok());
-        assert!(matches!(
+        assert_matches!(
             mailbox.recv().await,
             Some(Incoming::Terminated(other)) if other == actor_id
-        ));
+        );
 
         drop(mailbox);
         assert!(watcher.handle_terminated(actor_id).is_err());

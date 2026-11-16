@@ -251,7 +251,7 @@ read back with `take_incoming`.
 
 ```rust
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
+use std::{assert_matches, convert::Infallible};
 use tellus::{
     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo,
     SchemaVersion, Unstashed, Untimed, Versioned,
@@ -330,10 +330,10 @@ assert!(!effect.stop_requested());
 let settlement = settle(&Counter, 0, effect);
 assert_eq!(settlement.state, 1);
 assert!(!settlement.stop);
-assert!(matches!(
+assert_matches!(
     test_context.take_incoming().as_slice(),
     [Incoming::Message(Command::Total(1))]
-));
+);
 ```
 
 `settle` leaves out everything about the store: encoding, appending, snapshots and sequence

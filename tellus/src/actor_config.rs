@@ -163,6 +163,7 @@ fn default_reset_after() -> Duration {
 mod tests {
     use crate::{ActorConfig, Backoff, MailboxCapacity, RestartPolicy, SupervisionStrategy};
     use std::{
+        assert_matches,
         num::{NonZeroU32, NonZeroUsize},
         time::Duration,
     };
@@ -190,14 +191,14 @@ mod tests {
                 NonZeroU32::MIN,
             )));
 
-        assert!(matches!(
+        assert_matches!(
             config.mailbox_capacity,
             MailboxCapacity::Bounded(capacity) if capacity == NonZeroUsize::MIN
-        ));
-        assert!(matches!(
+        );
+        assert_matches!(
             config.supervision_strategy,
             SupervisionStrategy::Restart(_)
-        ));
+        );
     }
 
     /// Each setter overwrites its own field and leaves the others as they were.
@@ -227,10 +228,10 @@ mod tests {
         )
         .expect("the documented config form deserializes");
 
-        assert!(matches!(
+        assert_matches!(
             config.mailbox_capacity,
             MailboxCapacity::Bounded(capacity) if capacity.get() == 42
-        ));
+        );
 
         let SupervisionStrategy::Restart(policy) = config.supervision_strategy else {
             panic!("expected a restart strategy")

@@ -101,6 +101,8 @@ where
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches;
+
     use crate::{
         Nothing,
         persistence::{
@@ -191,7 +193,7 @@ mod tests {
         let error = Event::decode(&Cbor, Event::VERSION, &[])
             .expect_err("an empty payload must not decode");
 
-        assert!(matches!(error, DecodeError::Payload(_)));
+        assert_matches!(error, DecodeError::Payload(_));
         assert_eq!(
             error.to_string(),
             "payload not decodable",

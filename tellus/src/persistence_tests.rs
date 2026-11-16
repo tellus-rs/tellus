@@ -21,6 +21,7 @@ use crate::{
     schema_version::SchemaVersion,
 };
 use std::{
+    assert_matches,
     borrow::Cow,
     num::NonZeroUsize,
     sync::atomic::{AtomicU64, Ordering},
@@ -147,8 +148,7 @@ where
 
     for mismatched in [0, 1, 7].map(SeqNo::new) {
         let conflict = store.append(&id, mismatched, sample_events(3)).await;
-        assert!(
-            matches!(conflict, Err(AppendError::Conflict)),
+        assert_matches!(conflict, Err(AppendError::Conflict),
             "an append expecting next sequence number {mismatched} on a stream with 2 events must \
              fail with Conflict, got {conflict:?}"
         );
@@ -184,8 +184,7 @@ where
         for events in [sample_events(2), Vec::new()] {
             let len = events.len();
             let conflict = store.append(&id, mismatched, events).await;
-            assert!(
-                matches!(conflict, Err(AppendError::Conflict)),
+            assert_matches!(conflict, Err(AppendError::Conflict),
                 "an append of {len} events expecting next sequence number {mismatched} on an \
                  empty stream must fail with Conflict, got {conflict:?}"
             );
@@ -230,8 +229,7 @@ where
 
     for mismatched in [0, 1, 7, u64::MAX].map(SeqNo::new) {
         let conflict = store.append(&id, mismatched, Vec::new()).await;
-        assert!(
-            matches!(conflict, Err(AppendError::Conflict)),
+        assert_matches!(conflict, Err(AppendError::Conflict),
             "an empty append expecting next sequence number {mismatched} on a stream with 2 \
              events must fail with Conflict, got {conflict:?}"
         );

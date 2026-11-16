@@ -154,6 +154,7 @@ enum Repr {
 #[cfg(test)]
 mod tests {
     use crate::quota::{CountedSendError, CountedSender, Quota};
+    use std::assert_matches;
     use std::num::NonZeroUsize;
 
     /// A full quota whose receiver is gone reports the disconnect rather than the full quota: the
@@ -167,10 +168,10 @@ mod tests {
         assert!(item_tx.try_send_counted(()).is_ok());
         drop(item_rx);
 
-        assert!(matches!(
+        assert_matches!(
             item_tx.try_send_counted(()),
             Err(CountedSendError::Disconnected(_))
-        ));
+        );
     }
 
     /// An unbounded quota reserves without limit and its counter short circuits, so unreserving
@@ -226,10 +227,10 @@ mod tests {
         let clone = item_tx.clone();
 
         assert!(item_tx.try_send_counted(()).is_ok());
-        assert!(matches!(
+        assert_matches!(
             clone.try_send_counted(()),
             Err(CountedSendError::Full(_))
-        ));
+        );
     }
 
     /// A send failing once its reservation is taken releases that reservation, so a disconnect
@@ -241,10 +242,10 @@ mod tests {
         let item_tx = CountedSender::new(item_tx, quota.clone());
 
         drop(item_rx);
-        assert!(matches!(
+        assert_matches!(
             item_tx.try_send_counted(()),
             Err(CountedSendError::Disconnected(_))
-        ));
+        );
 
         assert!(quota.reserve().is_ok());
     }
@@ -259,10 +260,10 @@ mod tests {
         let item_tx = CountedSender::new(item_tx, quota.clone());
 
         assert!(item_tx.try_send_counted(1).is_ok());
-        assert!(matches!(
+        assert_matches!(
             item_tx.try_send_counted(2),
             Err(CountedSendError::Full(_))
-        ));
+        );
 
         assert!(item_tx.try_send_forced(3).is_ok());
         assert!(item_tx.try_send_forced(4).is_ok());
@@ -270,10 +271,10 @@ mod tests {
 
         // Everything sent is still counted, so ordinary senders stay refused until the receiver
         // has released the excess.
-        assert!(matches!(
+        assert_matches!(
             item_tx.try_send_counted(5),
             Err(CountedSendError::Full(_))
-        ));
+        );
         for _ in 0..3 {
             quota.unreserve();
         }
@@ -303,10 +304,10 @@ mod tests {
         let item_tx = CountedSender::new(item_tx, Quota::bounded(NonZeroUsize::MIN));
 
         assert!(item_tx.try_send_counted(1).is_ok());
-        assert!(matches!(
+        assert_matches!(
             item_tx.try_send_counted(2),
             Err(CountedSendError::Full(_))
-        ));
+        );
         assert!(item_tx.try_send_uncounted(3).is_ok());
 
         assert_eq!(item_rx.drain().collect::<Vec<_>>(), vec![1, 3]);
