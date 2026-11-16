@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794861615622,
+  "lastUpdate": 1794861617452,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -32595,6 +32595,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6051375,
             "range": "± 377234",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d34829ad25aa6492505fe7fea92250a97f41aabc",
+          "message": "Merge pull request #450 from tellus-rs/fix/abandoned-join-formation\n\nfix(cluster): await abandoned join attempts before deciding formation",
+          "timestamp": "2026-11-16T21:25:23+01:00",
+          "tree_id": "048dc60a2ca535f892e13ae05b96bf6dd57f2ac6",
+          "url": "https://github.com/tellus-rs/tellus/commit/d34829ad25aa6492505fe7fea92250a97f41aabc"
+        },
+        "date": 1794861616979,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 26320206,
+            "range": "± 1172349",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 26693039,
+            "range": "± 1322812",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4871211,
+            "range": "± 277733",
             "unit": "ns/iter"
           }
         ]
