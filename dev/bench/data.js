@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794831473178,
+  "lastUpdate": 1794831478374,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -26581,6 +26581,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 108239,
             "range": "± 2159",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "95db725851262098548187e7b9b63da1f39f5fe3",
+          "message": "Merge pull request #424 from tellus-rs/fix/example-exits\n\nfix(examples): bound every wait and check every exit status",
+          "timestamp": "2026-11-16T13:02:38+01:00",
+          "tree_id": "da1a4bed25f6c468403e80128502b971a7937f6d",
+          "url": "https://github.com/tellus-rs/tellus/commit/95db725851262098548187e7b9b63da1f39f5fe3"
+        },
+        "date": 1794831477537,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3305076,
+            "range": "± 44102",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3272770,
+            "range": "± 30535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 741614,
+            "range": "± 18300",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105693,
+            "range": "± 5414",
             "unit": "ns/iter"
           }
         ]
