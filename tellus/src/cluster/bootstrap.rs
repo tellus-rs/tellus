@@ -97,9 +97,17 @@ pub struct BootstrapConfig {
     /// first. Defaults to [BootstrapConfig::DEFAULT_SETTLE].
     pub settle: Duration,
 
-    /// The pause between two resolutions. Must not be zero, which would resolve in a busy loop;
-    /// defaults to [BootstrapConfig::DEFAULT_RESOLVE_INTERVAL].
+    /// The pause after a join round before the discovery is resolved for the next one. Must not
+    /// be zero, which would resolve in a busy loop; defaults to
+    /// [BootstrapConfig::DEFAULT_RESOLVE_INTERVAL].
     pub resolve_interval: Duration,
+
+    /// How long a join round waits for one attempt before it goes on to the next address,
+    /// counting that one as unavailable. Without a bound, a silent address holds the round until
+    /// the transport gives up, 30 s for QUIC. An attempt which has sent its `Join` handshake still
+    /// runs to its conclusion, and no formation is taken while it does. Must not be zero, which
+    /// would abandon every attempt; defaults to [BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT].
+    pub join_attempt_timeout: Duration,
 
     /// Creates the [FormationProvider] deciding whether this node forms a new cluster when no
     /// discovered address is a member of one; the default is [Majority].
@@ -125,6 +133,9 @@ impl BootstrapConfig {
     /// The `resolve_interval` of [BootstrapConfig::new].
     pub const DEFAULT_RESOLVE_INTERVAL: Duration = Duration::from_secs(1);
 
+    /// The `join_attempt_timeout` of [BootstrapConfig::new].
+    pub const DEFAULT_JOIN_ATTEMPT_TIMEOUT: Duration = Duration::from_secs(5);
+
     /// The `probe_interval` of [BootstrapConfig::new].
     pub const DEFAULT_PROBE_INTERVAL: Duration = Duration::from_secs(30);
 
@@ -135,6 +146,7 @@ impl BootstrapConfig {
             min_nodes: Self::DEFAULT_MIN_NODES,
             settle: Self::DEFAULT_SETTLE,
             resolve_interval: Self::DEFAULT_RESOLVE_INTERVAL,
+            join_attempt_timeout: Self::DEFAULT_JOIN_ATTEMPT_TIMEOUT,
             formation_provider: Arc::new(|| Box::new(Majority)),
             probe_interval: Some(Self::DEFAULT_PROBE_INTERVAL),
         }
@@ -154,6 +166,10 @@ pub enum InvalidBootstrapConfig {
     #[error("resolve_interval is zero")]
     ZeroResolveInterval,
 
+    /// The configured `join_attempt_timeout` is zero.
+    #[error("join_attempt_timeout is zero")]
+    ZeroJoinAttemptTimeout,
+
     /// The configured `probe_interval` is zero.
     #[error("probe_interval is zero")]
     ZeroProbeInterval,
@@ -171,6 +187,9 @@ struct UncheckedBootstrapConfig {
 
     #[serde(default, with = "humantime_serde")]
     resolve_interval: Option<Duration>,
+
+    #[serde(default, with = "humantime_serde")]
+    join_attempt_timeout: Option<Duration>,
 
     #[serde(default)]
     formation_provider: Option<FormationProviderConfig>,
@@ -192,6 +211,9 @@ impl TryFrom<UncheckedBootstrapConfig> for BootstrapConfig {
             resolve_interval: unchecked
                 .resolve_interval
                 .unwrap_or(defaults.resolve_interval),
+            join_attempt_timeout: unchecked
+                .join_attempt_timeout
+                .unwrap_or(defaults.join_attempt_timeout),
             formation_provider: unchecked.formation_provider.map_or(
                 defaults.formation_provider,
                 FormationProviderConfig::factory,
@@ -223,19 +245,23 @@ pub enum BootstrapError {
 }
 
 /// Discover the cluster and become a member of it, once: resolve seed addresses with the given
-/// discovery every [resolve_interval](BootstrapConfig::resolve_interval) and attempt to join
-/// through every resolved address but this node's own on every resolution. A started endpoint is
-/// no cluster and refuses joins, so nodes starting together admit each other nowhere. Only the
+/// discovery and attempt to join through every resolved address but this node's own, lowest
+/// first, in one round per resolution. Each attempt is bounded by
+/// [join_attempt_timeout](BootstrapConfig::join_attempt_timeout), and every round is followed by
+/// a pause of [resolve_interval](BootstrapConfig::resolve_interval). A started endpoint is no
+/// cluster and refuses joins, so nodes starting together admit each other nowhere. Only the
 /// formation decision waits for the view to settle: the resolved set, this node's own address
 /// included, must have held at least [min_nodes](BootstrapConfig::min_nodes) addresses unchanged
-/// for [settle](BootstrapConfig::settle). When no address of a settled view is a member of a
-/// cluster, the [FormationProvider] decides whether this node forms one. By default it forms at
-/// the lowest address of the universe once a majority of it is known to be no cluster. Requiring a
-/// majority keeps a partitioned node from coming back as a cluster of its own. With `min_nodes` of
-/// one, a resolved set holding nothing but this node's own address forms a cluster of one under
-/// [Majority]. A provider's decline is logged at warn level when it or the universe differs from
-/// the previous decline, at debug level otherwise. A formation the endpoint refuses since a join
-/// attempt ended ambiguously is logged the same way, see [FormError::JoinAmbiguous].
+/// for [settle](BootstrapConfig::settle). A round can take a while, so the discovery is resolved
+/// again after it, and the decision is taken only if that resolution shows the same settled set.
+/// When no address of a settled view is a member of a cluster, the [FormationProvider] decides
+/// whether this node forms one. By default it forms at the lowest address of the universe once a
+/// majority of it is known to be no cluster. Requiring a majority keeps a partitioned node from
+/// coming back as a cluster of its own. With `min_nodes` of one, a resolved set holding nothing but
+/// this node's own address forms a cluster of one under [Majority]. A provider's decline is logged
+/// at warn level when it or the universe differs from the previous decline, at debug level
+/// otherwise. A formation the endpoint refuses since a join attempt ended ambiguously is logged the
+/// same way, see [FormError::JoinAmbiguous].
 ///
 /// Returns at once when this node is already a member, e.g. through [form](crate::cluster::form),
 /// and otherwise once this node is a member. Membership owns failure detection and downing from
@@ -246,7 +272,7 @@ pub enum BootstrapError {
 /// seed which is not a member yet, and restarts the settle window, since nothing was observed
 /// during it. A settled view holding fewer than `min_nodes` addresses is logged at warn level on
 /// every resolution, since it blocks the formation decision and would otherwise be silent. There
-/// is no internal timeout, so wrap the call in [timeout](tokio::time::timeout) to bound
+/// is no overall timeout, so wrap the call in [timeout](tokio::time::timeout) to bound
 /// bootstrap. Nodes deciding on discovery views with different lowest addresses can still form
 /// separate clusters, which never merge on their own; the settle window and the `min_nodes` floor
 /// are the guard, so size `min_nodes` to the deployment when possible.
@@ -283,6 +309,9 @@ where
 fn validate(config: &BootstrapConfig) -> Result<(), InvalidBootstrapConfig> {
     if config.resolve_interval.is_zero() {
         return Err(InvalidBootstrapConfig::ZeroResolveInterval);
+    }
+    if config.join_attempt_timeout.is_zero() {
+        return Err(InvalidBootstrapConfig::ZeroJoinAttemptTimeout);
     }
     if config
         .probe_interval
@@ -334,7 +363,7 @@ where
                 }
 
                 let seeds = universe.iter().copied().collect::<Vec<_>>();
-                let round = join_round(endpoint, &seeds).await;
+                let round = join_round(endpoint, &seeds, Some(config.join_attempt_timeout)).await;
                 match step(round, universe, self_addr, now()) {
                     Step::Joined => return Ok(()),
 
@@ -345,6 +374,8 @@ where
                     Step::Decide(decision) => {
                         formation_provider.observe(&decision);
                         if decides
+                            && still_settled(discovery, &mut settle, &decision.universe, self_addr)
+                                .await
                             && decide(
                                 endpoint,
                                 formation_provider.as_mut(),
@@ -464,6 +495,36 @@ fn step(
         }
 
         JoinRound::NoAdmission(outcomes) => Step::Decide(formation(outcomes)),
+    }
+}
+
+/// `true` if discovery still resolves the universe a round was taken over and that universe is
+/// still settled; a changed one starts the settle window over.
+async fn still_settled<D>(
+    discovery: &mut D,
+    settle: &mut Settle,
+    round_universe: &BTreeSet<SocketAddr>,
+    self_addr: SocketAddr,
+) -> bool
+where
+    D: SeedDiscovery,
+{
+    match discovery.resolve().await {
+        Ok(resolved) => {
+            let current = universe(resolved, self_addr);
+            let settled = settle.settled(&current, now());
+            if current != *round_universe {
+                debug!("discovery changed during the join round, not deciding on it");
+                return false;
+            }
+            settled
+        }
+
+        Err(error) => {
+            settle.reset();
+            warn!(%error, "cannot resolve seed addresses");
+            false
+        }
     }
 }
 
@@ -590,14 +651,11 @@ where
 #[cfg(test)]
 mod tests {
     #[cfg(feature = "serde")]
-    use crate::cluster::{
-        bootstrap::SeedDiscovery,
-        formation::{Decision, FormationView},
-    };
+    use crate::cluster::formation::{Decision, FormationView};
     use crate::cluster::{
         bootstrap::{
-            BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, Settle, Step, bootstrap,
-            probe_foreign_clusters, run, step, universe, validate,
+            BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, SeedDiscovery, Settle,
+            Step, bootstrap, probe_foreign_clusters, run, step, universe, validate,
         },
         endpoint::{EndpointConfig, EndpointInner},
         formation::{Declined, JoinOutcome, MajorityWithFallback},
@@ -609,8 +667,9 @@ mod tests {
     };
     use std::{
         collections::BTreeSet,
+        convert::Infallible,
         net::SocketAddr,
-        sync::Arc,
+        sync::{Arc, Mutex},
         time::{Duration, Instant},
     };
     use tokio::{
@@ -943,6 +1002,95 @@ mod tests {
         finished(bootstrap).await;
     }
 
+    /// Every join attempt of a round is bounded, so seeds which never answer delay a round by one
+    /// `join_attempt_timeout` each, and a live seed behind two of them admits this node well
+    /// within the minute a caller typically allows bootstrap.
+    #[tokio::test(start_paused = true)]
+    async fn a_round_over_silent_seeds_reaches_a_live_one() {
+        let attempt_timeout = BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT;
+        let (endpoint, _lane_dials, join_requests) = endpoint(addr(4), EndpointConfig::new);
+        let start = tokio_time::Instant::now();
+        let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3), addr(4)], config());
+
+        let mut silent = Vec::new();
+        for silent_addr in [addr(1), addr(2)] {
+            let request = next_join(&join_requests).await;
+            assert_eq!(request.addr, silent_addr);
+            silent.push(request);
+        }
+        let request = next_join(&join_requests).await;
+        assert_eq!(request.addr, addr(3));
+        assert!(start.elapsed() >= attempt_timeout * 2);
+        assert!(request.result_tx.send(Ok(())).is_ok());
+
+        finished(bootstrap).await;
+        assert!(start.elapsed() < attempt_timeout * 3);
+        assert!(start.elapsed() < Duration::from_secs(60));
+        drop(silent);
+    }
+
+    /// A lower address appearing while a round runs makes that round's universe stale: no
+    /// formation is decided on it, and the next round over the new universe declines, since this
+    /// node is no longer the lowest address.
+    #[tokio::test(start_paused = true)]
+    async fn no_formation_is_decided_on_a_universe_which_changed_during_the_round() {
+        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let seeds = SharedSeeds::default();
+        seeds.set(vec![addr(2), addr(3)]);
+        let mut config = config();
+        config.settle = Duration::ZERO;
+        let bootstrap = spawn_run_with(endpoint, seeds.clone(), config);
+
+        for registers_lower in [false, true] {
+            let request = next_join(&join_requests).await;
+            assert_eq!(request.addr, addr(3));
+            if registers_lower {
+                seeds.set(vec![addr(1), addr(2), addr(3)]);
+            }
+            assert!(
+                request
+                    .result_tx
+                    .send(Err(ConnectError::Refused(RefusalReason::NoCluster)))
+                    .is_ok()
+            );
+        }
+
+        for _ in 0..3 {
+            for asked in [addr(1), addr(3)] {
+                let request = next_join(&join_requests).await;
+                assert!(!endpoint.formed(), "formed on a stale universe");
+                assert_eq!(request.addr, asked);
+                assert!(
+                    request
+                        .result_tx
+                        .send(Err(ConnectError::Refused(RefusalReason::NoCluster)))
+                        .is_ok()
+                );
+            }
+        }
+
+        let request = next_join(&join_requests).await;
+        assert!(!endpoint.formed(), "formed although addr(1) is the lowest");
+        assert_eq!(request.addr, addr(1));
+        assert!(request.result_tx.send(Ok(())).is_ok());
+        finished(bootstrap).await;
+    }
+
+    /// A join attempt timeout the clock cannot represent is capped rather than panicking, and the
+    /// round still joins through a seed which answers.
+    #[tokio::test(start_paused = true)]
+    async fn a_join_attempt_timeout_of_duration_max_is_capped() {
+        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let mut config = config();
+        config.join_attempt_timeout = Duration::MAX;
+        assert!(validate(&config).is_ok());
+        let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config);
+
+        let request = next_join(&join_requests).await;
+        assert!(request.result_tx.send(Ok(())).is_ok());
+        finished(bootstrap).await;
+    }
+
     /// The probe asks every resolved address which is neither this node nor an Up member, and
     /// one answering with another cluster is published as a foreign cluster.
     #[tokio::test(start_paused = true)]
@@ -1007,7 +1155,8 @@ mod tests {
     }
 
     /// A zero resolve interval would poll discovery in a busy loop, and a zero probe interval
-    /// would probe in one, so both are refused before anything is resolved.
+    /// would probe in one, so both are refused before anything is resolved. A zero join attempt
+    /// timeout would abandon every attempt, so it is refused as well.
     #[tokio::test]
     async fn a_zero_interval_is_refused() {
         let mut config = BootstrapConfig::new();
@@ -1023,6 +1172,13 @@ mod tests {
             bootstrap(seeds, config).await.is_err(),
             "bootstrap must refuse the config before it resolves anything"
         );
+
+        let mut config = BootstrapConfig::new();
+        config.join_attempt_timeout = Duration::ZERO;
+        assert!(matches!(
+            validate(&config),
+            Err(InvalidBootstrapConfig::ZeroJoinAttemptTimeout)
+        ));
 
         let mut config = BootstrapConfig::new();
         config.probe_interval = Some(Duration::ZERO);
@@ -1045,6 +1201,7 @@ mod tests {
                 "min_nodes": 5,
                 "settle": "500ms",
                 "resolve_interval": "100ms",
+                "join_attempt_timeout": "2s",
                 "formation_provider": "explicit",
                 "probe_interval": "10s"
             }"#,
@@ -1054,6 +1211,7 @@ mod tests {
         assert_eq!(config.min_nodes.get(), 5);
         assert_eq!(config.settle, Duration::from_millis(500));
         assert_eq!(config.resolve_interval, Duration::from_millis(100));
+        assert_eq!(config.join_attempt_timeout, Duration::from_secs(2));
         assert_eq!(config.probe_interval, Some(Duration::from_secs(10)));
 
         let alone = FormationView {
@@ -1074,6 +1232,10 @@ mod tests {
         assert_eq!(
             defaults.resolve_interval,
             BootstrapConfig::DEFAULT_RESOLVE_INTERVAL
+        );
+        assert_eq!(
+            defaults.join_attempt_timeout,
+            BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT
         );
         assert_eq!(
             defaults.probe_interval,
@@ -1098,6 +1260,9 @@ mod tests {
             serde_json::from_str::<BootstrapConfig>(r#"{ "resolve_interval": "0s" }"#).is_err()
         );
         assert!(serde_json::from_str::<BootstrapConfig>(r#"{ "probe_interval": "0s" }"#).is_err());
+        assert!(
+            serde_json::from_str::<BootstrapConfig>(r#"{ "join_attempt_timeout": "0s" }"#).is_err()
+        );
     }
 
     /// A fixed seed list is a plain sequence of addresses in a config file.
@@ -1109,6 +1274,24 @@ mod tests {
                 .expect("a sequence of addresses deserializes");
 
         assert_eq!(seeds.resolve().await, Ok(vec![addr(1), addr(2)]));
+    }
+
+    /// A discovery resolving to whatever the test last set.
+    #[derive(Clone, Default)]
+    struct SharedSeeds(Arc<Mutex<Vec<SocketAddr>>>);
+
+    impl SharedSeeds {
+        fn set(&self, seeds: Vec<SocketAddr>) {
+            *self.0.lock().expect("not poisoned") = seeds;
+        }
+    }
+
+    impl SeedDiscovery for SharedSeeds {
+        type Error = Infallible;
+
+        async fn resolve(&mut self) -> Result<Vec<SocketAddr>, Infallible> {
+            Ok(self.0.lock().expect("not poisoned").clone())
+        }
     }
 
     fn addr(n: u8) -> SocketAddr {
@@ -1143,8 +1326,19 @@ mod tests {
         seeds: Vec<SocketAddr>,
         config: BootstrapConfig,
     ) -> JoinHandle<()> {
+        spawn_run_with(endpoint, FixedSeeds::new(seeds), config)
+    }
+
+    fn spawn_run_with<D>(
+        endpoint: &'static EndpointInner,
+        discovery: D,
+        config: BootstrapConfig,
+    ) -> JoinHandle<()>
+    where
+        D: SeedDiscovery,
+    {
         task::spawn(async move {
-            run(endpoint, FixedSeeds::new(seeds), config)
+            run(endpoint, discovery, config)
                 .await
                 .expect("bootstrap succeeds");
         })

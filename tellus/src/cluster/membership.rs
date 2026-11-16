@@ -8,6 +8,7 @@ use crate::{
         reachability::Reachability,
     },
     sync::{read, write},
+    timers,
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -19,7 +20,10 @@ use std::{
     time::{Duration, Instant},
 };
 use thiserror::Error;
-use tokio::{sync::oneshot, time::sleep};
+use tokio::{
+    sync::oneshot,
+    time::{self as tokio_time, sleep, timeout_at},
+};
 use tracing::{debug, info, warn};
 
 /// A member's three-point state lattice: `Up < Left < Down`, with removal represented by absence.
@@ -193,7 +197,7 @@ pub async fn join(seeds: &[SocketAddr]) -> Result<(), JoinError> {
 
     let mut attempts = 0u32;
     loop {
-        match join_round(endpoint, seeds).await {
+        match join_round(endpoint, seeds, None).await {
             JoinRound::Joined => return Ok(()),
             JoinRound::Downed => return Err(JoinError::Downed),
             JoinRound::ForeignCluster(_) => return Err(JoinError::ForeignCluster),
@@ -227,10 +231,13 @@ pub(crate) enum JoinRound {
 
 /// One pass over the seeds, this node's own address skipped in every position: a formed node
 /// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
-/// first, and the other seeds only once its answer has released the pin.
+/// first, and the other seeds only once its answer has released the pin. An attempt outlasting
+/// `attempt_timeout` is abandoned and counts as unavailable; one past its `Join` handshake runs
+/// on and holds the join permit until it concludes.
 pub(crate) async fn join_round(
     endpoint: &'static EndpointInner,
     seeds: &[SocketAddr],
+    attempt_timeout: Option<Duration>,
 ) -> JoinRound {
     let pinned = endpoint.pinned_cluster();
     let seeds = pinned
@@ -250,7 +257,7 @@ pub(crate) async fn join_round(
             return JoinRound::Downed;
         }
 
-        match join_via(endpoint, seed).await {
+        match join_within(endpoint, seed, attempt_timeout).await {
             Ok(()) => return JoinRound::Joined,
 
             Err(ConnectError::Refused(RefusalReason::Down) | ConnectError::SelfDowned) => {
@@ -960,6 +967,24 @@ impl MemberEntry {
             changed_at: Instant::now(),
         }
     }
+}
+
+async fn join_within(
+    endpoint: &'static EndpointInner,
+    addr: SocketAddr,
+    attempt_timeout: Option<Duration>,
+) -> Result<(), ConnectError> {
+    let Some(attempt_timeout) = attempt_timeout else {
+        return join_via(endpoint, addr).await;
+    };
+
+    let deadline = timers::deadline(tokio_time::Instant::now(), attempt_timeout);
+    timeout_at(deadline, join_via(endpoint, addr))
+        .await
+        .unwrap_or_else(|_| {
+            debug!(seed_addr = %addr, ?attempt_timeout, "join attempt timed out");
+            Err(ConnectError::Abandoned)
+        })
 }
 
 async fn join_via(endpoint: &'static EndpointInner, addr: SocketAddr) -> Result<(), ConnectError> {

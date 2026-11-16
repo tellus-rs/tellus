@@ -2,9 +2,9 @@
 //! [SeedDiscovery], resolving seed addresses from SRV records,
 //! which carry address and port (e.g. a Kubernetes headless service), or from A/AAAA records
 //! paired with a configured port. Pass it to [bootstrap](tellus::cluster::bootstrap), which
-//! resolves it every `resolve_interval` and joins through the resolved addresses on every
-//! resolution, retrying resolve failures, e.g. records still appearing while an orchestrator
-//! starts the other nodes. Only forming a new cluster waits for the view to settle.
+//! resolves it before every join round, `resolve_interval` apart, and joins through the resolved
+//! addresses on every resolution, retrying resolve failures, e.g. records still appearing while an
+//! orchestrator starts the other nodes. Only forming a new cluster waits for the view to settle.
 //! SRV targets resolve concurrently; a failing target is logged at warn level and skipped while
 //! any other resolves, and a set resolving no address at all remains an error so bootstrap does
 //! not settle on it. Nothing here distinguishes a stale target from a transient failure, because
