@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794814399877,
+  "lastUpdate": 1794814405241,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25405,6 +25405,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 120663,
             "range": "± 3166",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "96fcd63fa1fc678641fab83a7cf89b1068d07dfa",
+          "message": "Merge pull request #409 from tellus-rs/feat/store-call-timeout\n\nfeat(persistence)!: bound every store call by a timeout",
+          "timestamp": "2026-11-16T08:25:53+01:00",
+          "tree_id": "c5650d6ccc6d0bbffbd6062692c3e4a4325f32f7",
+          "url": "https://github.com/tellus-rs/tellus/commit/96fcd63fa1fc678641fab83a7cf89b1068d07dfa"
+        },
+        "date": 1794814404869,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4071627,
+            "range": "± 211079",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4198070,
+            "range": "± 199286",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 949809,
+            "range": "± 7544",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 120175,
+            "range": "± 3650",
             "unit": "ns/iter"
           }
         ]
