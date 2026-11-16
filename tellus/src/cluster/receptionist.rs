@@ -730,10 +730,13 @@ where
 }
 
 fn settled_at(endpoint: &EndpointInner, version: u64) -> bool {
+    let current = endpoint.state_rx().borrow().clone();
+    if current.version() != version {
+        return false;
+    }
     let receptionist = endpoint.receptionist();
     let replicas = lock(&receptionist.replicas);
-    replicas.state.version() == version
-        && compute_settled(&replicas.state, receptionist.node, &replicas.map)
+    compute_settled(&current, receptionist.node, &replicas.map)
 }
 
 fn compute_settled(state: &ClusterState, node: NodeId, map: &HashMap<NodeId, Replica>) -> bool {
@@ -1137,6 +1140,48 @@ mod tests {
         assert!(settled_at(endpoint, version));
         assert!(!settled_at(endpoint, version - 1));
         assert!(!settled_at(endpoint, version + 1));
+    }
+
+    /// A version which is current when it is asked about is judged by itself, even while the
+    /// receptionist has not been handed it yet: with no other Up member nothing can be missing.
+    #[test]
+    fn settled_judges_a_new_version_at_once() {
+        let endpoint = endpoint();
+        let asking = thread::spawn(move || {
+            let state_rx = endpoint.state_rx();
+            let mut last = state_rx.borrow().version();
+            let mut judged = 0;
+            while judged < 2_000 {
+                let state = state_rx.borrow().clone();
+                if state.version() == last {
+                    continue;
+                }
+                last = state.version();
+                if state.up().all(|member| member.node() == endpoint.node()) {
+                    judged += 1;
+                    let settled = settled_at(endpoint, last);
+                    assert!(
+                        settled || state_rx.borrow().version() != last,
+                        "version {last} is current and has no other Up member, but is not settled"
+                    );
+                }
+            }
+        });
+        let mut round = 0_u16;
+        while !asking.is_finished() {
+            let node = NodeId::new(addr(2 + round % 1_000));
+            endpoint.update(|membership, _| membership.add_up(node));
+            endpoint.update(|membership, _| {
+                let _ = membership.down(node, Instant::now());
+            });
+            if round % 100 == 99 {
+                endpoint.update(|membership, _| {
+                    membership.sweep(Instant::now() + Duration::from_secs(3_600));
+                });
+            }
+            round = round.wrapping_add(1);
+        }
+        asking.join().expect("every judged version is settled");
     }
 
     /// The verdict rides the channel whenever it or the version it judges changes, in order with
