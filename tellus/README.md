@@ -389,9 +389,11 @@ The examples in [`examples/how_to`](examples/how_to) belong to the
 [how-to guides](https://tellus.rs/docs/how-to/), among them batching writes by mailbox depth
 (`how_to_batch_writes`), passivating idle entities of a host (`how_to_passivate_idle_entities`)
 and configuring supervision from a file (`how_to_configure_supervision`, which needs `--features
-serde`). Shutting a node down gracefully (`how_to_shut_down_gracefully`)
-and observing a cluster (`how_to_observe_a_cluster`) need `--features cluster-dev`; securing it
-with mutual TLS (`how_to_secure_with_mutual_tls`) needs `--features cluster,serde`. The guides for
+serde`). Evolving a stored event (`how_to_evolve_events`) and event-sourced child actors
+(`how_to_persist_child_actors`) need `--features persistence-in-memory`. Shutting a node down
+gracefully (`how_to_shut_down_gracefully`) and observing a cluster (`how_to_observe_a_cluster`)
+need `--features cluster-dev`; securing it with mutual TLS (`how_to_secure_with_mutual_tls`) needs
+`--features cluster,serde`. The guides for
 running on Kubernetes and for serving the cluster state over HTTP use examples in
 [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s/examples) and
 [`tellus-cluster-inspect`](../tellus-cluster-inspect/examples).
