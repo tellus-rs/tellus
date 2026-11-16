@@ -8,7 +8,7 @@ use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Host, HostConfig, HostEnvelope, Hosted,
     Incoming, ReplyTo, Unstashed, Untimed,
 };
-use tokio::time::sleep;
+use tokio::sync::mpsc;
 
 const IDLE_TIMEOUT: Duration = Duration::from_millis(200);
 
@@ -18,8 +18,12 @@ async fn main() -> anyhow::Result<()> {
     let config = HostConfig::default()
         .with_idle_timeout(IDLE_TIMEOUT)
         .context("configuring the host")?;
-    let system = ActorSystem::new(Host::new(config, |&visitor, context| {
-        context.spawn(Session { visitor })
+    let (passivated_tx, mut passivated_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Host::new(config, move |&visitor, context| {
+        context.spawn(Session {
+            visitor,
+            passivated: passivated_tx.clone(),
+        })
     }));
     let host = system.root();
 
@@ -27,7 +31,12 @@ async fn main() -> anyhow::Result<()> {
     visit(host, "bob", "/").await?;
     visit(host, "alice", "/pricing").await?;
 
-    sleep(3 * IDLE_TIMEOUT).await;
+    while passivated_rx
+        .recv()
+        .await
+        .context("awaiting the passivation of alice")?
+        != "alice"
+    {}
     visit(host, "alice", "/signup").await?;
 
     system.stop();
@@ -40,6 +49,7 @@ async fn main() -> anyhow::Result<()> {
 
 struct Session {
     visitor: &'static str,
+    passivated: mpsc::UnboundedSender<&'static str>,
 }
 
 impl Actor for Session {
@@ -68,7 +78,13 @@ impl Actor for Session {
                 Ok(Control::Continue(visits + 1))
             }
 
-            Incoming::Message(Hosted::Passivate) => Ok(Control::Stop),
+            Incoming::Message(Hosted::Passivate) => {
+                println!("Session of {} passivated", self.visitor);
+                self.passivated
+                    .send(self.visitor)
+                    .expect("main receives passivations until the system has terminated");
+                Ok(Control::Stop)
+            }
 
             Incoming::Terminated(_) => {
                 unreachable!("a session watches no actor, hence never gets a terminated signal")
