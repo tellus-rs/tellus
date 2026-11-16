@@ -5,15 +5,18 @@
 //! - `fan_out`: the bench thread sends messages round-robin to eight and to 32 workers.
 //!
 //! Every framework is configured with an unbounded mailbox and driven through its non-blocking
-//! fire-and-forget send, so all of them perform the same work. Spawning happens outside the
-//! measured region; the timer covers sending plus awaiting termination.
+//! fire-and-forget send, so all of them perform the same work. Spawning, up to the end of every
+//! actor's startup hook, happens outside the measured region; the timer covers sending plus
+//! awaiting termination.
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group};
 use std::{
+    env,
+    fs::{self, File},
     future::Future,
     path::{Path, PathBuf},
     pin::Pin,
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime},
 };
 use tokio::runtime::{Builder, Runtime};
 
@@ -22,6 +25,19 @@ const PING_PONG_ROUNDS: usize = 1_000;
 const FAN_OUT_MESSAGES: usize = 100_000;
 const PAIRS: [usize; 2] = [1, 8];
 const WORKERS: [usize; 2] = [8, 32];
+
+/// Must match the report's `RUN_MARKER`, whose modification time starts the latest run!
+const RUN_MARKER: &str = "run-started";
+
+fn main() {
+    if is_benchmark_run() {
+        mark_run_start();
+    }
+
+    benches();
+
+    Criterion::default().configure_from_args().final_summary();
+}
 
 /// How many messages each fan out worker receives; the reported throughput and the per actor
 /// countdown are the same number, so they must be derived in one place.
@@ -163,6 +179,23 @@ fn runtime() -> Runtime {
         .expect("tokio runtime can be created")
 }
 
+/// Must agree with `Criterion::configure_from_args` on which arguments measure!
+fn is_benchmark_run() -> bool {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    args.iter().any(|arg| arg == "--bench")
+        && !args
+            .iter()
+            .any(|arg| arg == "--test" || arg == "--list" || arg.starts_with("--profile-time"))
+}
+
+fn mark_run_start() {
+    let directory = workspace_output_directory();
+    fs::create_dir_all(&directory).expect("criterion output directory is created");
+    File::create(directory.join(RUN_MARKER))
+        .and_then(|marker| marker.set_modified(SystemTime::now()))
+        .expect("run marker is written");
+}
+
 fn workspace_output_directory() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/criterion-comparison")
 }
@@ -173,15 +206,19 @@ mod tellus_bench {
     use tellus::{
         Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, Unstashed, Untimed,
     };
+    use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 
     pub async fn flood(iters: u64) -> Duration {
         measure(
             iters,
             || async {
+                let (started, startups) = mpsc::unbounded_channel();
                 let system = ActorSystem::new(Countdown {
                     messages: FLOOD_MESSAGES,
+                    started,
                 });
                 let root = system.root().clone();
+                await_startups(startups, 1).await;
                 (system, root)
             },
             |(system, root)| async move {
@@ -198,13 +235,17 @@ mod tellus_bench {
         measure(
             iters,
             || async {
-                (0..pairs)
+                let (started, startups) = mpsc::unbounded_channel();
+                let systems = (0..pairs)
                     .map(|_| {
                         ActorSystem::new(Pinger {
                             rounds: PING_PONG_ROUNDS,
+                            started: started.clone(),
                         })
                     })
-                    .collect::<Vec<_>>()
+                    .collect::<Vec<_>>();
+                await_startups(startups, 2 * pairs).await;
+                systems
             },
             |systems| async move {
                 for system in &systems {
@@ -226,13 +267,20 @@ mod tellus_bench {
         measure(
             iters,
             || async {
+                let (started, startups) = mpsc::unbounded_channel();
                 let systems = (0..workers)
-                    .map(|_| ActorSystem::new(Countdown { messages: share }))
+                    .map(|_| {
+                        ActorSystem::new(Countdown {
+                            messages: share,
+                            started: started.clone(),
+                        })
+                    })
                     .collect::<Vec<_>>();
                 let roots = systems
                     .iter()
                     .map(|system| system.root().clone())
                     .collect::<Vec<_>>();
+                await_startups(startups, workers).await;
                 (systems, roots)
             },
             |(systems, roots)| async move {
@@ -250,10 +298,17 @@ mod tellus_bench {
         .await
     }
 
+    async fn await_startups(mut startups: UnboundedReceiver<()>, count: usize) {
+        for _ in 0..count {
+            startups.recv().await.expect("tellus actor starts");
+        }
+    }
+
     struct Tick;
 
     struct Countdown {
         messages: usize,
+        started: UnboundedSender<()>,
     }
 
     impl Actor for Countdown {
@@ -264,6 +319,8 @@ mod tellus_bench {
         type Error = Infallible;
 
         fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+            self.started.send(()).expect("tellus startup is awaited");
+
             Ok(self.messages)
         }
 
@@ -287,6 +344,7 @@ mod tellus_bench {
 
     struct Pinger {
         rounds: usize,
+        started: UnboundedSender<()>,
     }
 
     impl Actor for Pinger {
@@ -299,7 +357,9 @@ mod tellus_bench {
         fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
             let ponger = context.spawn(Ponger {
                 pinger: context.self_ref().clone(),
+                started: self.started.clone(),
             });
+            self.started.send(()).expect("tellus startup is awaited");
 
             Ok(Pinging {
                 ponger,
@@ -342,6 +402,7 @@ mod tellus_bench {
 
     struct Ponger {
         pinger: ActorRef<PingerMessage>,
+        started: UnboundedSender<()>,
     }
 
     impl Actor for Ponger {
@@ -352,6 +413,8 @@ mod tellus_bench {
         type Error = Infallible;
 
         fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+            self.started.send(()).expect("tellus startup is awaited");
+
             Ok(())
         }
 
@@ -382,7 +445,7 @@ mod kameo_bench {
     pub async fn flood(iters: u64) -> Duration {
         measure(
             iters,
-            || async { spawn_countdown(FLOOD_MESSAGES) },
+            || spawn_countdown(FLOOD_MESSAGES),
             |actor_ref| async move {
                 for _ in 0..FLOOD_MESSAGES {
                     actor_ref
@@ -400,9 +463,13 @@ mod kameo_bench {
         measure(
             iters,
             || async {
-                (0..pairs)
-                    .map(|_| Pinger::spawn_with_mailbox(PING_PONG_ROUNDS, mailbox::unbounded()))
-                    .collect::<Vec<_>>()
+                let mut pingers = Vec::with_capacity(pairs);
+                for _ in 0..pairs {
+                    let pinger = Pinger::spawn_with_mailbox(PING_PONG_ROUNDS, mailbox::unbounded());
+                    pinger.wait_for_startup().await;
+                    pingers.push(pinger);
+                }
+                pingers
             },
             |pingers| async move {
                 for pinger in &pingers {
@@ -421,9 +488,11 @@ mod kameo_bench {
         measure(
             iters,
             || async {
-                (0..workers)
-                    .map(|_| spawn_countdown(share))
-                    .collect::<Vec<_>>()
+                let mut actor_refs = Vec::with_capacity(workers);
+                for _ in 0..workers {
+                    actor_refs.push(spawn_countdown(share).await);
+                }
+                actor_refs
             },
             |actor_refs| async move {
                 for actor_ref in actor_refs.iter().cycle().take(share * workers) {
@@ -440,8 +509,10 @@ mod kameo_bench {
         .await
     }
 
-    fn spawn_countdown(messages: usize) -> ActorRef<Countdown> {
-        Countdown::spawn_with_mailbox(messages, mailbox::unbounded())
+    async fn spawn_countdown(messages: usize) -> ActorRef<Countdown> {
+        let actor_ref = Countdown::spawn_with_mailbox(messages, mailbox::unbounded());
+        actor_ref.wait_for_startup().await;
+        actor_ref
     }
 
     struct Tick;
@@ -488,6 +559,7 @@ mod kameo_bench {
             actor_ref: ActorRef<Self>,
         ) -> Result<Self, Self::Error> {
             let ponger = Ponger::spawn_with_mailbox(actor_ref, mailbox::unbounded());
+            ponger.wait_for_startup().await;
 
             Ok(Pinger {
                 ponger,
@@ -801,4 +873,3 @@ criterion_group!(
         .measurement_time(Duration::from_secs(10));
     targets = flood, ping_pong, fan_out
 );
-criterion_main!(benches);
