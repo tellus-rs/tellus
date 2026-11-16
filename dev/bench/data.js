@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794855958582,
+  "lastUpdate": 1794855960460,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28093,6 +28093,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 125473,
             "range": "± 6032",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ac8a3d079a1b32d82a3eea02b68fa0cbbcb76d1d",
+          "message": "Merge pull request #442 from tellus-rs/docs/contributing-engagement\n\ndocs: ask contributors to engage, close agent pull requests",
+          "timestamp": "2026-11-16T19:57:47+01:00",
+          "tree_id": "a85654165175faa8ff166ccc06f2498505e9728f",
+          "url": "https://github.com/tellus-rs/tellus/commit/ac8a3d079a1b32d82a3eea02b68fa0cbbcb76d1d"
+        },
+        "date": 1794855960005,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4109981,
+            "range": "± 189653",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4139003,
+            "range": "± 213292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1143881,
+            "range": "± 16135",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 137006,
+            "range": "± 6091",
             "unit": "ns/iter"
           }
         ]
