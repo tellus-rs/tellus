@@ -1233,6 +1233,102 @@ async fn undecodable_history_stops_the_actor() {
     );
 }
 
+/// Decoding is handed the stored schema version, not the type's own: a snapshot of the current
+/// shape stored under a version the code does not know is discarded, and recovery falls back to
+/// full replay.
+#[tokio::test]
+async fn a_snapshot_at_an_unknown_version_is_discarded_although_its_payload_decodes() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let id = persistence_id("unknown-snapshot-version");
+    store
+        .inner()
+        .append(
+            &id,
+            SeqNo::ZERO,
+            vec![encoded(&Increased(1)), encoded(&Increased(2))],
+        )
+        .await
+        .expect("the seeded events are appended");
+    store
+        .inner()
+        .save(
+            &id,
+            SeqNo::new(2),
+            EncodedSnapshot {
+                manifest: Count::MANIFEST.into(),
+                schema_version: SchemaVersion::new(2),
+                payload: Cbor.encode(&Count(100)).expect("the snapshot is encodable"),
+            },
+        )
+        .await
+        .expect("the seeded snapshot is saved");
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("unknown-snapshot-version", probe_tx),
+        Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+    );
+    assert_eq!(recv(&mut probe_rx, "no init probe").await, Probe::Init);
+    assert_eq!(
+        recv(&mut probe_rx, "no recovered probe").await,
+        Probe::Recovered
+    );
+
+    let count = system
+        .root()
+        .ask(TIMEOUT, Command::Get)
+        .await
+        .expect("no reply to get");
+    assert_eq!(count, 3);
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
+/// Decoding is handed the stored schema version, not the type's own: an event of the current shape
+/// stored under a version the code does not know fails recovery.
+#[tokio::test]
+async fn an_event_at_an_unknown_version_stops_the_actor_although_its_payload_decodes() {
+    let store = FaultyStore::default();
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
+
+    let id = persistence_id("unknown-event-version");
+    store
+        .inner()
+        .append(
+            &id,
+            SeqNo::ZERO,
+            vec![EncodedEvent {
+                manifest: Increased::MANIFEST.into(),
+                schema_version: SchemaVersion::new(2),
+                payload: Cbor.encode(&Increased(1)).expect("the event is encodable"),
+            }],
+        )
+        .await
+        .expect("the seeded event is appended");
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("unknown-event-version", probe_tx),
+        Persistence::new(store.clone()),
+    );
+    assert_terminates(
+        system,
+        "the actor must stop on an event at an unknown version",
+    )
+    .await;
+
+    let mut probes = Vec::new();
+    while let Ok(probe) = probe_rx.try_recv() {
+        probes.push(probe);
+    }
+    assert_eq!(
+        probes,
+        [Probe::Init],
+        "recovery must fail after init and before recovered"
+    );
+}
+
 /// A codec outside this crate wraps its serializer's error through the public constructors, which
 /// is what makes the `Codec` trait implementable at all; the wrapped error is the source.
 #[test]
