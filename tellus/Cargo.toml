@@ -205,6 +205,31 @@ path              = "examples/how_to/observe_a_cluster.rs"
 required-features = [ "cluster-dev" ]
 
 [[example]]
+name              = "how_to_form_without_the_lowest_seed"
+path              = "examples/how_to/form_without_the_lowest_seed.rs"
+required-features = [ "cluster-dev" ]
+
+[[example]]
+name              = "how_to_hand_over_a_reference"
+path              = "examples/how_to/hand_over_a_reference.rs"
+required-features = [ "cluster-dev" ]
+
+[[example]]
+name              = "how_to_publish_to_a_topic"
+path              = "examples/how_to/publish_to_a_topic.rs"
+required-features = [ "cluster-dev" ]
+
+[[example]]
+name              = "how_to_remove_a_member"
+path              = "examples/how_to/remove_a_member.rs"
+required-features = [ "cluster-dev" ]
+
+[[example]]
+name              = "how_to_roll_out_a_new_message_shape"
+path              = "examples/how_to/roll_out_a_new_message_shape.rs"
+required-features = [ "cluster-dev" ]
+
+[[example]]
 name              = "how_to_secure_with_mutual_tls"
 path              = "examples/how_to/secure_with_mutual_tls.rs"
 required-features = [ "cluster", "serde" ]
