@@ -1982,6 +1982,8 @@ mod tests {
     static NOT_LEAVING: AtomicBool = AtomicBool::new(false);
     static LEAVING: AtomicBool = AtomicBool::new(true);
     static DECODE_PANICKED: AtomicBool = AtomicBool::new(false);
+    static GATE_DECODE_STARTED: AtomicBool = AtomicBool::new(false);
+    static GATE_DECODE_RELEASED: AtomicBool = AtomicBool::new(false);
 
     struct FakeReceiver {
         frames: VecDeque<Vec<u8>>,
@@ -3222,6 +3224,49 @@ mod tests {
             ),
             Admission::Admit(..)
         ));
+    }
+
+    /// The advertised address is bound to the certificate in both directions: an inbound peer
+    /// whose certificate covers another port of its IP is dropped without an answer, and a dialed
+    /// node whose certificate does so fails the dial. A certificate covering the address passes
+    /// either way.
+    #[tokio::test]
+    async fn the_advertised_address_is_bound_to_the_certificate_both_ways() {
+        let (endpoint, _lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let peer = NodeId::new(addr(2));
+        let proven = || Some(uri_identity([], [format!("tellus://{}", addr(2)).as_str()]));
+        let unproven = || Some(uri_identity([], [format!("tellus://{}", addr(3)).as_str()]));
+
+        assert!(matches!(
+            admit_inbound(
+                peer,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                unproven(),
+                endpoint
+            ),
+            Admission::Drop
+        ));
+        assert!(matches!(
+            check_dialed(&greeting(peer, None), addr(2), unproven(), endpoint),
+            Err(ConnectError::Identity)
+        ));
+
+        assert!(matches!(
+            admit_inbound(
+                peer,
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                proven(),
+                endpoint
+            ),
+            Admission::Admit(..)
+        ));
+        assert!(check_dialed(&greeting(peer, None), addr(2), proven(), endpoint).is_ok());
     }
 
     /// An admitted join proves a tellus node is at its address, so a refusal of that address is
@@ -5032,6 +5077,25 @@ mod tests {
         assert!(!leaver.drain_acked());
     }
 
+    /// After the synthesized signal for a downed member, nothing from it is delivered through this
+    /// endpoint again, although its connection was open when it was downed.
+    #[tokio::test]
+    async fn nothing_from_a_downed_member_is_delivered_after_its_signal() {
+        let endpoint = formed(1);
+        let peer = InboundPeer::admitted_by(endpoint, 2).await;
+        let mut recipient = Recipient::watching(endpoint, peer.node, ActorId::new());
+        let stream = peer.open_stream();
+        stream.send(&message(endpoint, recipient.id(), 1));
+        recipient.receive(1).await;
+
+        membership::on_gossip(endpoint, &[Member::new(peer.node, MemberState::Down)]);
+
+        assert_eq!(recipient.received(), [Some(1), None]);
+        stream.send(&message(endpoint, recipient.id(), 2));
+        eventually(|| !endpoint.inbound_open(peer.node)).await;
+        assert_eq!(recipient.received(), [Some(1), None]);
+    }
+
     /// A downing of the leaver ends the deferral at once: the death runs, the member is Down, and
     /// nothing the connection carries afterward is delivered.
     #[tokio::test]
@@ -6138,5 +6202,190 @@ mod tests {
             endpoint.config().max_frame_size.get(),
         );
         assert_eq!(endpoint.peer(dialed).app_version(), None);
+    }
+
+    /// docs/cluster.md, Leaving: the wait is bounded by this member's own `leave_timeout`; "past
+    /// it, no `DrainAck` is sent", although the drain completes afterward.
+    #[tokio::test]
+    async fn no_drain_ack_once_the_deferral_has_expired() {
+        let endpoint = formed(1);
+        let mut leaver = InboundPeer::admitted_by(endpoint, 2).await;
+        let node = leaver.node;
+        let mut recipient = Recipient::watching(endpoint, node, ActorId::new());
+        leaver.send(&departure(node));
+        eventually(|| endpoint.departure_deferred(node)).await;
+
+        let open = leaver.open_stream();
+        open.send(&message(endpoint, recipient.id(), 1));
+        recipient.receive(1).await;
+        leaver.send(&Frame::Drained { data_streams: 1 });
+        sleep(Duration::from_millis(50)).await;
+        assert!(!leaver.drain_acked(), "the announced stream is still open");
+
+        endpoint.end_overdue_departures(tokio::time::Instant::now() + Duration::from_secs(3600));
+        assert!(!endpoint.departure_deferred(node));
+        drop(open);
+        sleep(Duration::from_millis(200)).await;
+
+        assert!(!leaver.drain_acked(), "no DrainAck past the deadline");
+    }
+
+    #[derive(Serialize, Deserialize)]
+    struct BlocksWhenDecoded(u64);
+
+    impl Schema for BlocksWhenDecoded {
+        fn decode(codec: Codec, _: SchemaVersion, payload: &[u8]) -> Result<Self, CodecError> {
+            GATE_DECODE_STARTED.store(true, Ordering::SeqCst);
+            while !GATE_DECODE_RELEASED.load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            codec.decode(payload).map(BlocksWhenDecoded)
+        }
+    }
+
+    /// docs/cluster.md: "after the signal, no message
+    /// from that actor is ever delivered through this endpoint again". A node death waits out a
+    /// delivery already in flight, so the message lands ahead of the synthesized signal.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_node_death_waits_out_a_delivery_in_flight() {
+        let (endpoint, _dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        let target = ActorId::new();
+        let (watcher, mailbox) =
+            SelfRef::<BlocksWhenDecoded>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        endpoint.registry().bind(watcher.actor_ref());
+        endpoint
+            .watchers()
+            .add(peer, target, watcher.make_watcher());
+        let frame = message(endpoint, watcher.actor_ref().actor_id(), 42)
+            .encode_into(Vec::new())
+            .expect("frame encodes");
+        let reader = task::spawn(read_frames(
+            FakeReceiver::new([frame]),
+            peer,
+            endpoint.track_liveness(peer),
+            endpoint,
+        ));
+        while !GATE_DECODE_STARTED.load(Ordering::SeqCst) {
+            sleep(Duration::from_millis(1)).await;
+        }
+
+        let death = std::thread::spawn(move || endpoint.node_death(peer));
+        sleep(Duration::from_millis(100)).await;
+        let returned_during_the_delivery = death.is_finished();
+        GATE_DECODE_RELEASED.store(true, Ordering::SeqCst);
+        death.join().expect("the death does not panic");
+        let _ = reader.await;
+
+        let order = mailbox
+            .split()
+            .0
+            .drain()
+            .map(|incoming| match incoming {
+                Incoming::Message(BlocksWhenDecoded(value)) => format!("Message({value})"),
+                Incoming::Terminated(_) => "Terminated".to_string(),
+            })
+            .collect::<Vec<_>>();
+        assert!(
+            !returned_during_the_delivery,
+            "the death waits for the delivery"
+        );
+        assert_eq!(order, ["Message(42)", "Terminated"]);
+    }
+
+    /// docs/cluster.md, "A node which never becomes a
+    /// member is answered instead when its lane is given up, together with the asks that lane
+    /// fails." Every dial toward a stranger fails until the lane gives up.
+    #[tokio::test(start_paused = true)]
+    async fn a_given_up_lane_settles_its_asks_and_watches() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let stranger = NodeId::new(addr(2));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        let mut recipient = Recipient::watching(endpoint, stranger, ActorId::new());
+        endpoint
+            .send(
+                stranger,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let reply_to = ReplyTo::<u64>::new(|_| ());
+        let (request, reply_tags) = endpoint::with_current(endpoint, || {
+            reply::record_minted(|| endpoint.codec().encode(&reply_to))
+        });
+        request.expect("the destination is serialized");
+        let pending = endpoint.pending_replies();
+        pending.stamp(&reply_tags, stranger, None);
+        pending.confirm(&reply_tags);
+
+        while let Ok(Some(dial)) = timeout(Duration::from_secs(600), dials.recv()).await {
+            drop(dial);
+        }
+        eventually(|| endpoint.lane_connected(stranger.addr()).is_none()).await;
+
+        assert_eq!(recipient.received(), [None]);
+        assert_eq!(pending.len(), 0);
+    }
+
+    /// docs/cluster.md, "`Watch` frames are re-sent
+    /// after every reconnect", not only by the refresh.
+    #[tokio::test]
+    async fn a_reconnect_re_sends_the_watches() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.watch_refresh_interval = Duration::from_secs(3600);
+        let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        endpoint
+            .send(
+                member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane opens");
+        let first = accepted_lane(endpoint, &mut dials, member).await;
+        let target = ActorId::new();
+        let recipient = Recipient::watching(endpoint, member, target);
+        drop(first);
+        endpoint.gossip_tick();
+
+        let mut second = accepted_lane(endpoint, &mut dials, member).await;
+        let re_sent = timeout(Duration::from_secs(10), async {
+            loop {
+                let bytes = second.joiner_bytes().await;
+                if let Frame::Watch {
+                    target: watched,
+                    watcher,
+                } = Frame::from_bytes(&bytes).expect("frame decodes")
+                    && watched == target
+                    && watcher == recipient.id()
+                {
+                    return;
+                }
+            }
+        })
+        .await
+        .is_ok();
+        assert!(re_sent);
     }
 }

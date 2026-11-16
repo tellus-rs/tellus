@@ -364,11 +364,12 @@ impl TerminatedHandler for Evictor {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, Incoming, MailboxCapacity, SchemaVersion,
+        ActorId, ActorRef, Incoming, MailboxCapacity, SchemaVersion,
         actor_ref::SelfRef,
         cluster::{
             codec::{Codec, CodecError},
             discovery::{KeyKind, WireKey},
+            endpoint::{self, EndpointConfig, EndpointInner},
             manifest::Manifest,
             receptionist::{MAX_REGISTRATIONS, MAX_SNAPSHOT_BYTES, WireGroup},
             registry::{DeliverError, LimitExceeded, LocalRefError, Registry},
@@ -651,6 +652,47 @@ mod tests {
             Err(LocalRefError::Unbound)
         ));
         assert!(registry.registrations().groups.is_empty());
+    }
+
+    /// A payload whose embedded reference names an actor of this node which has already
+    /// terminated does not decode, so the whole message is the dead letter and nothing of it
+    /// reaches its target.
+    #[test]
+    fn a_payload_naming_a_terminated_local_actor_is_not_delivered() {
+        #[derive(Serialize, Deserialize)]
+        struct Carrier(ActorRef<u32>);
+
+        impl Schema for Carrier {}
+
+        let (endpoint, _lane_dials, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
+        let target = ActorId::new();
+        let (target_ref, target_mailbox) =
+            SelfRef::<Carrier>::new(target, MailboxCapacity::Unbounded);
+        endpoint.registry().bind(target_ref.actor_ref());
+        let dead = ActorId::new();
+        let (dead_ref, dead_mailbox) = SelfRef::<u32>::new(dead, MailboxCapacity::Unbounded);
+        let codec = endpoint.codec();
+        let payload = endpoint::with_current(endpoint, || {
+            codec.encode(&Carrier(dead_ref.actor_ref().clone()))
+        })
+        .expect("a live reference encodes");
+
+        for watcher in dead_mailbox.split().1.close() {
+            watcher
+                .handle_terminated(dead)
+                .expect("the evictor accepts the signal");
+        }
+
+        let error = endpoint::with_current(endpoint, || {
+            endpoint
+                .registry()
+                .deliver(target, Carrier::VERSION, &payload, codec)
+        })
+        .expect_err("a reference to a terminated actor does not decode");
+        assert!(matches!(error, DeliverError::Codec(CodecError::Decode(_))));
+        assert!(target_mailbox.split().0.is_empty());
     }
 
     /// More than one actor may answer to a name, and losing one leaves the others discoverable:
