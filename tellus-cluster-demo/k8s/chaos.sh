@@ -4,7 +4,9 @@
 # state file the verifier reads, so the cluster is only held to its promises once it has had a
 # quiet window to recover.
 
-set -eu
+# shellcheck shell=busybox
+
+set -euo pipefail
 
 NODE_COUNT=${NODE_COUNT:-5}
 POD_PREFIX=${POD_PREFIX:-tellus-}
@@ -25,6 +27,7 @@ PARTITION_SECS=${PARTITION_SECS:-75}
 RECOVERY_SECS=${RECOVERY_SECS:-25}
 ROLLOUT_TIMEOUT_SECS=${ROLLOUT_TIMEOUT_SECS:-120}
 RETRY_SECS=${RETRY_SECS:-10}
+REQUEST_TIMEOUT_SECS=${REQUEST_TIMEOUT_SECS:-10}
 
 state() {
     echo "$1" > "$STATE_FILE"
@@ -35,10 +38,21 @@ pod() {
     echo "${POD_PREFIX}$1"
 }
 
+# A trap runs only once the foreground command has returned, so long waits run in the background.
+interruptible() {
+    "$@" &
+    wait "$!"
+}
+
+pause() {
+    interruptible sleep "$1"
+}
+
 # The partition policies are static and label driven, so an agent which died mid partition would
-# leave the cluster split for good; this runs at startup and from the trap.
+# leave the cluster split for good; this runs at startup and on every exit.
 heal() {
-    kubectl label pod -l "$SELECTOR" side- > /dev/null 2>&1 || true
+    kubectl label pod -l "$SELECTOR" side- --request-timeout="${REQUEST_TIMEOUT_SECS}s" \
+        > /dev/null || echo "chaos: cannot clear the side labels" >&2
 }
 
 # Deleting the pod is the only crash reachable from inside the cluster: a process cannot SIGKILL
@@ -47,7 +61,7 @@ heal() {
 kill_node() {
     state "kill $(pod "$1")"
     kubectl delete pod "$(pod "$1")" --force --grace-period=0 || echo "kubectl delete failed"
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # The same command with its grace period intact: the kubelet sends SIGTERM, the node announces
@@ -55,7 +69,7 @@ kill_node() {
 leave_node() {
     state "leave $(pod "$1")"
     kubectl delete pod "$(pod "$1")" || echo "kubectl delete failed"
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # Runs a command until it succeeds. The state file keeps naming the fault meanwhile, so a step
@@ -63,7 +77,7 @@ leave_node() {
 until_done() {
     until "$@"; do
         echo "chaos: '$*' failed, retrying in ${RETRY_SECS}s" >&2
-        sleep "$RETRY_SECS"
+        pause "$RETRY_SECS"
     done
 }
 
@@ -87,7 +101,7 @@ roll_nodes() {
     for ordinal in $(seq $((NODE_COUNT - 1)) -1 0); do
         if [ "$ordinal" -ne $((NODE_COUNT - 1)) ]; then
             state quiet
-            sleep "$ROLL_QUIET_SECS"
+            pause "$ROLL_QUIET_SECS"
         fi
         roll_node "$ordinal" "$target" "$verb"
     done
@@ -102,7 +116,7 @@ roll_node() {
     state "$3 $(pod "$1") to $2"
     until_done partition_at "$1"
     until_done pod_updated "$1"
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 partition_at() {
@@ -125,8 +139,8 @@ pod_updated() {
     hash=$(kubectl get pod "$(pod "$1")" \
         -o jsonpath='{.metadata.labels.controller-revision-hash}') || return 1
     [ "$hash" = "$revision" ] || return 1
-    kubectl wait --for=condition=Ready --timeout="${ROLLOUT_TIMEOUT_SECS}s" pod "$(pod "$1")" \
-        > /dev/null
+    interruptible kubectl wait --for=condition=Ready --timeout="${ROLLOUT_TIMEOUT_SECS}s" \
+        pod "$(pod "$1")" > /dev/null
 }
 
 current_version() {
@@ -157,27 +171,32 @@ partition() {
     # The policy engine has to see the labels before the flush, or the flows it forgets are
     # re-admitted under the old view and pinned for the rest of the window. The second pass
     # catches whatever slipped through between the two.
-    sleep "$FLUSH_SETTLE_SECS"
+    pause "$FLUSH_SETTLE_SECS"
     flush_flows
-    sleep "$FLUSH_SETTLE_SECS"
+    pause "$FLUSH_SETTLE_SECS"
     flush_flows
-    sleep "$PARTITION_SECS"
+    pause "$PARTITION_SECS"
     heal
-    sleep "$RECOVERY_SECS"
+    pause "$RECOVERY_SECS"
 }
 
 # A NetworkPolicy is evaluated for new connections only, and the cluster's QUIC flows never end,
 # so the labels above cut nothing until conntrack forgets them. The helper runs in the node's
 # network namespace, which is the table the policy hooks see.
 flush_flows() {
-    helper=$(kubectl get pod -l "$FLUSH_SELECTOR" -o jsonpath='{.items[0].metadata.name}' 2>/dev/null)
+    helper=$(kubectl get pod -l "$FLUSH_SELECTOR" -o jsonpath='{.items[0].metadata.name}' \
+        2> /dev/null) || helper=
     if [ -z "$helper" ]; then
         echo "no conntrack helper, the partition will not cut established flows"
         return
     fi
 
     ips=$(kubectl get pod -l "$SELECTOR" \
-        -o jsonpath='{range .items[*]}{.status.podIP}{" "}{end}' 2>/dev/null)
+        -o jsonpath='{range .items[*]}{.status.podIP}{" "}{end}' 2> /dev/null) || ips=
+    if [ -z "$ips" ]; then
+        echo "no pod addresses, the partition will not cut established flows"
+        return
+    fi
 
     # By address rather than by port: conntrack's port filters match the original direction only,
     # and every flow of every node has to go, not just the ones which happen to be listed that way.
@@ -196,24 +215,29 @@ label_side() {
     done
 }
 
-trap 'heal; exit 0' INT TERM
+trap heal EXIT
+trap 'exit 143' TERM
+trap 'exit 130' INT
 
+state startup
 heal
 
 # The version the cluster runs, so an agent restarted mid roll rolls away from it, not toward it.
-version=$(current_version)
+until version=$(current_version); do
+    echo "chaos: cannot read the version the cluster runs, retrying in ${RETRY_SECS}s" >&2
+    pause "$RETRY_SECS"
+done
 [ -n "$version" ] || version=$OLD_VERSION
 
-state startup
-kubectl wait --for=condition=Ready --timeout="${STARTUP_SECS}s" pod -l "$SELECTOR" ||
+interruptible kubectl wait --for=condition=Ready --timeout="${STARTUP_SECS}s" pod -l "$SELECTOR" ||
     echo "not every pod became ready"
 echo "waiting ${STARTUP_SECS}s for the cluster to form"
-sleep "$STARTUP_SECS"
+pause "$STARTUP_SECS"
 
 cycle=0
 while true; do
     state quiet
-    sleep "$QUIET_SECS"
+    pause "$QUIET_SECS"
 
     cycle=$((cycle + 1))
     node=$(((cycle / 4) % NODE_COUNT))

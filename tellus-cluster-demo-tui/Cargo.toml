@@ -21,3 +21,6 @@ tellus                 = { workspace = true, features = [ "cluster", "serde" ] }
 tellus-cluster-demo    = { workspace = true }
 tellus-cluster-inspect = { workspace = true }
 tokio                  = { workspace = true, features = [ "macros", "rt-multi-thread", "sync", "time" ] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = [ "test-util" ] }

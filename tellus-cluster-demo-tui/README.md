@@ -89,3 +89,14 @@ Some consequences worth knowing:
 - Each stream's glyph turns red when it is lost, and a loss is one timeline entry, not one per
   reconnect attempt. Such connection entries carry the observer's own clock, since no server
   stamped them.
+- A stream silent for 45 seconds counts as lost and is reconnected. The servers send a keep-alive
+  every 15 seconds, so only a peer which stopped answering stays silent that long. A poll gives up
+  after three seconds, a probe after ten.
+- An event the observer cannot read is one timeline entry and is skipped, so the stream continues
+  after it. On the inspect stream the next state seeds the diff baseline anew.
+- A stream which cannot resume sends the retained history and the current state and verdict, and
+  only the last of those carries an id. The observer holds them until that id arrives and numbers
+  the history back from it, so an interrupted recovery shows nothing. A repeated one shows only the
+  events not shown before, judged by their numbers in the node's log, never by their stamps. A
+  recovery with an unreadable event which leaves that numbering in doubt shows no history and says
+  so on the timeline.

@@ -184,7 +184,7 @@ pub enum VerifierEvent {
 
     /// The cluster failed to deliver one of its promises.
     Violation {
-        /// Unix seconds at which the violation was recorded.
+        /// Unix milliseconds at which the violation was recorded.
         at: u64,
 
         /// What went wrong.
@@ -236,7 +236,7 @@ pub struct VerifierStatus {
 /// One violation, answered by `GET /violations`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Violation {
-    /// Unix seconds at which the violation was recorded.
+    /// Unix milliseconds at which the violation was recorded.
     pub at: u64,
 
     /// What went wrong.

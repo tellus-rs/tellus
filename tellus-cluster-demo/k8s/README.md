@@ -140,7 +140,10 @@ needs the window because its containers always return at the same static address
 
 **Recovering the agent.** The policies are static and label driven, so an agent which died in the
 middle of a partition would leave the cluster split for good. It therefore clears every `side`
-label at startup and from a `TERM` trap, and always labels with `--overwrite`.
+label at startup and on every exit, and always labels with `--overwrite`. A shell runs a trap only
+once its foreground command has returned, so the agent sleeps and waits in the background. A
+`TERM` hence clears the labels at once, well within the pod's grace period, rather than after a
+partition window longer than that period.
 
 ## RBAC
 
