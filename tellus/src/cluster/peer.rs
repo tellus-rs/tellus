@@ -66,6 +66,7 @@ pub(crate) struct DialRequest {
     pub(crate) data_rx: Vec<Receiver<Frame<'static>>>,
     pub(crate) quota: Quota,
     pub(crate) snapshot_rx: tokio::sync::watch::Receiver<Option<Arc<Snapshot>>>,
+    pub(crate) connected_tx: tokio::sync::watch::Sender<Option<NodeId>>,
     pub(crate) done_tx: oneshot::Sender<Drain>,
 }
 
@@ -621,6 +622,7 @@ where
         data_rx,
         quota,
         snapshot_rx,
+        connected_tx,
         done_tx,
     } = request;
     let streams = data_rx.len();
@@ -633,8 +635,20 @@ where
         if endpoint.downed() {
             break;
         }
+        if endpoint.leaving() && !endpoint.membership().has_up_member_at(addr) {
+            debug!(peer_addr = %addr, "giving up the drain, no member is Up at the address");
+            break;
+        }
 
-        let established = match connect(transport.as_ref(), addr, streams, endpoint).await {
+        let connected = select! {
+            connected = connect(transport.as_ref(), addr, streams, endpoint) => connected,
+
+            () = no_member_up_while_leaving(endpoint, addr) => {
+                debug!(peer_addr = %addr, "giving up the drain, no member is Up at the address");
+                break;
+            }
+        };
+        let established = match connected {
             Ok(mut connected) => {
                 let identity = connected.identity.take();
                 admit_outbound(&connected.greeting, addr, identity, endpoint)
@@ -678,6 +692,7 @@ where
                 });
 
                 endpoint.bind_lane(addr, lane_id, peer);
+                connected_tx.send_replace(Some(peer));
                 let connected_at = Instant::now();
                 debug!(%peer, version = greeting.version, "outbound connection established");
 
@@ -801,7 +816,11 @@ async fn backoff_or_give_up(endpoint: &EndpointInner, addr: SocketAddr, attempts
 
     let backoff = sleep(endpoint.reconnect_backoff(attempts));
     if endpoint.leaving() {
-        backoff.await;
+        let mut state_rx = endpoint.state_rx();
+        select! {
+            () = backoff => {}
+            _ = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr)) => {}
+        }
     } else {
         let mut leave_rx = endpoint.leave_rx();
         select! {
@@ -810,6 +829,19 @@ async fn backoff_or_give_up(endpoint: &EndpointInner, addr: SocketAddr, attempts
         }
     }
     true
+}
+
+/// Resolves once this node is leaving and no member is Up at `addr` any more.
+async fn no_member_up_while_leaving(endpoint: &EndpointInner, addr: SocketAddr) {
+    let mut leave_rx = endpoint.leave_rx();
+    if leave_rx.wait_for(|leaving| *leaving).await.is_err() {
+        return pending().await;
+    }
+    let mut state_rx = endpoint.state_rx();
+    let gone = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr));
+    if gone.await.is_err() {
+        pending::<()>().await;
+    }
 }
 
 async fn connect<T>(
@@ -1199,7 +1231,7 @@ where
         // write-locks a gate!
         if let Frame::Gossip { members, .. } = &frame {
             membership::on_gossip(endpoint, members);
-            if !endpoint.delivers_from(peer) {
+            if !endpoint.delivers_from(peer) && !endpoint.leaving() {
                 debug!(%peer, "closing connection to a dead node incarnation");
                 return ReadEnd::Poisoned;
             }
@@ -1208,8 +1240,20 @@ where
 
         let _guard = liveness.enter();
         if !endpoint.delivers_from(peer) {
-            debug!(%peer, "closing connection to a dead node incarnation");
-            return ReadEnd::Poisoned;
+            // A leaving node still awaits the drain's acknowledgment, but delivers nothing!
+            match frame {
+                Frame::DrainAck if endpoint.leaving() => return ReadEnd::DrainAcknowledged,
+
+                _ if endpoint.leaving() => {
+                    debug!(%peer, "dropping a frame of a dead node incarnation while leaving");
+                    continue;
+                }
+
+                _ => {
+                    debug!(%peer, "closing connection to a dead node incarnation");
+                    return ReadEnd::Poisoned;
+                }
+            }
         }
 
         match frame {
@@ -2125,6 +2169,40 @@ mod tests {
         };
         assert_eq!(received(first_mailbox), [42]);
         assert_eq!(received(second_mailbox), [42, 42]);
+    }
+
+    /// Once a peer's death has closed the delivery gate, a leaving node still takes the peer's
+    /// `DrainAck` for its own drain, while every other frame of that peer is dropped, so nothing
+    /// arrives behind the synthesized signal. A node which is not leaving closes the connection.
+    #[tokio::test]
+    async fn a_leaving_node_takes_a_drain_ack_past_a_closed_gate() {
+        for leaving in [true, false] {
+            let endpoint = formed(1);
+            let peer = NodeId::new(addr(2));
+            endpoint.update(|membership, _| membership.add_up(peer));
+            let mut recipient = Recipient::watching(endpoint, peer, ActorId::new());
+            endpoint.node_death(peer);
+            if leaving {
+                endpoint.leave().await.expect("a departure");
+            }
+            let frames = [message(endpoint, recipient.id(), 1), Frame::DrainAck]
+                .map(|frame| frame.encode_into(Vec::new()).expect("frame encodes"));
+
+            let end = read_frames(
+                FakeReceiver::new(frames),
+                peer,
+                endpoint.track_liveness(peer),
+                endpoint,
+            )
+            .await;
+
+            if leaving {
+                assert!(matches!(end, ReadEnd::DrainAcknowledged));
+            } else {
+                assert!(matches!(end, ReadEnd::Poisoned));
+            }
+            assert_eq!(recipient.received(), [None]);
+        }
     }
 
     /// A message whose decode panics is a dead letter like one which does not decode: the reader
@@ -6430,6 +6508,187 @@ mod tests {
             "the death waits for the delivery"
         );
         assert_eq!(order, ["Message(42)", "Terminated"]);
+    }
+
+    /// A leaving node gives up a connect still pending as soon as the Left of the member at its
+    /// address arrives, rather than when the departure's deadline passes.
+    #[tokio::test(start_paused = true)]
+    async fn a_leaving_node_gives_up_a_pending_connect_once_no_member_is_up_there() {
+        let left_after = Duration::from_millis(100);
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        let departing = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(departing));
+        endpoint
+            .send(
+                departing,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("a lane opens");
+        let _pending = dials.recv().await.expect("the lane dials");
+
+        let started = tokio::time::Instant::now();
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        sleep(left_after).await;
+        endpoint.update(|membership, _| membership.leave(departing, std::time::Instant::now()));
+        let departure = leaving
+            .await
+            .expect("the departure does not panic")
+            .expect("a departure");
+
+        assert_eq!(departure.departed(), [departing.addr()]);
+        assert_eq!(started.elapsed(), left_after);
+    }
+
+    /// A lane which connects only once the departure has begun, to the successor of the
+    /// incarnation it was opened for, resolves by that successor: a successor which never
+    /// acknowledges leaves the departure incomplete, although the predecessor is Left.
+    #[tokio::test(start_paused = true)]
+    async fn a_drain_connected_to_a_successor_resolves_by_the_successor() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        let predecessor = NodeId::new(addr(2));
+        let successor = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(predecessor));
+        endpoint
+            .send(
+                predecessor,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("a lane opens");
+        let dial = dials.recv().await.expect("the lane dials");
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        endpoint.update(|membership, _| {
+            membership.leave(predecessor, std::time::Instant::now());
+            membership.add_up(successor);
+        });
+        let (connected, mut acceptor) = Acceptor::connected();
+        acceptor.cluster = endpoint.committed_cluster().expect("a formed cluster");
+        assert!(
+            dial.answer.send(connected).is_ok(),
+            "the lane awaits the dial"
+        );
+        acceptor.joiner_handshake().await;
+        acceptor.send(&Frame::Handshake(Handshake::new(v2(
+            successor,
+            HandshakeIntent::Member,
+            Some(acceptor.cluster),
+        ))));
+        let departure = leaving
+            .await
+            .expect("the departure does not panic")
+            .expect("a departure");
+        drop(acceptor);
+
+        assert_eq!(departure.timed_out(), [successor.addr()]);
+        assert!(departure.departed().is_empty());
+        assert!(!departure.is_complete());
+    }
+
+    /// A leaving node gives up a drain which cannot connect as soon as the Left of the member at
+    /// its address arrives, but keeps dialing a member which is still Up until the one deadline of
+    /// the departure.
+    #[tokio::test(start_paused = true)]
+    async fn a_leaving_node_gives_up_a_drain_once_no_member_is_up_there() {
+        let left_after = Duration::from_millis(100);
+        for with_unreachable in [false, true] {
+            let (endpoint, lane_dials, _join_requests) =
+                EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+            endpoint.form_cluster().expect("an unformed endpoint forms");
+            let (dial_tx, mut dials) = unbounded_channel();
+            task::spawn(dial_loop(
+                Arc::new(ScriptedTransport(dial_tx)),
+                lane_dials,
+                endpoint,
+            ));
+            let dialed = Arc::new(Mutex::new(Vec::new()));
+            task::spawn({
+                let dialed = dialed.clone();
+                async move {
+                    while let Some(dial) = dials.recv().await {
+                        lock(&dialed).push((dial.addr, tokio::time::Instant::now()));
+                    }
+                }
+            });
+            let departing = NodeId::new(addr(2));
+            let unreachable = NodeId::new(addr(3));
+            let members = if with_unreachable {
+                vec![departing, unreachable]
+            } else {
+                vec![departing]
+            };
+            for &member in &members {
+                endpoint.update(|membership, _| membership.add_up(member));
+                endpoint
+                    .send(
+                        member,
+                        Frame::Gossip {
+                            members: Vec::new(),
+                            more: false,
+                        },
+                    )
+                    .expect("a lane opens");
+            }
+
+            let started = tokio::time::Instant::now();
+            let leaving = task::spawn(endpoint.leave());
+            while !endpoint.leaving() {
+                task::yield_now().await;
+            }
+            sleep(left_after).await;
+            let left_at = tokio::time::Instant::now();
+            endpoint.update(|membership, _| membership.leave(departing, std::time::Instant::now()));
+            let departure = leaving
+                .await
+                .expect("the departure does not panic")
+                .expect("a departure");
+
+            assert_eq!(departure.departed(), [departing.addr()]);
+            let dialed = lock(&dialed);
+            assert!(
+                !dialed
+                    .iter()
+                    .any(|&(dialed, at)| dialed == departing.addr() && at >= left_at)
+            );
+            if with_unreachable {
+                assert_eq!(departure.timed_out(), [unreachable.addr()]);
+                assert_eq!(started.elapsed(), endpoint.config().leave_timeout);
+                assert!(
+                    dialed
+                        .iter()
+                        .any(|&(dialed, at)| dialed == unreachable.addr() && at > left_at)
+                );
+            } else {
+                assert_eq!(started.elapsed(), left_after);
+            }
+        }
     }
 
     /// docs/cluster.md, "A node which never becomes a

@@ -5,14 +5,16 @@ use thiserror::Error;
 /// The report of a departure: the address of every peer connection [leave] drained. They are split
 /// into those which acknowledged the drain and those which did not, e.g. since the connection ended
 /// first or a stream failed. A third list holds those which had not acknowledged it within
-/// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout). Each list is in address order. A
-/// peer acknowledges once every frame queued for it reached its delivery path, a local mailbox or a
+/// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout), and a fourth those which left
+/// the cluster themselves before they acknowledged it. Each list is in address order. A peer
+/// acknowledges once every frame queued for it reached its delivery path, a local mailbox or a
 /// logged dead letter; that does not mean any actor handled the frames.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Departure {
     pub(crate) acknowledged: Vec<SocketAddr>,
     pub(crate) unacknowledged: Vec<SocketAddr>,
     pub(crate) timed_out: Vec<SocketAddr>,
+    pub(crate) departed: Vec<SocketAddr>,
 }
 
 impl Departure {
@@ -33,8 +35,21 @@ impl Departure {
         &self.timed_out
     }
 
+    /// The peers which left the cluster themselves before they acknowledged the drain, the
+    /// incarnation the drain went to having turned Left. Whether they received what was queued for
+    /// them is unknown.
+    pub fn departed(&self) -> &[SocketAddr] {
+        &self.departed
+    }
+
     /// Whether every drained peer acknowledged the drain.
     pub fn is_acknowledged(&self) -> bool {
+        self.unacknowledged.is_empty() && self.timed_out.is_empty() && self.departed.is_empty()
+    }
+
+    /// Whether every drained peer acknowledged the drain or left the cluster itself: what a node
+    /// leaving together with others can expect at best.
+    pub fn is_complete(&self) -> bool {
         self.unacknowledged.is_empty() && self.timed_out.is_empty()
     }
 
@@ -42,6 +57,7 @@ impl Departure {
         self.acknowledged.sort_unstable();
         self.unacknowledged.sort_unstable();
         self.timed_out.sort_unstable();
+        self.departed.sort_unstable();
     }
 }
 
@@ -100,7 +116,9 @@ where
 }
 
 /// Leave the cluster: gossip this node's own entry as [Left](crate::cluster::MemberState::Left),
-/// drain every peer connection, then sever every connection, and report how each drain ended.
+/// drain the connection to every member which is Up or Left, then sever every connection, and
+/// report how each drain ended. A connection to a node which is Down, or to no member, is not
+/// drained: that node's death already settled what was queued for it.
 ///
 /// Draining a connection writes out everything queued for the peer, the departure included, and
 /// finishes every data stream. Then a final control frame tells the peer how many data streams
@@ -135,7 +153,10 @@ where
 /// prove that any actor handled them. The whole drain is bounded by one
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout) deadline. A member which is gone
 /// already costs that timeout and learns of the departure from another member's gossip, or, with
-/// no live path at all, from its own failure detection, exactly as it would from a crash.
+/// no live path at all, from its own failure detection, exactly as it would from a crash. A peer
+/// which leaves at the same time can still acknowledge after this node has seen its departure.
+/// Otherwise the drain towards it is reported as [departed](Departure::departed), never as
+/// acknowledged, and the drain gives up as soon as no member is Up at its address.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if

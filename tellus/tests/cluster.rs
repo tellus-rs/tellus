@@ -104,7 +104,7 @@ use tellus::{
 };
 use tokio::{
     runtime::Runtime,
-    task::JoinSet,
+    task::{self, JoinSet},
     time::{sleep, timeout},
 };
 
@@ -133,6 +133,7 @@ const MTLS_JOIN_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERGENCE_POLL: Duration = Duration::from_millis(200);
 const DEPARTURE_PINGS: u32 = 1_000;
 const QUICK_LEAVE_ROUNDS: usize = 5;
+const CONCURRENT_LEAVE_ROUNDS: usize = 3;
 const DOWNING_DEADLINE: Duration = Duration::from_secs(2);
 const QUICK_LEAVE_CLUSTER: usize = 3;
 const MAJORITY_AFTER: Duration = Duration::from_secs(1);
@@ -215,6 +216,7 @@ fn main() -> anyhow::Result<()> {
         Ok(role) if role == Role::SelfDown.as_str() => self_down_node(),
         Ok(role) if role == Role::Leave.as_str() => leave_node(),
         Ok(role) if role == Role::QuickLeave.as_str() => quick_leave_node(),
+        Ok(role) if role == Role::ConcurrentLeave.as_str() => concurrent_leave_node(),
         Ok(role) if role == Role::Zombie.as_str() => zombie_node(),
         Ok(role) if role == Role::Majority.as_str() => majority_node(),
         Ok(role) if role == Role::ClusterId.as_str() => cluster_id_node(),
@@ -267,6 +269,7 @@ enum Role {
     SelfDown,
     Leave,
     QuickLeave,
+    ConcurrentLeave,
     Zombie,
     Majority,
     ClusterId,
@@ -288,6 +291,7 @@ impl Role {
             Role::SelfDown => "self-down",
             Role::Leave => "leave",
             Role::QuickLeave => "quick-leave",
+            Role::ConcurrentLeave => "concurrent-leave",
             Role::Zombie => "zombie",
             Role::Majority => "majority",
             Role::ClusterId => "cluster-id",
@@ -478,6 +482,35 @@ fn quick_leave_node() -> anyhow::Result<()> {
             .context("leaving the cluster")??;
         if !departure.is_acknowledged() {
             bail!("the departure was not acknowledged by every member: {departure:?}");
+        }
+        Ok(())
+    })
+}
+
+/// A node of three which leaves once its stdin is closed, at the same time as another one. It
+/// fails unless every drain was acknowledged or went to a peer which left itself.
+fn concurrent_leave_node() -> anyhow::Result<()> {
+    let runtime = Runtime::new()?;
+    runtime.block_on(async {
+        start_endpoint().await?;
+        let mut subscription = cluster::cluster_state()?;
+        timeout(
+            TIMEOUT,
+            subscription.wait_for(|state| state.up().count() == QUICK_LEAVE_CLUSTER),
+        )
+        .await
+        .context("the whole cluster Up within the timeout")?;
+        println!("{JOIN_PREFIX}ready");
+        io::stdout().flush()?;
+        task::spawn_blocking(|| io::copy(&mut io::stdin().lock(), &mut io::sink()))
+            .await
+            .context("awaiting the closed stdin")??;
+
+        let departure = timeout(TIMEOUT, cluster::leave())
+            .await
+            .context("leaving the cluster")??;
+        if !departure.is_complete() {
+            bail!("the departure was neither acknowledged nor departed: {departure:?}");
         }
         Ok(())
     })
@@ -1736,6 +1769,7 @@ fn client() -> anyhow::Result<()> {
     zombie_scenario(&runtime).context("zombie scenario")?;
     held_join_scenario(&runtime).context("held join scenario")?;
     quick_leave_scenario(&runtime).context("quick leave scenario")?;
+    concurrent_leave_scenario(&runtime).context("concurrent leave scenario")?;
     retried("keep majority scenario", keep_majority_scenario).context("keep majority scenario")?;
     leave_scenario(&runtime).context("leave scenario")?;
     self_down_scenario().context("self down scenario")?;
@@ -4125,6 +4159,40 @@ fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Two nodes leaving at the same time both complete their departures: each drain is
+/// acknowledged, or goes to the other leaver which has left itself, and neither waits out its
+/// `leave_timeout` for the other.
+fn concurrent_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
+    let mut subscription = cluster::cluster_state()?;
+    let mut observed = vec![subscription.current()];
+    await_state(runtime, &mut subscription, &mut observed, |state| {
+        state.up().count() == 1
+    })
+    .context("the nodes of earlier scenarios are gone")?;
+
+    for round in 1..=CONCURRENT_LEAVE_ROUNDS {
+        let mut leavers = Vec::new();
+        for _ in 0..2 {
+            leavers.push(KillOnDrop(spawn_concurrent_leaver()?));
+        }
+        for leaver in &mut leavers {
+            expect_join_line(&mut leaver.0, "ready").with_context(|| format!("round {round}"))?;
+        }
+        for leaver in &mut leavers {
+            drop(leaver.0.stdin.take());
+        }
+        for leaver in &mut leavers {
+            expect_exit(&mut leaver.0, "concurrent leaver")
+                .with_context(|| format!("round {round}"))?;
+        }
+        await_state(runtime, &mut subscription, &mut observed, |state| {
+            state.up().count() == 1
+        })
+        .with_context(|| format!("round {round} ends with the client alone"))?;
+    }
+    Ok(())
+}
+
 /// A node which leaves announces it: every member lists it Left, which a downing, the only other
 /// way to learn of its end, would have made Down. The
 /// departure rides the control stream, the replies and the terminated signal a data stream. This
@@ -5982,6 +6050,20 @@ fn spawn_node_at(role: Role, bind_addr: Option<SocketAddr>) -> anyhow::Result<Ch
         .spawn()
         .with_context(|| format!("{} process", role.as_str()))?;
     await_bound(&mut child, bind_addr.unwrap_or_else(any_port))?;
+    Ok(child)
+}
+
+/// A [Role::ConcurrentLeave] node, whose stdin is its signal to leave.
+fn spawn_concurrent_leaver() -> anyhow::Result<Child> {
+    let seed = SELF_ADDR.get().context("endpoint not started")?;
+    let mut child = Command::new(env::current_exe()?)
+        .env(ROLE_ENV, Role::ConcurrentLeave.as_str())
+        .env(SEEDS_ENV, seed.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .context("concurrent leave process")?;
+    await_bound(&mut child, any_port())?;
     Ok(child)
 }
 
