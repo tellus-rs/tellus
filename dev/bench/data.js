@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794859016176,
+  "lastUpdate": 1794859018427,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -28261,6 +28261,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 137006,
             "range": "± 6091",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "581b7d69eb371b79bf0e87f7075c267ee960fcc9",
+          "message": "Merge pull request #443 from tellus-rs/fix/demo-no-longer-member\n\nfix(demo): log NoLongerMember at debug level, not as an error",
+          "timestamp": "2026-11-16T20:49:38+01:00",
+          "tree_id": "1d195d4dd2db18f51acbb86852867f9389345402",
+          "url": "https://github.com/tellus-rs/tellus/commit/581b7d69eb371b79bf0e87f7075c267ee960fcc9"
+        },
+        "date": 1794859018198,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3337276,
+            "range": "± 48768",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3271491,
+            "range": "± 23452",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 730168,
+            "range": "± 30198",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 102425,
+            "range": "± 6350",
             "unit": "ns/iter"
           }
         ]
