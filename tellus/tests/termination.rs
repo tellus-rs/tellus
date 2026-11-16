@@ -2,6 +2,7 @@ use std::{
     convert::Infallible,
     error::Error,
     fmt::{self, Debug, Display, Formatter},
+    marker::PhantomData,
     sync::{
         Arc, Once,
         atomic::{AtomicBool, Ordering::SeqCst},
@@ -11,7 +12,8 @@ use std::{
     time::Duration,
 };
 use tellus::{
-    Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, Nothing, Unstashed, Untimed,
+    Actor, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, Nothing, StashMode,
+    Stashed, Timed, TimerMode, Unstashed, Untimed,
 };
 use thiserror::Error;
 use tokio::{
@@ -30,7 +32,8 @@ static TRACING: Once = Once::new();
 #[tokio::test]
 async fn stopping_root_terminates_system() {
     let (terminated_tx, _terminated_rx) = mpsc::channel(TERMINATION_ORDER.len());
-    let root = Root(Terminated("root", terminated_tx));
+    let (started_tx, _started_rx) = mpsc::channel(1);
+    let root = Root(Terminated("root", terminated_tx), started_tx);
     let system = ActorSystem::new(root);
 
     system.root().tell(());
@@ -43,8 +46,10 @@ async fn stopping_root_terminates_system() {
 #[tokio::test(flavor = "multi_thread")]
 async fn descendants_terminate_bottom_up() {
     let (terminated_tx, mut terminated_rx) = mpsc::channel(TERMINATION_ORDER.len());
-    let root = Root(Terminated("root", terminated_tx));
+    let (started_tx, mut started_rx) = mpsc::channel(1);
+    let root = Root(Terminated("root", terminated_tx), started_tx);
     let system = ActorSystem::new(root);
+    recv(&mut started_rx, "the tree did not start").await;
 
     system.root().tell(());
 
@@ -63,7 +68,9 @@ async fn descendants_terminate_bottom_up() {
 #[tokio::test(flavor = "multi_thread")]
 async fn stopping_a_system_terminates_the_tree_bottom_up() {
     let (terminated_tx, mut terminated_rx) = mpsc::channel(TERMINATION_ORDER.len());
-    let system = ActorSystem::new(Enduring(Terminated("root", terminated_tx)));
+    let (started_tx, mut started_rx) = mpsc::channel(1);
+    let system = ActorSystem::new(Enduring(Terminated("root", terminated_tx), started_tx));
+    recv(&mut started_rx, "the tree did not start").await;
 
     system.stop();
 
@@ -102,6 +109,47 @@ async fn stopping_a_system_finishes_the_message_being_handled() {
         "finished"
     );
     assert_terminates(system).await;
+}
+
+/// A child whose parent stops it before it ran never runs `init`, but it still terminates: its
+/// actor value is dropped before its watcher gets the terminated signal, and before its parent's.
+#[tokio::test]
+async fn a_child_stopped_before_it_ran_never_initializes() {
+    assert_child_never_initializes::<Untimed, Unstashed>().await;
+}
+
+/// [a_child_stopped_before_it_ran_never_initializes] for a timed child.
+#[tokio::test]
+async fn a_timed_child_stopped_before_it_ran_never_initializes() {
+    assert_child_never_initializes::<Timed, Unstashed>().await;
+}
+
+/// [a_child_stopped_before_it_ran_never_initializes] for a stashed child.
+#[tokio::test]
+async fn a_stashed_child_stopped_before_it_ran_never_initializes() {
+    assert_child_never_initializes::<Untimed, Stashed>().await;
+}
+
+/// [a_child_stopped_before_it_ran_never_initializes] for a timed and stashed child.
+#[tokio::test]
+async fn a_timed_stashed_child_stopped_before_it_ran_never_initializes() {
+    assert_child_never_initializes::<Timed, Stashed>().await;
+}
+
+/// A root whose system is stopped before it ran never runs `init`, and the system terminates.
+#[tokio::test]
+async fn a_root_stopped_before_it_ran_never_initializes() {
+    let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Unborn::<Untimed, Unstashed>::new(events_tx));
+
+    system.stop();
+    assert_terminates(system).await;
+
+    let mut events = Vec::new();
+    while let Ok(event) = events_rx.try_recv() {
+        events.push(event);
+    }
+    assert_eq!(events, [Event::UnbornDropped]);
 }
 
 /// Dropping an actor system does not stop its actors: the root actor keeps running and processing
@@ -314,7 +362,68 @@ fn init_tracing() {
     });
 }
 
+/// Runs a [Grandparent] whose [HastyParent] spawns an [Unborn] child and stops in the same
+/// `receive`.
+async fn assert_child_never_initializes<T, S>()
+where
+    T: TimerMode + 'static,
+    S: StashMode + 'static,
+{
+    let (events_tx, mut events_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Grandparent::<T, S>::new(events_tx));
+
+    let mut events = Vec::new();
+    while events
+        .iter()
+        .filter(|event| matches!(event, Event::Terminated(_)))
+        .count()
+        < 2
+    {
+        events.push(recv_unbounded(&mut events_rx, "not all terminated signals arrived").await);
+    }
+    system.stop();
+    assert_terminates(system).await;
+    while let Ok(event) = events_rx.try_recv() {
+        events.push(event);
+    }
+
+    assert!(
+        !events.contains(&Event::UnbornInitialized),
+        "the child ran init: {events:?}"
+    );
+    let parent_id = events
+        .iter()
+        .find_map(|event| match event {
+            Event::ParentSpawned(id) => Some(*id),
+            _ => None,
+        })
+        .expect("the parent was spawned");
+    let child_id = events
+        .iter()
+        .find_map(|event| match event {
+            Event::ChildSpawned(id) => Some(*id),
+            _ => None,
+        })
+        .expect("the child was spawned");
+    let position = |expected| {
+        events
+            .iter()
+            .position(|event| *event == expected)
+            .unwrap_or_else(|| panic!("{expected:?} is missing: {events:?}"))
+    };
+    assert!(position(Event::UnbornDropped) < position(Event::Terminated(child_id)));
+    assert!(position(Event::UnbornDropped) < position(Event::ParentDropped));
+    assert!(position(Event::ParentDropped) < position(Event::Terminated(parent_id)));
+}
+
 async fn recv<T>(rx: &mut mpsc::Receiver<T>, not_received: &str) -> T {
+    timeout(TIMEOUT, rx.recv())
+        .await
+        .expect(not_received)
+        .expect("channel closed")
+}
+
+async fn recv_unbounded<T>(rx: &mut mpsc::UnboundedReceiver<T>, not_received: &str) -> T {
     timeout(TIMEOUT, rx.recv())
         .await
         .expect(not_received)
@@ -331,7 +440,7 @@ where
         .expect("watching the root actor failed");
 }
 
-struct Root(Terminated);
+struct Root(Terminated, mpsc::Sender<()>);
 
 impl Actor for Root {
     type Message = ();
@@ -341,7 +450,7 @@ impl Actor for Root {
     type Error = Infallible;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        context.spawn(Child(self.0.child("child")));
+        context.spawn(Child(self.0.child("child"), self.1.clone()));
         Ok(())
     }
 
@@ -356,7 +465,7 @@ impl Actor for Root {
 }
 
 /// A root which never stops on its own, so only an outside stop ends it.
-struct Enduring(Terminated);
+struct Enduring(Terminated, mpsc::Sender<()>);
 
 impl Actor for Enduring {
     type Message = ();
@@ -366,7 +475,7 @@ impl Actor for Enduring {
     type Error = Infallible;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        context.spawn(Child(self.0.child("child")));
+        context.spawn(Child(self.0.child("child"), self.1.clone()));
         Ok(())
     }
 
@@ -378,6 +487,158 @@ impl Actor for Enduring {
     ) -> Result<Control<Self::State>, Self::Error> {
         Ok(Control::Continue(state))
     }
+}
+
+/// Spawns a [HastyParent] and watches it and the child it reports.
+struct Grandparent<T, S> {
+    events: mpsc::UnboundedSender<Event>,
+    _modes: PhantomData<fn() -> (T, S)>,
+}
+
+impl<T, S> Grandparent<T, S> {
+    fn new(events: mpsc::UnboundedSender<Event>) -> Self {
+        Self {
+            events,
+            _modes: PhantomData,
+        }
+    }
+}
+
+impl<T, S> Actor for Grandparent<T, S>
+where
+    T: TimerMode + 'static,
+    S: StashMode + 'static,
+{
+    type Message = ActorRef<()>;
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        let parent = context.spawn(HastyParent::<T, S> {
+            grandparent: context.self_ref().clone(),
+            events: self.events.clone(),
+            _modes: PhantomData,
+        });
+        context.watch(&parent);
+        let _ = self.events.send(Event::ParentSpawned(parent.actor_id()));
+        parent.tell(());
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        incoming: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        match incoming {
+            Incoming::Message(child) => context.watch(&child),
+            Incoming::Terminated(id) => {
+                let _ = self.events.send(Event::Terminated(id));
+            }
+        }
+        Ok(Control::Continue(state))
+    }
+}
+
+/// Spawns an [Unborn] child, reports it to its [Grandparent] and stops, all in one `receive`.
+struct HastyParent<T, S> {
+    grandparent: ActorRef<ActorRef<()>>,
+    events: mpsc::UnboundedSender<Event>,
+    _modes: PhantomData<fn() -> (T, S)>,
+}
+
+impl<T, S> Actor for HastyParent<T, S>
+where
+    T: TimerMode + 'static,
+    S: StashMode + 'static,
+{
+    type Message = ();
+    type Timers = Untimed;
+    type Stash = Unstashed;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        context: &ActorContext<Self::Message>,
+        _: Incoming<Self::Message>,
+        _: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        let child = context.spawn(Unborn::<T, S>::new(self.events.clone()));
+        let _ = self.events.send(Event::ChildSpawned(child.actor_id()));
+        self.grandparent.tell(child);
+        Ok(Control::Stop)
+    }
+}
+
+impl<T, S> Drop for HastyParent<T, S> {
+    fn drop(&mut self) {
+        let _ = self.events.send(Event::ParentDropped);
+    }
+}
+
+/// Reports its `init` and the drop of its actor value.
+struct Unborn<T, S> {
+    events: mpsc::UnboundedSender<Event>,
+    _modes: PhantomData<fn() -> (T, S)>,
+}
+
+impl<T, S> Unborn<T, S> {
+    fn new(events: mpsc::UnboundedSender<Event>) -> Self {
+        Self {
+            events,
+            _modes: PhantomData,
+        }
+    }
+}
+
+impl<T, S> Actor for Unborn<T, S>
+where
+    T: TimerMode + 'static,
+    S: StashMode + 'static,
+{
+    type Message = ();
+    type Timers = T;
+    type Stash = S;
+    type State = ();
+    type Error = Infallible;
+
+    fn init(&self, _: &ActorContext<Self::Message, T, S>) -> Result<Self::State, Self::Error> {
+        let _ = self.events.send(Event::UnbornInitialized);
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message, T, S>,
+        _: Incoming<Self::Message>,
+        state: Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        Ok(Control::Continue(state))
+    }
+}
+
+impl<T, S> Drop for Unborn<T, S> {
+    fn drop(&mut self) {
+        let _ = self.events.send(Event::UnbornDropped);
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum Event {
+    ParentSpawned(ActorId),
+    ChildSpawned(ActorId),
+    UnbornInitialized,
+    UnbornDropped,
+    ParentDropped,
+    Terminated(ActorId),
 }
 
 /// Blocks inside `receive` until released, so a test can stop the system while a message is being
@@ -412,7 +673,7 @@ impl Actor for Blocking {
     }
 }
 
-struct Child(Terminated);
+struct Child(Terminated, mpsc::Sender<()>);
 
 impl Actor for Child {
     type Message = Nothing;
@@ -424,6 +685,7 @@ impl Actor for Child {
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let grand_child = GrandChild {
             _terminated: self.0.child("grandchild"),
+            started: self.1.clone(),
         };
         context.spawn(grand_child);
         Ok(())
@@ -441,6 +703,7 @@ impl Actor for Child {
 
 struct GrandChild {
     _terminated: Terminated,
+    started: mpsc::Sender<()>,
 }
 
 impl Actor for GrandChild {
@@ -451,6 +714,7 @@ impl Actor for GrandChild {
     type Error = Infallible;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
+        let _ = self.started.try_send(());
         Ok(())
     }
 

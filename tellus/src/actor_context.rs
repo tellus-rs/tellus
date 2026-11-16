@@ -614,6 +614,11 @@ macro_rules! run_actor {
             let mut restarts = 0;
 
             'run: loop {
+                if $stopped_by_parent_rx.has_changed().unwrap_or(true) {
+                    debug!(actor_id = %actor_id, "stopping, because parent stopped this actor");
+                    break;
+                }
+
                 let state = catch_and_log(actor_id, "actor failed to initialize", || {
                     $actor.init(&context)
                 });

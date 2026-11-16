@@ -292,7 +292,9 @@ async fn a_restart_cancels_the_old_incarnations_timer() {
 #[tokio::test(start_paused = true)]
 async fn a_panicking_timer_message_destructor_is_contained() {
     let dropped = Arc::new(AtomicBool::new(false));
-    let system = ActorSystem::new(PanickingTimer(dropped.clone()));
+    let (started_tx, mut started_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(PanickingTimer(dropped.clone(), started_tx));
+    next_event(&mut started_rx).await;
 
     stop(system).await;
     assert!(dropped.load(SeqCst));
@@ -790,8 +792,9 @@ enum Event {
 #[error("probe failed on purpose")]
 struct Failed;
 
-/// Starts a timer in `init` whose message panics when dropped, with a delay no test waits for.
-struct PanickingTimer(Arc<AtomicBool>);
+/// Starts a timer in `init` whose message panics when dropped, with a delay no test waits for, then
+/// reports that it has started.
+struct PanickingTimer(Arc<AtomicBool>, mpsc::UnboundedSender<()>);
 
 impl Actor for PanickingTimer {
     type Message = PanickingMessage;
@@ -809,6 +812,7 @@ impl Actor for PanickingTimer {
             PanickingMessage(self.0.clone()),
             Duration::from_secs(3600),
         );
+        let _ = self.1.send(());
         Ok(())
     }
 
