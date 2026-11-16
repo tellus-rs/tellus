@@ -106,10 +106,11 @@ async fn member_node() -> anyhow::Result<()> {
     let departure = cluster::leave_on_terminated(system)
         .await
         .context("leaving the cluster once the worker has terminated")?;
-    if departure.is_acknowledged() {
+    if departure.is_complete() {
         println!(
-            "## node {addr} left, its departure acknowledged by {} peers",
-            departure.acknowledged().len()
+            "## node {addr} left, its departure acknowledged by {} peers, {} peers left as well",
+            departure.acknowledged().len(),
+            departure.departed().len()
         );
     } else {
         println!(

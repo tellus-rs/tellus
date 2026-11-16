@@ -47,6 +47,15 @@ pub(crate) enum Drain {
     Unacknowledged,
 }
 
+/// A lane taken for a departure. `connected_rx` names the incarnation its latest connection went
+/// to, also one established after the lane was taken, which `peer` never learns.
+pub(crate) struct DrainedLane {
+    pub(crate) addr: SocketAddr,
+    pub(crate) peer: Option<NodeId>,
+    pub(crate) connected_rx: watch::Receiver<Option<NodeId>>,
+    pub(crate) done_rx: oneshot::Receiver<Drain>,
+}
+
 pub(crate) struct Lanes {
     lanes: RwLock<HashMap<SocketAddr, Lane>>,
     next_generation: AtomicU64,
@@ -179,10 +188,16 @@ impl Lanes {
         }
     }
 
-    pub(crate) fn drain(&self) -> Vec<(SocketAddr, oneshot::Receiver<Drain>)> {
+    /// Every lane with the incarnation it is bound to, if it has connected.
+    pub(crate) fn drain(&self) -> Vec<DrainedLane> {
         write(&self.lanes)
             .drain()
-            .map(|(addr, lane)| (addr, lane.done_rx))
+            .map(|(addr, lane)| DrainedLane {
+                addr,
+                peer: lane.peer,
+                connected_rx: lane.connected_rx,
+                done_rx: lane.done_rx,
+            })
             .collect()
     }
 
@@ -207,6 +222,7 @@ impl Lanes {
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let (snapshot_tx, snapshot_rx) = watch::channel(Some(snapshot));
+        let (connected_tx, connected_rx) = watch::channel(None);
         let (done_tx, done_rx) = oneshot::channel();
         let lane = Lane {
             id: lane_id,
@@ -215,6 +231,7 @@ impl Lanes {
             control_tx,
             data_tx,
             snapshot_tx,
+            connected_rx,
             done_rx,
         };
         lanes.insert(addr, lane);
@@ -226,6 +243,7 @@ impl Lanes {
             data_rx,
             quota,
             snapshot_rx,
+            connected_tx,
             done_tx,
         };
         if self.dial_request_tx.send(dial_request).is_err() {
@@ -247,6 +265,7 @@ struct Lane {
     control_tx: CountedSender<Frame<'static>>,
     data_tx: Vec<CountedSender<Frame<'static>>>,
     snapshot_tx: watch::Sender<Option<Arc<Snapshot>>>,
+    connected_rx: watch::Receiver<Option<NodeId>>,
     done_rx: oneshot::Receiver<Drain>,
 }
 
@@ -401,6 +420,7 @@ mod tests {
             control_tx,
             data_tx,
             snapshot_tx: watch::Sender::new(None),
+            connected_rx: watch::channel(None).1,
             done_rx: oneshot::channel().1,
         };
         (lane, control_rx, data_rx)
