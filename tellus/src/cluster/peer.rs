@@ -147,7 +147,8 @@ impl ConnectError {
     }
 
     /// A refusal as an unknown member is retryable: gossip may not have reached it yet. A refusal
-    /// from a node which is no cluster yet is retryable until it has formed one or joined one. A
+    /// from a node which is no cluster yet, or not yet a member of the cluster which admitted it,
+    /// is retryable until it has formed one or joined one. A
     /// refusal holding back joins is retryable until the unreachable member is reachable again or
     /// downed, or until the leaving node is gone. A refusal of a dead incarnation is retryable,
     /// since its successor may come up at the same address.
@@ -162,6 +163,7 @@ impl ConnectError {
             | ConnectError::Refused(RefusalReason::UnknownMember)
             | ConnectError::Refused(RefusalReason::NoCluster)
             | ConnectError::Refused(RefusalReason::JoinsHeld)
+            | ConnectError::Refused(RefusalReason::Joining)
             | ConnectError::Dead => true,
 
             ConnectError::NotAHandshake
@@ -1375,9 +1377,9 @@ fn admit_inbound(
         },
 
         HandshakeIntent::Join => {
-            if !endpoint.formed() {
-                debug!(%peer, "refusing join, this node is not a member of any cluster");
-                return Admission::Refuse(RefusalReason::NoCluster);
+            if let Some(refusal) = endpoint.join_refusal() {
+                debug!(%peer, ?refusal, "refusing join, this node is not a member of any cluster yet");
+                return Admission::Refuse(refusal);
             }
 
             let (admission, inbound) = endpoint
@@ -3223,6 +3225,61 @@ mod tests {
                 endpoint
             ),
             Admission::Admit(..)
+        ));
+    }
+
+    /// A node which a cluster has admitted is no member yet while its snapshot is pending, but it
+    /// is not free to be counted as no cluster either: it refuses a join as joining.
+    #[tokio::test]
+    async fn an_endpoint_admitted_by_a_cluster_refuses_joins_as_joining() {
+        let (endpoint, _lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.pin_cluster(addr(3), ClusterId::new());
+
+        assert!(matches!(
+            admit_inbound(
+                NodeId::new(addr(2)),
+                HandshakeIntent::Join,
+                None,
+                "postcard",
+                None,
+                endpoint
+            ),
+            Admission::Refuse(RefusalReason::Joining)
+        ));
+    }
+
+    /// A seed refusing as joining has been admitted by a cluster, so the round counts it as
+    /// unavailable rather than as no cluster.
+    #[tokio::test]
+    async fn a_round_counts_a_joining_seed_as_unavailable() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (seed, other) = (addr(2), addr(3));
+
+        let round =
+            task::spawn(
+                async move { membership::join_round(endpoint, &[seed, other], None).await },
+            );
+        for (asked, reason) in [
+            (seed, RefusalReason::Joining),
+            (other, RefusalReason::NoCluster),
+        ] {
+            let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+                .await
+                .expect("every seed is dialed")
+                .expect("a dial");
+            assert_eq!(dial.addr, asked);
+            let (connected, mut acceptor) = Acceptor::connected();
+            assert!(dial.answer.send(connected).is_ok());
+            acceptor.joiner_handshake().await;
+            acceptor.refuse(reason);
+        }
+
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::NoAdmission(outcomes)
+                if outcomes == [(seed, JoinOutcome::Unavailable), (other, JoinOutcome::NoCluster)]
         ));
     }
 

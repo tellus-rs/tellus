@@ -372,8 +372,8 @@ pub(crate) enum HandshakeIntent {
     Probe,
 }
 
-/// [RefusalReason::UnknownMember], [RefusalReason::NoCluster] and [RefusalReason::JoinsHeld] are
-/// worth retrying.
+/// [RefusalReason::UnknownMember], [RefusalReason::NoCluster], [RefusalReason::JoinsHeld] and
+/// [RefusalReason::Joining] are worth retrying.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) enum RefusalReason {
     #[display("not a member of this cluster")]
@@ -393,6 +393,9 @@ pub(crate) enum RefusalReason {
 
     #[display("another payload codec")]
     CodecMismatch,
+
+    #[display("admitted by a cluster, not yet a member")]
+    Joining,
 }
 
 #[derive(Debug, Error)]
@@ -986,6 +989,7 @@ mod tests {
             (RefusalReason::ForeignCluster, 3),
             (RefusalReason::JoinsHeld, 4),
             (RefusalReason::CodecMismatch, 5),
+            (RefusalReason::Joining, 6),
         ];
 
         for (reason, discriminant) in reasons {
