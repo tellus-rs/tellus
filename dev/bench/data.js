@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794820730244,
+  "lastUpdate": 1794820735720,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -25909,6 +25909,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 79254,
             "range": "± 1276",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2d13e8de0f8df9e0c2b5deb03f04d28001c26bd2",
+          "message": "Merge pull request #415 from tellus-rs/fix/trait-contracts\n\nfix(cluster)!: refuse empty FixedSeeds and state the trait contracts",
+          "timestamp": "2026-11-16T10:11:04+01:00",
+          "tree_id": "2380769c5be61cec5429656e623bc99cd40d9cfd",
+          "url": "https://github.com/tellus-rs/tellus/commit/2d13e8de0f8df9e0c2b5deb03f04d28001c26bd2"
+        },
+        "date": 1794820735425,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3378309,
+            "range": "± 90206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3423275,
+            "range": "± 155126",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 876101,
+            "range": "± 8032",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 108651,
+            "range": "± 3778",
             "unit": "ns/iter"
           }
         ]
