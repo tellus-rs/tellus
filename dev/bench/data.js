@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794863981463,
+  "lastUpdate": 1794863984302,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -29269,6 +29269,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 107768,
             "range": "± 7653",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3f14650a71cc01c7d1f4f51eb7576a7eae7a2587",
+          "message": "Merge pull request #452 from tellus-rs/test/joining-refusal-and-join-wait\n\ntest(cluster): pin the joining refusal and the second join wait",
+          "timestamp": "2026-11-16T22:12:00+01:00",
+          "tree_id": "e9e604c63e0abac89b97ce2e7bfea305b53def41",
+          "url": "https://github.com/tellus-rs/tellus/commit/3f14650a71cc01c7d1f4f51eb7576a7eae7a2587"
+        },
+        "date": 1794863983848,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3303720,
+            "range": "± 44017",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3264631,
+            "range": "± 37724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 737014,
+            "range": "± 26759",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 103515,
+            "range": "± 6813",
             "unit": "ns/iter"
           }
         ]
