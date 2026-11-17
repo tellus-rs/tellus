@@ -62,7 +62,6 @@ fn main() -> anyhow::Result<()> {
         report.metadata.tag,
         args.output.display()
     );
-
     Ok(())
 }
 
@@ -97,7 +96,6 @@ impl Args {
                 _ => bail!("unexpected argument {arg}"),
             }
         }
-
         Ok(Args {
             input,
             output,
@@ -281,7 +279,6 @@ fn read_measurements(input: &Path) -> anyhow::Result<Vec<Measurement>> {
             .then_with(|| parameter_order(a).cmp(&parameter_order(b)))
             .then_with(|| a.framework.cmp(&b.framework))
     });
-
     Ok(measurements)
 }
 
@@ -419,6 +416,7 @@ fn read_metadata(tag: String) -> anyhow::Result<Metadata> {
         cpu: read_cpu(),
         cores: thread::available_parallelism()
             .map(|cores| cores.get())
+            .inspect_err(|error| eprintln!("metadata unavailable: {error}"))
             .ok(),
         rustc: or_none(run("rustc", &["--version"])),
         versions: read_versions()?,
@@ -475,7 +473,6 @@ fn read_versions() -> anyhow::Result<BTreeMap<String, String>> {
             missing.join(", ")
         );
     }
-
     Ok(versions)
 }
 

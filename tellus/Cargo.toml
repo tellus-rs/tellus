@@ -244,6 +244,9 @@ required-features = [ "cluster-dev" ]
 name              = "remote_scatter_gather"
 required-features = [ "cluster-dev" ]
 
+[[example]]
+name = "work_pulling"
+
 [[bench]]
 name    = "messaging"
 harness = false
@@ -251,12 +254,12 @@ harness = false
 [[bench]]
 name              = "persistence"
 harness           = false
-required-features = [ "persistence", "persistence-in-memory" ]
+required-features = [ "persistence-in-memory" ]
 
 [[bench]]
 name              = "stash"
 harness           = false
-required-features = [ "persistence", "persistence-in-memory" ]
+required-features = [ "persistence-in-memory" ]
 
 [[test]]
 name              = "cluster"

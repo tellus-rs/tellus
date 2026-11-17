@@ -249,14 +249,6 @@ where
     elapsed
 }
 
-fn next_remaining(remaining: usize) -> Option<usize> {
-    remaining.checked_sub(1).filter(|n| *n > 0)
-}
-
-fn next_control(remaining: usize) -> Control<usize> {
-    next_remaining(remaining).map_or(Control::Stop, Control::Continue)
-}
-
 struct Tick;
 
 struct Countdown {
@@ -282,6 +274,14 @@ impl Actor for Countdown {
     ) -> Result<Control<Self::State>, Self::Error> {
         Ok(next_control(remaining))
     }
+}
+
+fn next_control(remaining: usize) -> Control<usize> {
+    next_remaining(remaining).map_or(Control::Stop, Control::Continue)
+}
+
+fn next_remaining(remaining: usize) -> Option<usize> {
+    remaining.checked_sub(1).filter(|n| *n > 0)
 }
 
 /// Whether the actor reads its own mailbox depth on every message.
@@ -407,7 +407,6 @@ impl Actor for PingPongRoot {
                     });
                     context.watch(&pinger);
                 }
-
                 Ok(Control::Continue(remaining))
             }
 
@@ -537,7 +536,6 @@ impl Actor for FanOutRoot {
                 {
                     worker.tell(Tick);
                 }
-
                 Ok(Control::Continue(state))
             }
 

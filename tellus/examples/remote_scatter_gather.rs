@@ -45,7 +45,7 @@ use tokio::{
     process::{Child, Command},
     time::{sleep, timeout},
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const SHARDS: [Range<u64>; 4] = [1..26, 26..51, 51..76, 76..101];
 const WORKER_NODE_ARG: &str = "worker-node";
@@ -70,7 +70,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),
@@ -226,7 +226,6 @@ impl Actor for Gatherer {
                 reply_to: context.self_ref().clone(),
             });
         }
-
         Ok(Gathering {
             remaining: SHARDS.len(),
             total: 0,

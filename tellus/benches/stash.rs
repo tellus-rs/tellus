@@ -209,7 +209,6 @@ impl Actor for Stashing {
         } else {
             Control::Continue(state)
         };
-
         Ok(control)
     }
 }
@@ -289,7 +288,6 @@ impl EventSourced for StashingCounter {
         } else {
             Effect::persist(Increased)
         };
-
         Ok(effect)
     }
 

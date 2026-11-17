@@ -29,32 +29,6 @@ const WORKERS: [usize; 2] = [8, 32];
 /// Must match the report's `RUN_MARKER`, whose modification time starts the latest run!
 const RUN_MARKER: &str = "run-started";
 
-fn main() {
-    if is_benchmark_run() {
-        mark_run_start();
-    }
-
-    benches();
-
-    Criterion::default().configure_from_args().final_summary();
-}
-
-/// How many messages each fan out worker receives; the reported throughput and the per actor
-/// countdown are the same number, so they must be derived in one place.
-const fn fan_out_share(workers: usize) -> usize {
-    FAN_OUT_MESSAGES / workers
-}
-
-/// One message consumed: `Some` carries what is left to receive, `None` means this was the last
-/// one and the actor stops. Every framework stops after the same number of messages, so all of
-/// them count down through this one function.
-const fn count_down(remaining: usize) -> Option<usize> {
-    match remaining.checked_sub(1) {
-        Some(remaining) if remaining > 0 => Some(remaining),
-        _ => None,
-    }
-}
-
 /// A benchmark future erased to one common type, so the frameworks fit into a table: the boxing
 /// happens once per criterion sample, far outside the measured loop.
 type BoxedBench = Pin<Box<dyn Future<Output = Duration> + Send>>;
@@ -94,6 +68,37 @@ const FAN_OUT_BENCHES: [ParameterizedBench; 3] = [
         Box::pin(ractor_bench::fan_out(iters, workers))
     }),
 ];
+
+fn main() {
+    if is_benchmark_run() {
+        mark_run_start();
+    }
+
+    benches();
+
+    Criterion::default().configure_from_args().final_summary();
+}
+
+/// Must agree with `Criterion::configure_from_args` on which arguments measure!
+fn is_benchmark_run() -> bool {
+    let args = env::args().skip(1).collect::<Vec<_>>();
+    args.iter().any(|arg| arg == "--bench")
+        && !args
+            .iter()
+            .any(|arg| arg == "--test" || arg == "--list" || arg.starts_with("--profile-time"))
+}
+
+fn mark_run_start() {
+    let directory = workspace_output_directory();
+    fs::create_dir_all(&directory).expect("criterion output directory is created");
+    File::create(directory.join(RUN_MARKER))
+        .and_then(|marker| marker.set_modified(SystemTime::now()))
+        .expect("run marker is written");
+}
+
+fn workspace_output_directory() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/criterion-comparison")
+}
 
 fn flood(c: &mut Criterion) {
     let rt = runtime();
@@ -179,25 +184,20 @@ fn runtime() -> Runtime {
         .expect("tokio runtime can be created")
 }
 
-/// Must agree with `Criterion::configure_from_args` on which arguments measure!
-fn is_benchmark_run() -> bool {
-    let args = env::args().skip(1).collect::<Vec<_>>();
-    args.iter().any(|arg| arg == "--bench")
-        && !args
-            .iter()
-            .any(|arg| arg == "--test" || arg == "--list" || arg.starts_with("--profile-time"))
+/// How many messages each fan out worker receives; the reported throughput and the per actor
+/// countdown are the same number, so they must be derived in one place.
+const fn fan_out_share(workers: usize) -> usize {
+    FAN_OUT_MESSAGES / workers
 }
 
-fn mark_run_start() {
-    let directory = workspace_output_directory();
-    fs::create_dir_all(&directory).expect("criterion output directory is created");
-    File::create(directory.join(RUN_MARKER))
-        .and_then(|marker| marker.set_modified(SystemTime::now()))
-        .expect("run marker is written");
-}
-
-fn workspace_output_directory() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../target/criterion-comparison")
+/// One message consumed: `Some` carries what is left to receive, `None` means this was the last
+/// one and the actor stops. Every framework stops after the same number of messages, so all of
+/// them count down through this one function.
+const fn count_down(remaining: usize) -> Option<usize> {
+    match remaining.checked_sub(1) {
+        Some(remaining) if remaining > 0 => Some(remaining),
+        _ => None,
+    }
 }
 
 mod tellus_bench {
@@ -747,7 +747,6 @@ mod ractor_bench {
                 Some(next) => *remaining = next,
                 None => myself.stop(None),
             }
-
             Ok(())
         }
     }
@@ -818,7 +817,6 @@ mod ractor_bench {
                     None => myself.stop(None),
                 },
             }
-
             Ok(())
         }
     }

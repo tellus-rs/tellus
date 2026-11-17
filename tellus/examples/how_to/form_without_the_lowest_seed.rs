@@ -23,7 +23,7 @@ use tokio::{
     process::{self, Child},
     time::timeout,
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const SECOND_NODE_ARG: &str = "second-node";
 const SEEDS: usize = 3;
@@ -49,7 +49,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),

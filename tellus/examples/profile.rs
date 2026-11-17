@@ -76,13 +76,6 @@ async fn ask_round_trips() -> anyhow::Result<()> {
         .context("awaiting echo termination")
 }
 
-fn next_control(remaining: usize) -> Control<usize> {
-    remaining
-        .checked_sub(1)
-        .filter(|n| *n > 0)
-        .map_or(Control::Stop, Control::Continue)
-}
-
 struct Tick;
 
 struct Countdown {
@@ -108,6 +101,13 @@ impl Actor for Countdown {
     ) -> Result<Control<Self::State>, Self::Error> {
         Ok(next_control(remaining))
     }
+}
+
+fn next_control(remaining: usize) -> Control<usize> {
+    remaining
+        .checked_sub(1)
+        .filter(|n| *n > 0)
+        .map_or(Control::Stop, Control::Continue)
 }
 
 struct Request(ReplyTo<usize>);

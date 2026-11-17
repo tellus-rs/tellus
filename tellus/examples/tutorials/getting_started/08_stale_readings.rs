@@ -13,7 +13,7 @@ use tellus::{
 };
 use thiserror::Error;
 use tokio::time::sleep;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const MAX_RESTARTS: NonZeroU32 = NonZeroU32::new(3).expect("3 is not zero");
 
@@ -68,7 +68,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),

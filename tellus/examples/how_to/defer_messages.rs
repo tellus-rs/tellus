@@ -11,7 +11,7 @@ use tellus::{
 use thiserror::Error;
 use tokio::{task::yield_now, time::sleep};
 
-const MAILBOX_CAPACITY: NonZeroUsize = NonZeroUsize::new(3).unwrap();
+const MAILBOX_CAPACITY: NonZeroUsize = NonZeroUsize::new(3).expect("3 is not zero");
 
 // ANCHOR: main
 #[tokio::main]
@@ -63,7 +63,7 @@ impl Actor for Directory {
     // ANCHOR: init
     fn init(
         &self,
-        context: &ActorContext<Self::Message, Untimed, Stashed>,
+        context: &ActorContext<Self::Message, Self::Timers, Self::Stash>,
     ) -> Result<Self::State, Self::Error> {
         context.pipe_to_self(load_customers(), Message::Loaded);
         Ok(State::Loading)
@@ -72,7 +72,7 @@ impl Actor for Directory {
 
     fn receive(
         &self,
-        context: &ActorContext<Self::Message, Untimed, Stashed>,
+        context: &ActorContext<Self::Message, Self::Timers, Self::Stash>,
         incoming: Incoming<Self::Message>,
         state: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {

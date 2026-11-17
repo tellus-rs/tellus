@@ -23,7 +23,7 @@ use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo,
     RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
     cluster::{
-        self, BootstrapConfig, EndpointConfig, FixedSeeds, Key, Manifest, Schema,
+        self, BootstrapConfig, EndpointConfig, FixedSeeds, Key, Manifest, MemberState, Schema,
         downing::KeepMajority,
         failure::{Deadline, DeadlineFailureDetector},
         receptionist,
@@ -35,7 +35,7 @@ use tokio::{
     process::{self, Child},
     time::timeout,
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const MANAGER_NODE_ARG: &str = "manager-node";
 const MANAGER_KEY: &str = "device-manager";
@@ -64,7 +64,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),
@@ -214,7 +214,7 @@ async fn print_attic_average(manager: &ActorRef<Command>) -> anyhow::Result<()> 
     Ok(())
 }
 
-fn member_state(addr: SocketAddr) -> anyhow::Result<cluster::MemberState> {
+fn member_state(addr: SocketAddr) -> anyhow::Result<MemberState> {
     cluster::members()
         .context("listing the members")?
         .iter()

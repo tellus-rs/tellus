@@ -18,7 +18,7 @@ use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Incoming, MailboxCapacity,
     ReplyTo, Unstashed, Untimed,
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const DOCUMENTS: [&str; 6] = [
     "the quick brown fox jumps over the lazy dog",
@@ -29,7 +29,7 @@ const DOCUMENTS: [&str; 6] = [
     "a terminated signal arrives behind all messages",
 ];
 
-const WORKERS: NonZeroUsize = NonZeroUsize::new(3).unwrap();
+const WORKERS: NonZeroUsize = NonZeroUsize::new(3).expect("3 is not zero");
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -51,7 +51,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),

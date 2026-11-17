@@ -185,7 +185,6 @@ impl EventSourced for Counter {
         } else {
             Effect::persist(Increased)
         };
-
         Ok(effect)
     }
 
