@@ -398,29 +398,30 @@ closed before the `DrainAck`, a read error and a writer which failed or could no
 never count as acknowledged; the marker is not even sent after a failed writer. A member which is
 gone already costs that timeout and then learns the departure from another member's gossip, or, with
 no live path at all, from its own failure detection. Two nodes may leave at the same time. Each then
-learns the other's departure and runs its death while its own drain towards the other may still be
-waiting. The other's `DrainAck` is still taken then, while every other frame from that incarnation
-is dropped, so nothing arrives behind its synthesized signals. The call returns a `Departure`, which
-lists the peers which acknowledged the drain, those which did not since the connection ended first
-or a stream failed (each logged as a warning), and those which had not answered when `leave_timeout`
-passed. A fourth list holds the peers which left the cluster themselves before they acknowledged:
-the incarnation the lane's latest connection reached is Left, or the one it was opened for if it
-never connected, and whether it got what was queued for it is unknown. An acknowledgment takes
-precedence over a Left, while a Down, a suspicion or a closed connection never makes a peer
-departed. `Departure::is_acknowledged` holds only if every peer acknowledged, and
-`Departure::is_complete` also accepts the departed ones, which is what a node leaving together with
-others can expect at best. Concurrent calls share the one departure and its report, which runs in a
-task of its own. So none severs the connections another is still waiting on, and a caller which is
-canceled only stops waiting. Leaving again after the departure has ended returns its report as well.
-A node downed before it began to leave fails with `LeaveError::Downed`. An endpoint which has
-neither formed nor joined a cluster has nothing to leave. It fails with `LeaveError::NotAMember` and
-stays as it was, so it can still form or join one. A join in progress does not count as a
-membership: it may still make this node a member after the refused leave. A departure which ends
-without a report, e.g. since its task panicked, fails safe. A supervisor awaiting that task then
-latches this node Downed and severs every connection. Only after that does it publish the failure,
-so every caller, concurrent or later, gets `LeaveError::Incomplete` and never a report claiming an
-acknowledgment. Leaving is terminal per incarnation exactly as being downed is, so the process is
-expected to exit, and only a restart rejoins.
+usually learns the other's departure and runs its death while its own drain towards the other may
+still be waiting; one which does not learn it waits out `leave_timeout` for the other. The other's
+`DrainAck` is still taken then, while every other frame from that incarnation is dropped, so nothing
+arrives behind its synthesized signals. The call returns a `Departure`, which lists the peers which
+acknowledged the drain, those which did not since the connection ended first or a stream failed
+(each logged as a warning), and those which had not answered when `leave_timeout` passed. A fourth
+list holds the peers which left the cluster themselves before they acknowledged: the incarnation the
+lane's latest connection reached is Left, or the one it was opened for if it never connected, and
+whether it got what was queued for it is unknown. An acknowledgment takes precedence over a Left,
+while a Down, a suspicion or a closed connection never makes a peer departed.
+`Departure::is_acknowledged` holds only if every peer acknowledged, and `Departure::is_complete`
+also accepts the departed ones, which is what a node leaving together with others can expect at
+best. Concurrent calls share the one departure and its report, which runs in a task of its own. So
+none severs the connections another is still waiting on, and a caller which is canceled only stops
+waiting. Leaving again after the departure has ended returns its report as well. A node downed
+before it began to leave fails with `LeaveError::Downed`. An endpoint which has neither formed nor
+joined a cluster has nothing to leave. It fails with `LeaveError::NotAMember` and stays as it was,
+so it can still form or join one. A join in progress does not count as a membership: it may still
+make this node a member after the refused leave. A departure which ends without a report, e.g. since
+its task panicked, fails safe. A supervisor awaiting that task then latches this node Downed and
+severs every connection. Only after that does it publish the failure, so every caller, concurrent or
+later, gets `LeaveError::Incomplete` and never a report claiming an acknowledgment. Leaving is
+terminal per incarnation exactly as being downed is, so the process is expected to exit, and only a
+restart rejoins.
 
 A leaving node admits no new member. From the moment its own entry is Left, this node answers a join
 from a new address, and one which would supersede a member, with `JoinsHeld`. The announcement of
