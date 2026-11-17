@@ -272,11 +272,11 @@ pub enum BootstrapError {
 /// When no address of a settled view is a member of a cluster, the [FormationProvider] decides
 /// whether this node forms one. By default it forms at the lowest address of the universe once a
 /// majority of it is known to be no cluster. Requiring a majority keeps a partitioned node from
-/// coming back as a cluster of its own. With `min_nodes` of one, a resolved set holding nothing but
-/// this node's own address forms a cluster of one under [Majority]. A provider's decline is logged
-/// at warn level when it or the universe differs from the previous decline, at debug level
-/// otherwise. A formation the endpoint refuses since a join attempt ended ambiguously is logged the
-/// same way, see [FormError::JoinAmbiguous].
+/// coming back as a cluster of its own, as long as the discovery yields every node. With
+/// `min_nodes` of one, a resolved set holding nothing but this node's own address forms a cluster
+/// of one under [Majority]. A provider's decline is logged at warn level when it or the universe
+/// differs from the previous decline, at debug level otherwise. A formation the endpoint refuses
+/// since a join attempt ended ambiguously is logged the same way, see [FormError::JoinAmbiguous].
 ///
 /// Returns at once when this node is already a member, e.g. through [form](crate::cluster::form),
 /// and otherwise once this node is a member. Membership owns failure detection and downing from

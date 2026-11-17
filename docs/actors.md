@@ -646,7 +646,7 @@ forgotten on its terminated signal and spawned afresh by the next message for it
 host has received that signal, it takes the entity for live, so messages routed to it meanwhile are
 dead letters.
 
-Ownership across nodes is not part of this. A host is local: it is the single node half of the
+Ownership across nodes is not part of this. A host is local: it is the single-node half of the
 sharded regions the roadmap describes, where the owner of a key is computed from the member list
 rather than being wherever the message happened to arrive. Neither a host's nor an entity's
 reference crosses nodes, since `HostEnvelope` and `Hosted` implement no `Schema`. A remote client

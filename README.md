@@ -96,7 +96,7 @@ laid out in [docs/roadmap.md](docs/roadmap.md).
 ## Documentation
 
 The website, [tellus.rs](https://tellus.rs), has the tutorials and how-to guides. Their code is in
-[tellus/examples](tellus/examples).
+this repository, most of it in [tellus/examples](tellus/examples).
 
 How tellus works internally, top-down with links into the implementation:
 
@@ -122,11 +122,12 @@ The justfile picks the nightly of the date `rustc --version` reports, which must
 benchmark report, the allocation checks and the demo's status recipes also use `jq`.
 
 Regression benchmarks (criterion) run with `just bench`: messaging, persistence against an in-memory
-store, and stashing. On CI every pull request is benchmarked against its merge base and the
-comparison posted as a comment. That comparison measures one stack position and is a hint, never a
-verdict; the performance gate is the [stack sweep](.github/stack-sweep/README.md), started by the
-label `sweep` (messaging), `sweep-persistence` (persistence) or `sweep-stash` (stashing) on a pull
-request. Every commit on `main` is tracked over time on the [benchmark dashboard][benchmarks-url].
+store, and stashing. On CI the merge result of every pull request is benchmarked against the tip of
+`main` and the comparison posted as a comment. That comparison measures one stack position and is a
+hint, never a verdict; the performance gate is the [stack sweep](.github/stack-sweep/README.md),
+started by the label `sweep` (messaging), `sweep-persistence` (persistence) or `sweep-stash`
+(stashing) on a pull request. Every commit on `main` is tracked over time on the [benchmark
+dashboard][benchmarks-url].
 
 For a local before and after, `just bench-save <baseline>` and `just bench-compare <baseline>` (and
 the `bench-persistence-` and `bench-stash-` pairs) compare against a saved baseline. `just profile`

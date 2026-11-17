@@ -1,4 +1,4 @@
-//! A four node cluster in four processes: an observer plus three member nodes, showing what
+//! A four-node cluster in four processes: an observer plus three member nodes, showing what
 //! membership adds to remoting.
 //!
 //! Every member node is started with a single seed address, the observer's, and learns the rest

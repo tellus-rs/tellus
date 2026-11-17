@@ -57,7 +57,7 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
 
 Spawning uses dedicated entry points carrying the [`Persistence`](../tellus/src/persistence.rs)
 wiring, an event store plus optional snapshot store, codec and store timeout (see [Store
-timeout](#store-timeout)), built as `Persistence::new(store).with_snapshot_store(store)`:
+timeout](#store-timeout)), built as `Persistence::new(store.clone()).with_snapshot_store(store)`:
 `ActorSystem::event_sourced` for the root and `ActorContext::spawn_event_sourced` for children, each
 with a `_with_config` variant taking the ordinary `ActorConfig`. Unlike a plain actor value, which
 only needs `Send`, an event-sourced one must also be `Sync`: it is borrowed across the store awaits
@@ -116,9 +116,11 @@ timer.
 ## Replay and live execution
 
 `apply` is pure and total: no I/O, no failure, no dependence on the clock, on randomness or on
-per-incarnation values such as `ActorRef`s. Replay runs exactly the `apply` calls the live actor
-ran, on the same events in the same order, and therefore reconstructs the same state. Effects
-never run during replay; recovery is observable only through `recovered`.
+per-incarnation values such as `ActorRef`s. Replay runs the `apply` calls of the events after the
+snapshot it starts from, if any, in the order the live actor ran them, on the events as decoded from
+the store. It reconstructs the same state if every event and snapshot survives its codec's round
+trip (see [Guarantees and limitations](#guarantees-and-limitations)). Effects never run during
+replay; recovery is observable only through `recovered`.
 
 ## Effects and durability
 
@@ -395,10 +397,11 @@ entity, sends a command with `tell` and then reads the store has to wait for the
 
 - An appended event is never modified or deleted: the stream is append-only and is the single
   source of truth.
-- The recovered state is the live state if every event survives its codec's round trip: the same
-  fold over the same events, with effects suppressed and `recovered` as the only world-touching
-  step. Live execution applies the original events and replay the decoded ones, so a lossy round
-  trip, such as `Some(None)` or a `#[serde(skip)]` field, makes them differ without any error.
+- The recovered state is the live state if every event and snapshot survives its codec's round trip.
+  Recovery runs `apply` over the decoded events, starting from the decoded snapshot if there is one,
+  with effects suppressed and `recovered` as the only world-touching step. Live execution applies
+  the original events, while recovery decodes the snapshot and the events. A lossy round trip, such
+  as `Some(None)` or a `#[serde(skip)]` field, hence makes the two states differ without any error.
 - Events of one effect are atomic and durable before they are applied; sequence numbers are
   gapless per `PersistenceId`.
 - Conditional appends fence concurrent incarnations per append: of two appends from the same

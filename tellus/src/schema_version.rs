@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// The schema version of a payload, written or sent alongside it and checked on read: a payload
 /// whose version the current code neither knows nor upcasts is rejected rather than decoded with
 /// the current shape. It is a number of its own, never interchangeable with a sequence number or
-/// any other value traveling with the same record. On the wire it is a varint of its number.
+/// any other value traveling with the same record.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SchemaVersion(u16);
 

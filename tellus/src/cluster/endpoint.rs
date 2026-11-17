@@ -209,19 +209,20 @@ pub struct EndpointConfig {
     /// defaults to [EndpointConfig::DEFAULT_LEAVE_TIMEOUT].
     pub leave_timeout: Duration,
 
-    /// The bounds pacing reconnection of a lost connection: the first attempt waits the minimum,
-    /// each further one doubles it up to the maximum. Defaults to
-    /// [EndpointConfig::DEFAULT_RECONNECT_BACKOFF_MIN] and
+    /// The bounds pacing reconnection of a lost connection. One which lived at least one
+    /// `heartbeat_interval` is redialed at once. A failed attempt, or a connection lost sooner,
+    /// waits the minimum, and each further one in a row doubles the wait up to the maximum.
+    /// Defaults to [EndpointConfig::DEFAULT_RECONNECT_BACKOFF_MIN] and
     /// [EndpointConfig::DEFAULT_RECONNECT_BACKOFF_MAX].
     pub reconnect_backoff: Backoff,
 
     /// After this many failed connection attempts an address no Up member advertises is given up
     /// and its queued messages become dead letters; a member's address is retried until the
-    /// downing provider settles its fate. Giving up is not final: a later message dials again.
-    /// An address no Up member advertises whose answer retrying cannot change is refused
-    /// instead. Such an address does not speak this protocol or shares no version with it,
-    /// fails the identity or address check, belongs to another cluster or sends a frame beyond
-    /// `max_frame_size`. Sends toward a refused address fail without dialing for 10 s,
+    /// downing provider settles its fate. Giving up is not final: a later message dials again. An
+    /// address no Up member advertises whose answer retrying cannot change is refused instead.
+    /// Such an address does not speak this protocol or shares no version with it, fails the
+    /// identity or address check, belongs to another cluster, uses another codec or sends a frame
+    /// beyond `max_frame_size`. Sends toward a refused address fail without dialing for 10 s,
     /// doubling with every further refusal up to 10 min. A refusal expired for 10 min is
     /// forgotten. An inbound handshake from the address, an admitted join from it or a
     /// gossiped Up member at it lifts the refusal at once.
@@ -230,12 +231,12 @@ pub struct EndpointConfig {
     pub max_connect_attempts: NonZeroU32,
 
     /// How long a join attempt which ended without proof whether its seed admitted this node
-    /// blocks [form] at most. Such an attempt sent its `Join` handshake and then failed short of
-    /// a definitive refusal, e.g. by a timeout or a lost connection, so the seed may count this
-    /// node already. Forming is refused with [FormError::JoinAmbiguous] until that address
-    /// answers a join definitively, discovery drops it from the universe, or this bound passes.
-    /// Joins through any seed continue meanwhile. Must not be zero; defaults to
-    /// [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
+    /// blocks [form] at most. Such an attempt sent its `Join` handshake and then failed before an
+    /// answer pinned the address, short of a definitive refusal, e.g. by a timeout or a lost
+    /// connection, so the seed may count this node already. Forming is refused with
+    /// [FormError::JoinAmbiguous] until that address answers a join definitively, discovery drops
+    /// it from the universe, or this bound passes. Joins through any seed continue meanwhile. Must
+    /// not be zero; defaults to [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
     pub ambiguous_join_bound: Duration,
 
     /// How many changes a subscriber of [changes](crate::cluster::changes) may fall behind

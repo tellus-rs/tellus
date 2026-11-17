@@ -12,9 +12,9 @@
 //! Every type crossing nodes implements [Schema], whose [VERSION](Schema::VERSION) names the shape
 //! of its payload. Its `encode` sees the [Peer] and the application version that peer announced,
 //! the `app_version` of its [EndpointConfig], so it can write an older shape for an older peer.
-//! Its `decode` upcasts older versions. Together they make a rolling upgrade possible, see
-//! docs/cluster.md, "Rolling upgrades". [lifecycle] tells whether this node is a member of no
-//! cluster yet, a member of one, or downed or left for good.
+//! Its `decode` can be overridden to upcast older versions. Together they make a rolling upgrade
+//! possible, see docs/cluster.md, "Rolling upgrades". [lifecycle] tells whether this node is a
+//! member of no cluster yet, a member of one, or downed or left for good.
 //!
 //! The nodes messaging each other form a *cluster*, and membership is not optional. A started
 //! endpoint is not a cluster and admits nobody: [form] makes it a cluster of one, [join] makes it a

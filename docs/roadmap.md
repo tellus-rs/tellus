@@ -179,7 +179,7 @@ member has delivered and is Up, which the singleton below relies on.
 same set. No answer names an actor of an incarnation this node has marked Down; the synchronous
 eviction and the filter make that true, not observation. A subscriber sees a registration once the
 origin's set has reached this node and the origin is Up, never earlier and never after the origin is
-Down. Cluster-aware routers, round robin or consistent hashing over the resolved set, fall out of
+Down. Cluster-aware routers, round-robin or consistent hashing over the resolved set, fall out of
 this layer without further work.
 
 **Open questions, settled.** A node holds at most 2^20 registrations and 64 MiB of them, and a
@@ -247,7 +247,7 @@ departing owner stops its instance before it announces the departure. The proxie
 terminated signal, unless the owner's connection does not drain within their node's `leave_timeout`;
 then they get the synthesized one.
 
-**Guarantee.** Two tier like remote watch, and eventual: once membership and the receptionist have
+**Guarantee.** Two-tier like remote watch, and eventual: once membership and the receptionist have
 converged and the tiebreak's stops have completed, exactly one instance exists. Convergence alone is
 not that point, since replicas can agree on several concurrent claims while the losing instances are
 still stopping. Until then the number of instances is bounded by the number of divergent views, one
@@ -272,7 +272,7 @@ singleton.
 
 ### 5. Sharding
 
-Planned, not started.
+Planned; only its single-node half, the `Host`, has shipped.
 
 **Mechanism.** Entities are actors identified by an entity ID, spawned on demand on the member
 that owns their shard, and passivated when idle. A message names its entity and rides an
@@ -280,7 +280,7 @@ that owns their shard, and passivated when idle. A message names its entity and 
 `ActorRef<Envelope<M>>` entities are messaged through, and a region resolves the region of another
 member through `receptionist::lookup_at` at that member's address.
 
-The single node half of this mechanism has shipped: a [`Host`](../tellus/src/host.rs) spawns
+The single-node half of this mechanism has shipped: a [`Host`](../tellus/src/host.rs) spawns
 entities identified by a key on the first `HostEnvelope` for that key and can passivate them after
 an idle timeout. It buffers the messages arriving while it passivates an entity, up to a bound. A
 region can build on a host per node and add the shard ownership and the routing between members
