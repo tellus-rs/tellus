@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794913796161,
+  "lastUpdate": 1794913797763,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -31453,6 +31453,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105951,
             "range": "± 4399",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ab02f7be5b1b4ddd912a10207290737db8505a79",
+          "message": "Merge pull request #463 from tellus-rs/style/cluster-peer-frames\n\nstyle(cluster): order, name and shorten the peer and frame code",
+          "timestamp": "2026-11-17T11:55:09+01:00",
+          "tree_id": "7d9cb20f96643759a3d8f51bbee075d2abe5246f",
+          "url": "https://github.com/tellus-rs/tellus/commit/ab02f7be5b1b4ddd912a10207290737db8505a79"
+        },
+        "date": 1794913797486,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4022014,
+            "range": "± 205844",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3961914,
+            "range": "± 174384",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1092687,
+            "range": "± 8539",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 137042,
+            "range": "± 4729",
             "unit": "ns/iter"
           }
         ]
