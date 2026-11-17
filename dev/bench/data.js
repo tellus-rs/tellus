@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794908837689,
+  "lastUpdate": 1794908839619,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -34905,6 +34905,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3817269,
             "range": "± 403492",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e8358a179e33ece4de0674bfbbae51c72b76d1a5",
+          "message": "Merge pull request #461 from tellus-rs/test/drain-ack-past-gossip\n\ntest(cluster): pin a drain ack taken behind a dead incarnation's gossip",
+          "timestamp": "2026-11-17T10:39:46+01:00",
+          "tree_id": "27f57f6625553f3ceffe0e66f88c792c26983b0e",
+          "url": "https://github.com/tellus-rs/tellus/commit/e8358a179e33ece4de0674bfbbae51c72b76d1a5"
+        },
+        "date": 1794908839147,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 21539393,
+            "range": "± 792464",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 21909466,
+            "range": "± 613292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3755224,
+            "range": "± 152707",
             "unit": "ns/iter"
           }
         ]
