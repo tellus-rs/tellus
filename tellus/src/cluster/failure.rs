@@ -86,7 +86,6 @@ impl Deadline {
         if deadline.is_zero() {
             return Err(InvalidDeadline::Zero);
         }
-
         Ok(Self(deadline))
     }
 
@@ -96,18 +95,6 @@ impl Deadline {
     }
 }
 
-/// The tuning given to [Deadline] is invalid.
-#[derive(Debug, Error)]
-pub enum InvalidDeadline {
-    /// The deadline is zero.
-    #[error("deadline is zero")]
-    Zero,
-}
-
-#[cfg(feature = "serde")]
-#[derive(serde::Deserialize)]
-struct UncheckedDeadline(#[serde(with = "humantime_serde")] Duration);
-
 #[cfg(feature = "serde")]
 impl TryFrom<UncheckedDeadline> for Deadline {
     type Error = InvalidDeadline;
@@ -115,6 +102,14 @@ impl TryFrom<UncheckedDeadline> for Deadline {
     fn try_from(unchecked: UncheckedDeadline) -> Result<Self, Self::Error> {
         Self::new(unchecked.0)
     }
+}
+
+/// The tuning given to [Deadline] is invalid.
+#[derive(Debug, Error)]
+pub enum InvalidDeadline {
+    /// The deadline is zero.
+    #[error("deadline is zero")]
+    Zero,
 }
 
 /// A [FailureDetector] accruing suspicion instead of cutting a deadline, after Hayashibara et
@@ -174,6 +169,38 @@ impl PhiAccrualFailureDetector {
 impl Default for PhiAccrualFailureDetector {
     fn default() -> Self {
         Self::new(PhiAccrual::default())
+    }
+}
+
+impl FailureDetector for PhiAccrualFailureDetector {
+    fn record_heartbeat(&mut self, at: Instant) {
+        if let Some(last_heartbeat) = self.last_heartbeat {
+            let interval = millis(at.duration_since(last_heartbeat));
+            self.intervals.push_back(interval);
+            self.sum += interval;
+            self.squared_sum += interval * interval;
+
+            while self.intervals.len() > self.config.max_sample_size {
+                let evicted = self.intervals.pop_front().expect("window is not empty");
+                self.sum -= evicted;
+                self.squared_sum -= evicted * evicted;
+            }
+        }
+
+        self.last_heartbeat = Some(at);
+    }
+
+    fn is_available(&self, at: Instant) -> bool {
+        let Some(last_heartbeat) = self.last_heartbeat else {
+            return true;
+        };
+        let elapsed = at.duration_since(last_heartbeat);
+
+        if self.intervals.len() < 2 {
+            return elapsed <= self.config.warmup_deadline;
+        }
+
+        self.phi(elapsed) < self.config.threshold
     }
 }
 
@@ -334,6 +361,20 @@ impl Default for PhiAccrual {
     }
 }
 
+#[cfg(feature = "serde")]
+impl TryFrom<UncheckedPhiAccrual> for PhiAccrual {
+    type Error = InvalidPhiAccrual;
+
+    fn try_from(unchecked: UncheckedPhiAccrual) -> Result<Self, Self::Error> {
+        Self::default()
+            .with_threshold(unchecked.threshold)?
+            .with_max_sample_size(unchecked.max_sample_size)?
+            .with_min_std_deviation(unchecked.min_std_deviation)?
+            .with_warmup_deadline(unchecked.warmup_deadline)
+            .map(|config| config.with_acceptable_pause(unchecked.acceptable_pause))
+    }
+}
+
 /// The tuning given to [PhiAccrual] is invalid.
 #[derive(Debug, Error)]
 pub enum InvalidPhiAccrual {
@@ -356,83 +397,6 @@ pub enum InvalidPhiAccrual {
     /// The warmup deadline is zero.
     #[error("warmup deadline is zero")]
     WarmupDeadline,
-}
-
-#[cfg(feature = "serde")]
-#[derive(serde::Deserialize)]
-#[serde(default, deny_unknown_fields)]
-struct UncheckedPhiAccrual {
-    threshold: f64,
-
-    max_sample_size: usize,
-
-    #[serde(with = "humantime_serde")]
-    min_std_deviation: Duration,
-
-    #[serde(with = "humantime_serde")]
-    acceptable_pause: Duration,
-
-    #[serde(with = "humantime_serde")]
-    warmup_deadline: Duration,
-}
-
-#[cfg(feature = "serde")]
-impl Default for UncheckedPhiAccrual {
-    fn default() -> Self {
-        Self {
-            threshold: PhiAccrual::DEFAULT_THRESHOLD,
-            max_sample_size: PhiAccrual::DEFAULT_MAX_SAMPLE_SIZE,
-            min_std_deviation: PhiAccrual::DEFAULT_MIN_STD_DEVIATION,
-            acceptable_pause: PhiAccrual::DEFAULT_ACCEPTABLE_PAUSE,
-            warmup_deadline: PhiAccrual::DEFAULT_WARMUP_DEADLINE,
-        }
-    }
-}
-
-#[cfg(feature = "serde")]
-impl TryFrom<UncheckedPhiAccrual> for PhiAccrual {
-    type Error = InvalidPhiAccrual;
-
-    fn try_from(unchecked: UncheckedPhiAccrual) -> Result<Self, Self::Error> {
-        Self::default()
-            .with_threshold(unchecked.threshold)?
-            .with_max_sample_size(unchecked.max_sample_size)?
-            .with_min_std_deviation(unchecked.min_std_deviation)?
-            .with_warmup_deadline(unchecked.warmup_deadline)
-            .map(|config| config.with_acceptable_pause(unchecked.acceptable_pause))
-    }
-}
-
-impl FailureDetector for PhiAccrualFailureDetector {
-    fn record_heartbeat(&mut self, at: Instant) {
-        if let Some(last_heartbeat) = self.last_heartbeat {
-            let interval = millis(at.duration_since(last_heartbeat));
-            self.intervals.push_back(interval);
-            self.sum += interval;
-            self.squared_sum += interval * interval;
-
-            while self.intervals.len() > self.config.max_sample_size {
-                let evicted = self.intervals.pop_front().expect("window is not empty");
-                self.sum -= evicted;
-                self.squared_sum -= evicted * evicted;
-            }
-        }
-
-        self.last_heartbeat = Some(at);
-    }
-
-    fn is_available(&self, at: Instant) -> bool {
-        let Some(last_heartbeat) = self.last_heartbeat else {
-            return true;
-        };
-        let elapsed = at.duration_since(last_heartbeat);
-
-        if self.intervals.len() < 2 {
-            return elapsed <= self.config.warmup_deadline;
-        }
-
-        self.phi(elapsed) < self.config.threshold
-    }
 }
 
 #[cfg(feature = "serde")]
@@ -559,6 +523,41 @@ pub(crate) fn tolerates_silence(factory: &FailureDetectorFactory, silence: Durat
         detector.record_heartbeat(at);
     }
     detector.is_available(timers::deadline(at.into(), silence).into_std())
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+struct UncheckedDeadline(#[serde(with = "humantime_serde")] Duration);
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(default, deny_unknown_fields)]
+struct UncheckedPhiAccrual {
+    threshold: f64,
+
+    max_sample_size: usize,
+
+    #[serde(with = "humantime_serde")]
+    min_std_deviation: Duration,
+
+    #[serde(with = "humantime_serde")]
+    acceptable_pause: Duration,
+
+    #[serde(with = "humantime_serde")]
+    warmup_deadline: Duration,
+}
+
+#[cfg(feature = "serde")]
+impl Default for UncheckedPhiAccrual {
+    fn default() -> Self {
+        Self {
+            threshold: PhiAccrual::DEFAULT_THRESHOLD,
+            max_sample_size: PhiAccrual::DEFAULT_MAX_SAMPLE_SIZE,
+            min_std_deviation: PhiAccrual::DEFAULT_MIN_STD_DEVIATION,
+            acceptable_pause: PhiAccrual::DEFAULT_ACCEPTABLE_PAUSE,
+            warmup_deadline: PhiAccrual::DEFAULT_WARMUP_DEADLINE,
+        }
+    }
 }
 
 struct Shared {

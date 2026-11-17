@@ -81,7 +81,6 @@ impl FixedSeeds {
         if seeds.is_empty() {
             return Err(NoSeeds);
         }
-
         Ok(Self(seeds))
     }
 }
@@ -198,45 +197,6 @@ impl Default for BootstrapConfig {
     }
 }
 
-/// The [BootstrapConfig] given to [bootstrap] is invalid.
-#[derive(Debug, ThisError)]
-pub enum InvalidBootstrapConfig {
-    /// The configured `resolve_interval` is zero.
-    #[error("resolve_interval is zero")]
-    ZeroResolveInterval,
-
-    /// The configured `join_attempt_timeout` is zero.
-    #[error("join_attempt_timeout is zero")]
-    ZeroJoinAttemptTimeout,
-
-    /// The configured `probe_interval` is zero.
-    #[error("probe_interval is zero")]
-    ZeroProbeInterval,
-}
-
-#[cfg(feature = "serde")]
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UncheckedBootstrapConfig {
-    #[serde(default)]
-    min_nodes: Option<NonZeroUsize>,
-
-    #[serde(default, with = "humantime_serde")]
-    settle: Option<Duration>,
-
-    #[serde(default, with = "humantime_serde")]
-    resolve_interval: Option<Duration>,
-
-    #[serde(default, with = "humantime_serde")]
-    join_attempt_timeout: Option<Duration>,
-
-    #[serde(default)]
-    formation_provider: Option<FormationProviderConfig>,
-
-    #[serde(default, deserialize_with = "deserialize_probe_interval")]
-    probe_interval: Option<Option<Duration>>,
-}
-
 #[cfg(feature = "serde")]
 impl TryFrom<UncheckedBootstrapConfig> for BootstrapConfig {
     type Error = InvalidBootstrapConfig;
@@ -263,6 +223,22 @@ impl TryFrom<UncheckedBootstrapConfig> for BootstrapConfig {
 
         Ok(config)
     }
+}
+
+/// The [BootstrapConfig] given to [bootstrap] is invalid.
+#[derive(Debug, ThisError)]
+pub enum InvalidBootstrapConfig {
+    /// The configured `resolve_interval` is zero.
+    #[error("resolve_interval is zero")]
+    ZeroResolveInterval,
+
+    /// The configured `join_attempt_timeout` is zero.
+    #[error("join_attempt_timeout is zero")]
+    ZeroJoinAttemptTimeout,
+
+    /// The configured `probe_interval` is zero.
+    #[error("probe_interval is zero")]
+    ZeroProbeInterval,
 }
 
 /// The cluster cannot be bootstrapped.
@@ -345,6 +321,29 @@ where
     Ok(())
 }
 
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UncheckedBootstrapConfig {
+    #[serde(default)]
+    min_nodes: Option<NonZeroUsize>,
+
+    #[serde(default, with = "humantime_serde")]
+    settle: Option<Duration>,
+
+    #[serde(default, with = "humantime_serde")]
+    resolve_interval: Option<Duration>,
+
+    #[serde(default, with = "humantime_serde")]
+    join_attempt_timeout: Option<Duration>,
+
+    #[serde(default)]
+    formation_provider: Option<FormationProviderConfig>,
+
+    #[serde(default, deserialize_with = "deserialize_probe_interval")]
+    probe_interval: Option<Option<Duration>>,
+}
+
 fn validate(config: &BootstrapConfig) -> Result<(), InvalidBootstrapConfig> {
     if config.resolve_interval.is_zero() {
         return Err(InvalidBootstrapConfig::ZeroResolveInterval);
@@ -358,7 +357,6 @@ fn validate(config: &BootstrapConfig) -> Result<(), InvalidBootstrapConfig> {
     {
         return Err(InvalidBootstrapConfig::ZeroProbeInterval);
     }
-
     Ok(())
 }
 
@@ -378,7 +376,6 @@ where
         if endpoint.downed() {
             return Err(BootstrapError::Downed);
         }
-        // Nothing left to decide, and rejoining churns this node's lane to the seed.
         if endpoint.formed() {
             return Ok(());
         }
@@ -582,7 +579,6 @@ fn decide(
                 return Ok(true);
             }
 
-            // A concurrent join or an explicit form got there first, which is the same outcome.
             Err(FormError::AlreadyFormed) => return Ok(true),
 
             Err(FormError::Downed) => return Err(BootstrapError::Downed),
@@ -701,7 +697,7 @@ mod tests {
         frame::RefusalReason,
         membership::JoinRound,
         node::{ClusterId, NodeId},
-        peer::{ConnectError, JoinRequest},
+        peer::{ConnectError, DialRequest, JoinRequest},
         state::ForeignCluster,
     };
     use std::{
@@ -1351,7 +1347,7 @@ mod tests {
         config: F,
     ) -> (
         &'static EndpointInner,
-        flume::Receiver<crate::cluster::peer::DialRequest>,
+        flume::Receiver<DialRequest>,
         flume::Receiver<JoinRequest>,
     )
     where

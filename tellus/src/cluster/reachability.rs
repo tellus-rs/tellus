@@ -17,6 +17,13 @@ use std::{
     time::{Duration, Instant},
 };
 
+pub(crate) const MIN_FRAME_SIZE: usize =
+    WireReachability::MAX_ENCODED_LEN + WireReachability::ENVELOPE_LEN;
+
+/// Records parked for a membership which has not caught up yet, bounding what an ill-behaved peer
+/// can make this node hold.
+const MAX_PENDING: usize = 4_096;
+
 /// One observer's latest statement about one direct peer. Versions are owned by the observer;
 /// relays only merge and forward them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -33,66 +40,10 @@ impl WireReachability {
     const ENVELOPE_LEN: usize = 16;
 }
 
-pub(crate) const MIN_FRAME_SIZE: usize =
-    WireReachability::MAX_ENCODED_LEN + WireReachability::ENVELOPE_LEN;
-
-/// Records parked for a membership which has not caught up yet, bounding what an ill-behaved peer
-/// can make this node hold.
-const MAX_PENDING: usize = 4_096;
-
 pub(crate) struct Reachability {
     node: NodeId,
     next_version: AtomicU64,
     state: Mutex<State>,
-}
-
-#[derive(Default)]
-struct State {
-    observations: HashMap<(NodeId, NodeId), WireReachability>,
-    pending: HashMap<(NodeId, NodeId), Parked>,
-    forward: HashMap<(NodeId, NodeId), WireReachability>,
-    unreachable_since: HashMap<NodeId, Instant>,
-}
-
-impl State {
-    /// The version alone decides admission, so a relay never reorders an observer.
-    fn admit(&mut self, record: WireReachability) -> bool {
-        let key = (record.observer, record.subject);
-        if self
-            .observations
-            .get(&key)
-            .is_some_and(|current| current.version >= record.version)
-        {
-            return false;
-        }
-
-        self.observations.insert(key, record);
-        self.forward.insert(key, record);
-        true
-    }
-
-    /// Capped, since a peer can name any node: past the cap a new edge is dropped rather than
-    /// evicting one which is only waiting for gossip.
-    fn park(&mut self, record: WireReachability) {
-        let key = (record.observer, record.subject);
-        let parked = Parked {
-            record,
-            since: Instant::now(),
-        };
-        match self.pending.get(&key).map(|current| current.record.version) {
-            Some(version) if version < record.version => {
-                self.pending.insert(key, parked);
-            }
-
-            Some(_) => {}
-
-            None if self.pending.len() < MAX_PENDING => {
-                self.pending.insert(key, parked);
-            }
-
-            None => {}
-        }
-    }
 }
 
 impl Reachability {
@@ -298,6 +249,74 @@ impl Reachability {
     }
 }
 
+/// The records in order, split into chunks of at most as many as one `Reachability` frame of
+/// `max_frame_size` holds, at least one record each; no chunk for no records.
+pub(crate) fn snapshot_chunks(
+    records: Vec<WireReachability>,
+    max_frame_size: usize,
+) -> Vec<Vec<WireReachability>> {
+    if records.is_empty() {
+        return Vec::new();
+    }
+    let per_chunk = max_frame_size
+        .saturating_sub(WireReachability::ENVELOPE_LEN)
+        .div_euclid(WireReachability::MAX_ENCODED_LEN)
+        .max(1);
+    records
+        .chunks(per_chunk)
+        .map(|chunk| chunk.to_vec())
+        .collect()
+}
+
+#[derive(Default)]
+struct State {
+    observations: HashMap<(NodeId, NodeId), WireReachability>,
+    pending: HashMap<(NodeId, NodeId), Parked>,
+    forward: HashMap<(NodeId, NodeId), WireReachability>,
+    unreachable_since: HashMap<NodeId, Instant>,
+}
+
+impl State {
+    /// The version alone decides admission, so a relay never reorders an observer.
+    fn admit(&mut self, record: WireReachability) -> bool {
+        let key = (record.observer, record.subject);
+        if self
+            .observations
+            .get(&key)
+            .is_some_and(|current| current.version >= record.version)
+        {
+            return false;
+        }
+
+        self.observations.insert(key, record);
+        self.forward.insert(key, record);
+        true
+    }
+
+    /// Capped, since a peer can name any node: past the cap a new edge is dropped rather than
+    /// evicting one which is only waiting for gossip.
+    fn park(&mut self, record: WireReachability) {
+        let key = (record.observer, record.subject);
+        let parked = Parked {
+            record,
+            since: Instant::now(),
+        };
+        match self.pending.get(&key).map(|current| current.record.version) {
+            Some(version) if version < record.version => {
+                self.pending.insert(key, parked);
+            }
+
+            Some(_) => {}
+
+            None if self.pending.len() < MAX_PENDING => {
+                self.pending.insert(key, parked);
+            }
+
+            None => {}
+        }
+    }
+}
+
 struct Parked {
     record: WireReachability,
     since: Instant,
@@ -347,34 +366,17 @@ fn edge_is_down(
             .is_some_and(|record| !record.reachable)
 }
 
-/// The records in order, split into chunks of at most as many as one `Reachability` frame of
-/// `max_frame_size` holds, at least one record each; no chunk for no records.
-pub(crate) fn snapshot_chunks(
-    records: Vec<WireReachability>,
-    max_frame_size: usize,
-) -> Vec<Vec<WireReachability>> {
-    if records.is_empty() {
-        return Vec::new();
-    }
-    let per_chunk = max_frame_size
-        .saturating_sub(WireReachability::ENVELOPE_LEN)
-        .div_euclid(WireReachability::MAX_ENCODED_LEN)
-        .max(1);
-    records
-        .chunks(per_chunk)
-        .map(|chunk| chunk.to_vec())
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{MAX_PENDING, MIN_FRAME_SIZE, Reachability, WireReachability, snapshot_chunks};
     use crate::{
         cluster::{
             downing::{Disconnected, Downing, DowningProvider, KeepMajority},
             frame::Frame,
             membership::{Member, MemberState},
             node::NodeId,
+            reachability::{
+                MAX_PENDING, MIN_FRAME_SIZE, Reachability, WireReachability, snapshot_chunks,
+            },
             state::BrokenLink,
         },
         sync::lock,

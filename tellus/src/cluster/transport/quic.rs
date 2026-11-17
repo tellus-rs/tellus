@@ -85,14 +85,17 @@ impl QuicTransport {
     /// it exceeds what QUIC can encode, 2^62 milliseconds, if `server_name` is neither a valid DNS
     /// name nor an IP address, if the UDP socket cannot be bound to `bind_addr`, or if no Tokio
     /// runtime is running.
-    pub fn new(
+    pub fn new<N>(
         bind_addr: SocketAddr,
         mut server_config: ServerConfig,
         mut client_config: ClientConfig,
-        server_name: impl Into<String>,
+        server_name: N,
         mut transport_config: TransportConfig,
         idle_timeout: Duration,
-    ) -> Result<Self, QuicTransportError> {
+    ) -> Result<Self, QuicTransportError>
+    where
+        N: Into<String>,
+    {
         // In whole milliseconds, as quinn keeps it!
         if idle_timeout.as_millis() <= KEEP_ALIVE_INTERVAL.as_millis() {
             return Err(QuicTransportError::IdleTimeoutTooShort {
@@ -194,13 +197,16 @@ impl QuicTransport {
     /// provider offers no TLS 1.3 cipher suite. Fails as well if `cert_chain` and `key` do not make
     /// a valid TLS configuration, if that configuration cannot back QUIC, or if
     /// [QuicTransport::new] fails.
-    pub fn mutual_tls(
+    pub fn mutual_tls<N>(
         bind_addr: SocketAddr,
         cert_chain: Vec<CertificateDer<'static>>,
         key: PrivateKeyDer<'static>,
         roots: RootCertStore,
-        server_name: impl Into<String>,
-    ) -> Result<Self, QuicTransportError> {
+        server_name: N,
+    ) -> Result<Self, QuicTransportError>
+    where
+        N: Into<String>,
+    {
         let provider = crypto_provider();
         let roots = Arc::new(roots);
         let verifier =
@@ -699,7 +705,6 @@ fn certs(path: &Path) -> Result<Vec<CertificateDer<'static>>, QuicTransportError
             source: pem::Error::NoItemsFound,
         });
     }
-
     Ok(certs)
 }
 
@@ -762,7 +767,7 @@ mod tests {
     use rustls::{
         RootCertStore,
         crypto::CryptoProvider,
-        pki_types::{PrivateKeyDer, pem::PemObject},
+        pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject},
     };
     use std::{
         fs,
@@ -771,7 +776,11 @@ mod tests {
         sync::Arc,
         time::Duration,
     };
-    use tokio::{net::UdpSocket, sync::oneshot, time::timeout};
+    use tokio::{
+        net::UdpSocket,
+        sync::oneshot,
+        time::{sleep, timeout},
+    };
 
     const MAX_FRAME_SIZE: usize = 64;
     const TIMEOUT: Duration = Duration::from_secs(10);
@@ -971,7 +980,7 @@ mod tests {
                 .expect("the connection is alive");
             accepted_tx.send(()).expect("the dialer waits");
             closed_rx.await.expect("the dialer closed");
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            sleep(Duration::from_millis(300)).await;
 
             let control_after = control.recv().await.map(|frame| frame.map(<[u8]>::to_vec));
             let mut data_after = Vec::new();
@@ -1003,7 +1012,7 @@ mod tests {
         accepted_rx.await.expect("the acceptor has the data stream");
         data.send(b"second").await.expect("sends");
         data.send(b"third").await.expect("sends");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        sleep(Duration::from_millis(300)).await;
         drop((control_tx, control_rx, data, connection));
         closed_tx.send(()).expect("the acceptor waits");
 
@@ -1293,10 +1302,10 @@ mod tests {
         let ca_cert = ca_params.self_signed(&ca_key).expect("ca certificate");
         let ca = rcgen::Issuer::from_params(&ca_params, &ca_key);
 
-        let mut roots = rustls::RootCertStore::empty();
+        let mut roots = RootCertStore::empty();
         roots.add(ca_cert.der().clone()).expect("ca root");
 
-        let node = |roots: rustls::RootCertStore| {
+        let node = |roots: RootCertStore| {
             let key = rcgen::KeyPair::generate().expect("node key");
             let params =
                 rcgen::CertificateParams::new(vec!["tellus".to_string()]).expect("node parameters");
@@ -1305,7 +1314,7 @@ mod tests {
             QuicTransport::mutual_tls(
                 loopback,
                 vec![cert.der().clone()],
-                rustls::pki_types::PrivateKeyDer::Pkcs8(key.serialize_der().into()),
+                PrivateKeyDer::Pkcs8(key.serialize_der().into()),
                 roots,
                 "tellus",
             )
@@ -1637,7 +1646,7 @@ mod tests {
         assert!(identity.dns_names.is_empty());
         assert!(identity.ip_addresses.is_empty());
 
-        let garbage = rustls::pki_types::CertificateDer::from(vec![0xff; 16]);
+        let garbage = CertificateDer::from(vec![0xff; 16]);
         let identity = parse_identity(&[garbage]);
         assert!(identity.dns_names.is_empty());
         assert!(identity.ip_addresses.is_empty());
@@ -1664,7 +1673,7 @@ mod tests {
                 .expect("accepts a data stream")
                 .expect("the connection is alive");
             closed_rx.await.expect("the dialer closed");
-            tokio::time::sleep(Duration::from_millis(300)).await;
+            sleep(Duration::from_millis(300)).await;
             data.recv().await.map(|frame| frame.map(<[u8]>::to_vec))
         });
 
@@ -1682,7 +1691,7 @@ mod tests {
             .write_all(bytes)
             .await
             .expect("writes part of a frame");
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        sleep(Duration::from_millis(300)).await;
         drop((control_tx, control_rx, data, connection));
         closed_tx.send(()).expect("the acceptor waits");
 
