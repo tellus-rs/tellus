@@ -79,18 +79,6 @@ impl From<PersistenceId> for String {
     }
 }
 
-/// Which segment of a [PersistenceId] a validation failure refers to.
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
-pub enum PersistenceIdSegment {
-    /// The entity type, e.g. "order".
-    #[display("entity type")]
-    EntityType,
-
-    /// The entity ID, e.g. "42".
-    #[display("entity ID")]
-    EntityId,
-}
-
 /// Errors possibly returned by [PersistenceId::new] and its [FromStr] implementation.
 #[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
 pub enum InvalidPersistenceId {
@@ -125,6 +113,18 @@ pub enum InvalidPersistenceId {
     /// The parsed string lacks the `entity_type/entity_id` separator.
     #[error("persistence ID without a slash separator")]
     MissingSeparator,
+}
+
+/// Which segment of a [PersistenceId] a validation failure refers to.
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq)]
+pub enum PersistenceIdSegment {
+    /// The entity type, e.g. "order".
+    #[display("entity type")]
+    EntityType,
+
+    /// The entity ID, e.g. "42".
+    #[display("entity ID")]
+    EntityId,
 }
 
 fn valid_segment(value: &str, segment: PersistenceIdSegment) -> Result<&str, InvalidPersistenceId> {

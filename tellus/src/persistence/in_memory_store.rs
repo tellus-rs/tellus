@@ -71,7 +71,6 @@ impl EventStore for InMemoryStore {
         for (seq_no, event) in seq_nos.zip(events) {
             stream.push(StoredEvent { seq_no, event });
         }
-
         Ok(())
     }
 
@@ -85,8 +84,7 @@ impl EventStore for InMemoryStore {
         let events = streams
             .get(id)
             .map(|stream| {
-                // Gapless from 0 by construction (append rejects any other next sequence
-                // number), so the index equals the sequence number.
+                // The index is the sequence number: append keeps every stream gapless from 0!
                 let start = (from_seq_no.as_u64() as usize).min(stream.len());
                 let end = start.saturating_add(limit.get()).min(stream.len());
                 stream[start..end].to_vec()
