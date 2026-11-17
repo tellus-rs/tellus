@@ -1,5 +1,8 @@
 //! How-to example for configuring an actor from a file: an `ActorConfig` deserialized from TOML
 //! with the `config` crate, and the error which contradicting backoff bounds produce.
+//!
+//! Run it with `cargo run --quiet -p tellus --features serde --example
+//! how_to_configure_supervision`.
 
 use anyhow::Context;
 use config::{Config, File, FileFormat};

@@ -10,11 +10,11 @@ layer below ends with its guarantees written into one of them.
 ## Where tellus stands
 
 The core is complete for its purpose: actors as state machines with one Tokio task each, bounded
-mailboxes, death watch with the ordering guarantee, supervision with restart and backoff. Timers are
-opt-in per actor type, and a [`Host`](../tellus/src/host.rs) spawns entities identified by a key on
-demand and can passivate them after an idle timeout. Two extensions have landed behind features.
-`persistence` adds event-sourced actors whose replay equals live execution, with effects gated on
-durability, fencing via conditional append and schema evolution via manifests;
+mailboxes, death watch with the ordering guarantee, supervision with restart and backoff. Timers and
+stashing are opt-in per actor type, and a [`Host`](../tellus/src/host.rs) spawns entities identified
+by a key on demand and can passivate them after an idle timeout. Two extensions have landed behind
+features. `persistence` adds event-sourced actors whose replay equals live execution, with effects
+gated on durability, fencing via conditional append and schema evolution via manifests;
 [`tellus-persistence-postgres`](../tellus-persistence-postgres) is the first store. `cluster` makes
 `ActorRef` serializable, so actors on different nodes tell, ask and watch each other through the
 same API. It adds membership, gossip, failure detection, pluggable downing and a drained,
@@ -26,19 +26,18 @@ the [DNS](../tellus-bootstrap-dns) and [Kubernetes](../tellus-bootstrap-k8s) bac
 has an ID which every handshake carries, so two clusters refuse each other rather than merge. The
 handshake negotiates the protocol version, and mutual TLS binds each node to the address it
 advertises. [`tellus-cluster-demo`](../tellus-cluster-demo) holds five nodes of that to convergence
-and cross-node messaging under continuous crashes, departures and partitions.
+and cross-node messaging under continuous crashes, departures, partitions and rolling upgrades.
 
 The known gaps of the remoting layer are listed under the limitations in
 [cluster.md](cluster.md#limitations). Two building blocks were missing when this plan was written,
 and the features people ask for next (singleton, sharding) need at least one of them. Both have
 shipped:
 
-- **Cluster state was a snapshot.** `cluster::members()` answered what the member list was at the
-  moment of the call. Reachability, an observation derived from relayed edges rather than member
-  state (see [cluster.md](cluster.md#failure-detection-and-node-death)), was not exposed at all, so
-  nothing outside the module could react to a change. Layer 1 below closed this gap:
-  `cluster::cluster_state()` publishes a versioned value on every change (see
-  [cluster.md](cluster.md#cluster-state)).
+- **Cluster state** is now published on every change. `cluster::members()` answers what the member
+  list is at the moment of the call. Reachability, an observation derived from relayed edges rather
+  than member state (see [cluster.md](cluster.md#failure-detection-and-node-death)), is exposed too,
+  so code outside the module reacts to a change. Layer 1 below added it: `cluster::cluster_state()`
+  publishes a versioned value on every change (see [cluster.md](cluster.md#cluster-state)).
 - **Discovery** is now the receptionist. `receptionist::lookup_at` resolves a key at one address and
   `receptionist::lookup` across every Up member, both from the replicated registrations, see
   [cluster.md](cluster.md#discovery): more than one actor may hold a key, and node identity stays
@@ -104,7 +103,7 @@ the change and publishes the resulting value under the same lock. The
 `down` call, node death, a leave and the retention sweep are the others. That matters for the last
 value most: a self-down and a leave stop the loop for good, so a state published only from the loop
 would never show the transition which ended it. There are no deltas: a subscriber computes
-transitions by diffing two consecutive values, which is what a watch channel is for and what removes
+transitions by diffing two consecutive values, which is what a watch channel is for. That removes
 the snapshot-versus-delta race a transition stream with catch-up snapshots would have. Membership
 and reachability are two fields of one value rather than two streams because every consumer below
 needs them together, and because the reachability set is derived from the member list of the same
@@ -142,7 +141,7 @@ answers every actor registered under the key on every Up member. `receptionist::
 returns a `Subscription` whose `changed` resolves when that set changes and whose `current` reads
 it. The set is updated as registrations, terminations and cluster state changes come in. The wire
 entry is the [`WireKey`](../tellus/src/cluster/discovery.rs) of `register`, kind, name and manifest,
-next to the actor ids, so a type mismatch is refused by name and type alike.
+next to the actor IDs, so a type mismatch is refused by name and type alike.
 
 Replication is per origin, where an origin is a member incarnation, never an address. Each node
 replicates the full set of its own registrations, stamped with a per-origin version, to every Up
@@ -216,6 +215,8 @@ it comes, comes as a second delivery mode rather than a replacement.
 
 ### 4. Cluster singleton
 
+Planned, not started.
+
 **Mechanism.** `singleton::spawn(name, factory)` is called on every node. The receptionist is the
 election medium: an instance is a registration under the singleton's key, and a node claims
 ownership by spawning the instance and registering it. A node claims under a cluster state version,
@@ -230,12 +231,12 @@ hand-off.
 
 Ownership is non-preemptive: a visible registration is respected by every node, whatever its
 address, so a join never moves the singleton. Nodes claim concurrently only when their views diverge
-so that none of them saw another's registration in time, one claim per divergent view, and then the
-deterministic tiebreak, lowest address, decides which instance stays and which ones are stopped.
-Waiting for `settled(version)` before claiming is what keeps the join out of that race: a joining
-node claims only after it has seen the registrations of every member Up in its version. The rule
-does not compare incarnations across hosts. Incarnations order restarts at one address, subject to
-that host's clock (see [cluster.md](cluster.md#membership)), and nothing more.
+so that none of them saw another's registration in time, one claim per divergent view. The
+deterministic tiebreak, lowest address, then decides which instance stays and which ones are
+stopped. Waiting for `settled(version)` before claiming is what keeps the join out of that race: a
+joining node claims only after it has seen the registrations of every member Up in its version. The
+rule does not compare incarnations across hosts. Incarnations order restarts at one address, subject
+to that host's clock (see [cluster.md](cluster.md#membership)), and nothing more.
 
 On a hand-off the successor claims as soon as the owner's registration is gone, which happens either
 through the owner's leave or through its downing. It does not wait for the old instance to stop,
@@ -246,7 +247,7 @@ departing owner stops its instance before it announces the departure. The proxie
 terminated signal, unless the owner's connection does not drain within their node's `leave_timeout`;
 then they get the synthesized one.
 
-**Guarantee.** Two-tier like remote watch, and eventual: once membership and the receptionist have
+**Guarantee.** Two tier like remote watch, and eventual: once membership and the receptionist have
 converged and the tiebreak's stops have completed, exactly one instance exists. Convergence alone is
 not that point, since replicas can agree on several concurrent claims while the losing instances are
 still stopping. Until then the number of instances is bounded by the number of divergent views, one
@@ -271,7 +272,9 @@ singleton.
 
 ### 5. Sharding
 
-**Mechanism.** Entities are actors identified by an entity id, spawned on demand on the member
+Planned, not started.
+
+**Mechanism.** Entities are actors identified by an entity ID, spawned on demand on the member
 that owns their shard, and passivated when idle. A message names its entity and rides an
 `Envelope<M>`; `sharding::region::<E>(config)` on every node returns the local
 `ActorRef<Envelope<M>>` entities are messaged through, and a region resolves the region of another
@@ -283,7 +286,7 @@ an idle timeout. It buffers the messages arriving while it passivates an entity,
 region can build on a host per node and add the shard ownership and the routing between members
 below.
 
-Ownership is computed, not coordinated: entity id to shard by hashing modulo a fixed shard count,
+Ownership is computed, not coordinated: entity ID to shard by hashing modulo a fixed shard count,
 shard to owner by rendezvous hashing over the Up member set of the current cluster state. So every
 member derives the same owner from the same member list, and a membership change moves few shards. A
 member which joins takes only the shards it newly wins, a member which leaves gives up only the
@@ -291,7 +294,7 @@ shards it owned, and every other shard stays where it is. This deliberately avoi
 singleton holding persisted shard allocations: there is no state to recover, no coordinator hand-off
 to get wrong and nothing to add to the member list. Identical owners on every node need identical
 hashing: a fixed algorithm with fixed seeds over canonical inputs. The algorithm is named next to
-the wire format version, so a change is a wire change. The inputs are the entity id's UTF-8 bytes
+the wire format version, so a change is a wire change. The inputs are the entity ID's UTF-8 bytes
 for the shard, and for the owner the shard number followed by the member's advertised address in its
 canonical textual form. Rust's default `Hasher` is not that, being unspecified and randomly seeded
 per process. During the convergence window two members may compute different owners; a region
@@ -323,15 +326,14 @@ path? Remembering entities across a move so they are respawned eagerly is out of
 
 ## A parallel track: the persistence read side
 
-Event sourcing without a way to read events other than by replaying one actor stays half a
-pattern. A read side adds an event stream per tag or per persistence id, with offsets so a
-projection can resume, and extends [`EventStore`](../tellus/src/persistence/store.rs)
-accordingly, with the PostgreSQL store first. This does not depend on the cluster work and can
-proceed alongside it. The ownership lease the singleton and sharding need is the other planned
-extension of the store contract, and both are best designed at the same time, so the contract
-test suite in [`persistence_tests.rs`](../tellus/src/persistence_tests.rs) grows once. Together
-with sharding the read side completes the picture of sharded event-sourced entities feeding
-projections.
+Without a way to read events other than by replaying one actor, event sourcing has no read side. A
+read side adds an event stream per tag or per persistence ID, with offsets so a projection can
+resume, and extends [`EventStore`](../tellus/src/persistence/store.rs) accordingly, with the
+PostgreSQL store first. This does not depend on the cluster work and can proceed alongside it. The
+ownership lease the singleton and sharding need is the other planned extension of the store
+contract, and both are best designed at the same time, so the contract test suite in
+[`persistence_tests.rs`](../tellus/src/persistence_tests.rs) grows once. Together with sharding, the
+read side lets sharded event-sourced entities feed projections.
 
 ## Not planned
 

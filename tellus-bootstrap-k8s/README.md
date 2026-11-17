@@ -8,12 +8,12 @@ sees a pod as soon as it has an address, so a readiness probe may gate on cluste
 
 A pod contributes exactly one address, the primary one Kubernetes reports as `status.podIP` and
 repeats as the first entry of `status.podIPs`. Bootstrap counts addresses, so a dual stack pod
-counted twice would inflate both `min_nodes` and the majority the formation provider counts, and
-only the primary address is the one a node advertises and is hence admitted at. Terminating and
-finished pods are left out, since they would inflate that count as well, while a pod which is merely
-still starting stays in: an unreachable seed is retried, a missing one shrinks the universe. A pod
-whose address does not parse, or whose named container port is missing or out of range, is skipped
-and logged at warn level; a pod without an address yet is skipped silently.
+counted twice would inflate both `min_nodes` and the majority the formation provider counts. And
+only the primary address is the one a node advertises, hence the one it is admitted at. Terminating
+and finished pods are left out, since they would inflate that count as well, while a pod which is
+merely still starting stays in: an unreachable seed is retried, a missing one shrinks the universe.
+A pod whose address does not parse, or whose named container port is missing or out of range, is
+skipped and logged at warn level; a pod without an address yet is skipped silently.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
 lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
@@ -157,7 +157,9 @@ address with an IPv6 host parses. The variable name is the one
 another loader wants its own.
 
 Size `bootstrap.min_nodes` to the replica count for a fixed size cluster and lower for an elastic
-one. Whether the pods come from a StatefulSet or a Deployment makes no difference to discovery.
+one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what
+each choice costs. Whether the pods come from a StatefulSet or a Deployment makes no difference to
+discovery.
 
 ## A working deployment
 

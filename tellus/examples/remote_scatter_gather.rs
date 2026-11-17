@@ -23,8 +23,8 @@
 //! synthesized for a dead node cannot prove that a partial result has arrived.
 //!
 //! The results are printed to stdout and tellus logs to stderr; the log level is configured via
-//! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet --features cluster-dev --example
-//! remote_scatter_gather`.
+//! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev
+//! --example remote_scatter_gather`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

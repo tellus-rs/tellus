@@ -1,16 +1,16 @@
-//! DNS seed discovery for tellus cluster bootstrap: [DnsSeeds] implements
-//! [SeedDiscovery], resolving seed addresses from SRV records,
-//! which carry address and port (e.g. a Kubernetes headless service), or from A/AAAA records
-//! paired with a configured port. Pass it to [bootstrap](tellus::cluster::bootstrap), which
-//! resolves it before every join round, `resolve_interval` apart, and joins through the resolved
-//! addresses on every resolution, retrying resolve failures, e.g. records still appearing while an
-//! orchestrator starts the other nodes. Only forming a new cluster waits for the view to settle.
-//! SRV targets resolve concurrently; a failing target is logged at warn level and skipped while
-//! any other resolves, and a set resolving no address at all remains an error so bootstrap does
-//! not settle on it. Nothing here distinguishes a stale target from a transient failure, because
-//! the resolver does not either, so both are skipped alike. A partial view does settle, so a
-//! target failing throughout the settle window shrinks the universe a
-//! [FormationProvider](tellus::cluster::formation::FormationProvider) counts its majority against.
+//! DNS seed discovery for tellus cluster bootstrap: [DnsSeeds] implements [SeedDiscovery],
+//! resolving seed addresses from SRV records, which carry address and port (e.g. a Kubernetes
+//! headless service), or from A/AAAA records paired with a configured port. Pass it to
+//! [bootstrap](tellus::cluster::bootstrap), which resolves it before every join round,
+//! `resolve_interval` apart, and joins through the resolved addresses on every resolution, retrying
+//! resolve failures, e.g. records still appearing while an orchestrator starts the other nodes.
+//! Only forming a new cluster waits for the view to settle. SRV targets resolve concurrently; a
+//! failing target is logged at warn level and skipped while any other resolves, and a set resolving
+//! no address at all remains an error so bootstrap does not settle on it. Nothing here
+//! distinguishes a stale target from a transient failure, because the resolver does not either, so
+//! both are skipped alike. A partial view does settle, so a target failing throughout the settle
+//! window shrinks the universe a [FormationProvider](tellus::cluster::formation::FormationProvider)
+//! counts its majority against.
 //!
 //! Whatever is queried must resolve to one address per node, since bootstrap counts addresses and
 //! a peer is only admitted at the address it advertises; on Kubernetes that makes the headless

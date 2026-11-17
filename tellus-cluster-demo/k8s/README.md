@@ -15,7 +15,8 @@ three things address nodes individually:
 
 - the verifier is configured with one URL per node and checks every node's view against every
   other's, reporting by name,
-- the chaos agent picks its victim by number, so the numbering must mean the same thing all run,
+- the chaos agent picks its victim by number, so the numbering must mean the same thing for the
+  whole run,
 - `http://localhost:8091` through `8095` are how you watch a partition from both sides, which is
   the only way to see the two halves disagree and then agree again.
 
@@ -50,18 +51,18 @@ nothing. Each denies its side ingress from the other:
 
 Blocking ingress on both sides cuts both directions, which is what the Compose stack's two pumba
 rules do. Unlike those rules, the label survives a container restart, so a node which downs itself
-mid-partition stays cut off; that retires a Compose caveat rather than inheriting it. A pod which is
-deleted and recreated does come back unlabeled, which is fine, because that is the crash fault and
-not a partition.
+mid-partition stays cut off, which the Compose stack cannot do. A pod which is deleted and recreated
+does come back unlabeled, which is fine, because that is the crash fault and not a partition.
 
-**The labels alone cut nothing.** A NetworkPolicy is evaluated when a connection is new. kindnetd
-queues the first packet of a flow to its policy engine, and once the flow is admitted it carries a
-conntrack label which the `established,related` rule accepts directly from then on. The cluster's
-QUIC connections are long-lived and its one second heartbeats keep the conntrack entries fresh
-indefinitely, so a policy applied to a running cluster never sees a packet it could drop. Labeling
-five pods and waiting changes nothing at all; every node keeps seeing every other as Up.
+**Why the conntrack flush.** The labels alone cut no connection. A NetworkPolicy is evaluated when a
+connection is new. kindnetd queues the first packet of a flow to its policy engine, and once the
+flow is admitted it carries a conntrack label which the `established,related` rule accepts directly
+from then on. The cluster's QUIC connections are long-lived and its one second heartbeats keep the
+conntrack entries fresh indefinitely, so a policy applied to a running cluster never sees a packet
+it could drop. Labeling five pods and waiting changes nothing at all; every node keeps seeing every
+other as Up.
 
-[`flush.yaml`](flush.yaml) is what closes that gap: a DaemonSet holding nothing but a sleeping
+[`flush.yaml`](flush.yaml) makes the policy apply: a DaemonSet holding nothing but a sleeping
 container, which the agent execs into after labeling to delete every conntrack entry of every node.
 The flows are forgotten, their next packets count as new, and the policy finally applies. With the
 flush the minority downs itself and the majority keeps quorum; without it the partition is a no-op
@@ -104,8 +105,7 @@ reads, and expresses each fault in kubectl:
 | partition | `kubectl label --overwrite pod ... side=a` / `side=b`, then `kubectl label pod -l app=tellus side-` |
 | roll | `kubectl set env statefulset/tellus CFG__ENDPOINT__APP_VERSION=2.0.0`, then `kubectl patch statefulset tellus` lowering `updateStrategy.rollingUpdate.partition` from 4 to 0, one ordinal per quiet window |
 
-The two ways out of a cluster are the same command with and without its grace period, which reads
-better than the Compose pair.
+The two ways out of a cluster are the same command with and without its grace period.
 
 **Why partition stepping.** A template change rolls a StatefulSet from the highest ordinal down,
 replacing the next pod as soon as the previous one is Ready. The readiness probe answers while a
@@ -118,9 +118,10 @@ them mixed. The order, highest ordinal first, is the controller's. Between rolls
 stays at zero, so a pod the crash fault deletes is recreated at the version the cluster runs, and
 a `kubectl set env` of the other version with the partition reset to five is what the next roll
 starts with. The wait is on the pod rather than on `kubectl rollout status`, which counts updated
-replicas against the partition: an agent restarted in the middle of an upgrade reads the template's
-version as the running one and rolls back, and the pods the upgrade had not reached already carry
-the rollback's revision, so that count passes before the pod below the partition is replaced.
+replicas against the partition. That count can pass too early. An agent restarted in the middle of
+an upgrade reads the template's version as the running one and rolls back. The pods the upgrade
+had not reached then already carry the rollback's revision, so the count passes before the pod
+below the partition is replaced.
 
 **Why force deletion.** It is the only crash reachable from inside the cluster. A process cannot
 SIGKILL PID 1 of its own PID namespace, so `kubectl exec -- kill -KILL 1` returns success and does

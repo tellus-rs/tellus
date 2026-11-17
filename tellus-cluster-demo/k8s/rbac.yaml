@@ -57,8 +57,7 @@ rules:
     resources: [ pods/exec ]
     verbs: [ create ]
 
-  # `kubectl set env` and the partition patch the StatefulSet, `kubectl rollout status` watches
-  # it.
+  # `kubectl set env` and the partition patch the StatefulSet, `kubectl get` reads its status.
   - apiGroups: [ apps ]
     resources: [ statefulsets ]
     verbs: [ get, list, watch, patch ]

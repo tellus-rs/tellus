@@ -1,5 +1,8 @@
 //! Step 1 of the event-sourced actors tutorial: a device which persists every reading as an event,
 //! so a new actor system over the same store recovers the last reading by replay.
+//!
+//! Run it with `cargo run --quiet -p tellus --features persistence-in-memory --example
+//! event_sourced_01_device`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

@@ -82,8 +82,8 @@ kill_node() {
     revive "$1"
 }
 
-# Terminates a node, so it announces its departure and the cluster downs it within a gossip
-# round instead of detecting its silence.
+# Terminates a node, so it announces its departure and the cluster lists it as Left within a
+# gossip round instead of detecting its silence.
 leave_node() {
     state "leave $(container "$1")"
     docker kill --signal SIGTERM "$(container "$1")" || echo "docker kill failed"

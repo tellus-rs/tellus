@@ -1,5 +1,8 @@
 //! Step 3 of the event-sourced actors tutorial: the device offers a snapshot after every third
 //! reading, so recovery starts from the latest snapshot and only replays the events after it.
+//!
+//! Run it with `cargo run --quiet -p tellus --features persistence-in-memory --example
+//! event_sourced_03_snapshots`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

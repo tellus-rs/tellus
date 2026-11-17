@@ -2,6 +2,9 @@
 //! Fahrenheit, release 2 stores them in Celsius. Release 2 still reads the events of release 1,
 //! because `Versioned::decode` upcasts schema version 1 to the current shape. Both releases store
 //! their events with the `Json` codec, so the stored payloads are readable.
+//!
+//! Run it with `cargo run --quiet -p tellus --features persistence-in-memory --example
+//! how_to_evolve_events`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

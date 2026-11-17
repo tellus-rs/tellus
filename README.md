@@ -62,9 +62,10 @@ cargo add tellus
   [its README](tellus-cluster-inspect/README.md).
 - [`tellus-cluster-demo`](tellus-cluster-demo): a five node cluster running forever under continuous
   chaos, managed by Docker Compose or in kind. Its nodes find each other through DNS or Kubernetes
-  seed discovery, and every cycle brings one fault: a crash, a departure or a network partition. A
-  verifier checks convergence, cross-node messaging, receptionist settlement and the pub-sub
-  publisher set in every quiet window. See [its README](tellus-cluster-demo/README.md).
+  seed discovery, and every cycle brings one fault: a crash, a departure, a network partition or a
+  rolling upgrade to another application version. A verifier checks convergence, cross-node
+  messaging, receptionist settlement and the pub-sub publisher set in every quiet window. See
+  [its README](tellus-cluster-demo/README.md).
 - [`tellus-cluster-demo-tui`](tellus-cluster-demo-tui): a terminal observer for the running demo,
   fed by the nodes' and the verifier's event streams: the membership matrix as each node sees it,
   a merged timeline of transitions and chaos, and the verifier's verdicts. See
@@ -79,9 +80,9 @@ cargo add tellus
 tellus is under active development and its API is still settling.
 
 Two extensions have landed, each behind a feature: `persistence` adds event-sourced actors, and
-`cluster` makes actor refs serializable, so actors on different nodes message and watch each other
-through the same API. Both features are off by default, so tellus stays purely local and free of
-their dependencies. Remoting is clustered: nodes join through seed addresses, the member list is
+`cluster` makes actor references serializable, so actors on different nodes message and watch each
+other through the same API. Both features are off by default, so tellus stays purely local and free
+of their dependencies. Remoting is clustered: nodes join through seed addresses, the member list is
 gossiped, and a pluggable failure detector plus downing provider down vanished members. The watchers
 of a downed member's actors get synthesized terminated signals. A node shutting down cleanly
 announces its own departure. Every node publishes its view of the cluster as a versioned value. A
@@ -94,6 +95,9 @@ laid out in [docs/roadmap.md](docs/roadmap.md).
 
 ## Documentation
 
+The website, [tellus.rs](https://tellus.rs), has the tutorials and how-to guides. Their code is in
+[tellus/examples](tellus/examples).
+
 How tellus works internally, top-down with links into the implementation:
 
 - [docs/actors.md](docs/actors.md): the core, from the `Actor` trait down to the run loop.
@@ -104,6 +108,8 @@ How tellus works internally, top-down with links into the implementation:
   weaken.
 - [docs/roadmap.md](docs/roadmap.md): what comes next and in which order, from the cluster
   singleton to sharding.
+- [docs/investigations](docs/investigations): measurements behind two performance decisions, the
+  alignment of `ActorId` and the cost of timers.
 
 ## Development
 
