@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794930586888,
+  "lastUpdate": 1794930588763,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37845,6 +37845,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4734308,
             "range": "± 400832",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b90d935518177144e57563f4e5a4a934d6b8d930",
+          "message": "Merge pull request #481 from tellus-rs/docs/k8s-kube-5-note\n\ndocs(bootstrap-k8s): note that this release requires kube 5",
+          "timestamp": "2026-11-17T16:41:47+01:00",
+          "tree_id": "ee8fb3febf572a60d631ed681e0283f9ae5deec2",
+          "url": "https://github.com/tellus-rs/tellus/commit/b90d935518177144e57563f4e5a4a934d6b8d930"
+        },
+        "date": 1794930588421,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30958734,
+            "range": "± 1281131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31558528,
+            "range": "± 1450921",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 6301120,
+            "range": "± 251799",
             "unit": "ns/iter"
           }
         ]
