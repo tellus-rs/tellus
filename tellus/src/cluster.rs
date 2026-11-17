@@ -157,22 +157,45 @@ pub(crate) use crate::cluster::{
     watch::{unwatch_remote, watch_remote},
 };
 
+#[cfg(feature = "__internal")]
+use crate::cluster::endpoint::ConnectionDirection;
+#[cfg(feature = "__internal")]
+use std::net::SocketAddr;
+
 /// Severs every live connection of this process's endpoint, for tests: frames in flight are
 /// lost, lanes keep their queues and reconnect, which is the fault the reconnect guarantees are
-/// stated for. `false` if the endpoint is not started.
+/// stated for. The generation of this sever, which [outbound_severed] and [inbound_severed] take,
+/// or `None` if the endpoint is not started.
 ///
 /// Test support for tellus itself, not public API.
 #[cfg(feature = "__internal")]
 #[doc(hidden)]
-pub fn sever_connections() -> bool {
-    match endpoint::get() {
-        Some(endpoint) => {
-            endpoint.sever();
-            true
-        }
+pub fn sever_connections() -> Option<u64> {
+    endpoint::get().map(|endpoint| endpoint.sever())
+}
 
-        None => false,
-    }
+/// Whether this process's connection to `addr` has been torn down after the sever of the given
+/// generation or a later one. `false` if the endpoint is not started.
+///
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
+pub fn outbound_severed(addr: SocketAddr, generation: u64) -> bool {
+    endpoint::get().is_some_and(|endpoint| {
+        endpoint.severed_since(addr, ConnectionDirection::Outbound, generation)
+    })
+}
+
+/// Whether a connection from `addr` to this process has been torn down after the sever of the
+/// given generation or a later one. `false` if the endpoint is not started.
+///
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
+pub fn inbound_severed(addr: SocketAddr, generation: u64) -> bool {
+    endpoint::get().is_some_and(|endpoint| {
+        endpoint.severed_since(addr, ConnectionDirection::Inbound, generation)
+    })
 }
 
 /// The bytes of the Gossip frames this process's endpoint has queued for its peers since it
@@ -200,4 +223,14 @@ pub fn drop_terminated_frames(count: u64) -> bool {
 
         None => false,
     }
+}
+
+/// How many of the terminated signal frames armed by [drop_terminated_frames] are still to be
+/// dropped. `None` if the endpoint is not started.
+///
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
+pub fn armed_terminated_drops() -> Option<u64> {
+    endpoint::get().map(|endpoint| endpoint.armed_terminated_drops())
 }

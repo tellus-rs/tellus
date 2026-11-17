@@ -689,6 +689,8 @@ pub(crate) struct EndpointInner {
     dropped_terminated: AtomicU64,
     #[cfg(feature = "__internal")]
     gossip_bytes: AtomicU64,
+    #[cfg(feature = "__internal")]
+    severed: Mutex<HashMap<(SocketAddr, ConnectionDirection), u64>>,
     #[cfg(test)]
     departure_panics: AtomicBool,
 }
@@ -1528,13 +1530,50 @@ impl EndpointInner {
         self.sever_tx.subscribe()
     }
 
-    pub(crate) fn sever(&self) {
+    /// The generation of this sever.
+    pub(crate) fn sever(&self) -> u64 {
         self.sever_tx.send_modify(|generation| *generation += 1);
+        *self.sever_tx.borrow()
+    }
+
+    /// Records that a connection to or from `addr` has been torn down after sever `generation`;
+    /// a no-op without `__internal`. Call only once the connection and its streams are dropped!
+    pub(crate) fn note_severed(
+        &self,
+        addr: SocketAddr,
+        direction: ConnectionDirection,
+        generation: u64,
+    ) {
+        #[cfg(feature = "__internal")]
+        {
+            let mut severed = lock(&self.severed);
+            let latest = severed.entry((addr, direction)).or_default();
+            *latest = (*latest).max(generation);
+        }
+        #[cfg(not(feature = "__internal"))]
+        let _ = (addr, direction, generation);
+    }
+
+    #[cfg(feature = "__internal")]
+    pub(crate) fn severed_since(
+        &self,
+        addr: SocketAddr,
+        direction: ConnectionDirection,
+        generation: u64,
+    ) -> bool {
+        lock(&self.severed)
+            .get(&(addr, direction))
+            .is_some_and(|latest| *latest >= generation)
     }
 
     #[cfg(feature = "__internal")]
     pub(crate) fn arm_terminated_drop(&self, count: u64) {
         self.dropped_terminated.store(count, Ordering::Relaxed);
+    }
+
+    #[cfg(feature = "__internal")]
+    pub(crate) fn armed_terminated_drops(&self) -> u64 {
+        self.dropped_terminated.load(Ordering::Relaxed)
     }
 
     #[cfg(feature = "__internal")]
@@ -1628,6 +1667,8 @@ impl EndpointInner {
             dropped_terminated: AtomicU64::new(0),
             #[cfg(feature = "__internal")]
             gossip_bytes: AtomicU64::new(0),
+            #[cfg(feature = "__internal")]
+            severed: Mutex::new(HashMap::new()),
             #[cfg(test)]
             departure_panics: AtomicBool::new(false),
         }
@@ -1871,6 +1912,13 @@ impl Drop for InboundSlot {
     fn drop(&mut self) {
         self.endpoint.inbound_closed(self.peer, self.reading);
     }
+}
+
+/// Which side of a connection this node is: the dialer or the acceptor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) enum ConnectionDirection {
+    Outbound,
+    Inbound,
 }
 
 /// How a Member handshake is admitted, see [EndpointInner::admit_member].
