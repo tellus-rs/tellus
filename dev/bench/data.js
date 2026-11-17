@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794930588763,
+  "lastUpdate": 1794938715589,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -22499,6 +22499,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 30473743,
             "range": "± 1005826",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "41e15f5f3aea45dad11c3a4cf641a3d8432fc519",
+          "message": "Merge pull request #482 from tellus-rs/test/cbor-nesting-limit\n\ntest(persistence): pin the cbor nesting limit at 256 from both sides",
+          "timestamp": "2026-11-17T18:57:36+01:00",
+          "tree_id": "4317279242350803f8e33023cb6008db50c6645f",
+          "url": "https://github.com/tellus-rs/tellus/commit/41e15f5f3aea45dad11c3a4cf641a3d8432fc519"
+        },
+        "date": 1794938714065,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11475028,
+            "range": "± 646246",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 12071261,
+            "range": "± 794007",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 859099,
+            "range": "± 20155",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 593668,
+            "range": "± 19975",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4986023,
+            "range": "± 68884",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3453217,
+            "range": "± 20080",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16001499,
+            "range": "± 371441",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16582573,
+            "range": "± 392681",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 15943931,
+            "range": "± 323214",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16446684,
+            "range": "± 418493",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17549782,
+            "range": "± 478252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18833335,
+            "range": "± 428968",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 23617282,
+            "range": "± 673278",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17325430,
+            "range": "± 450042",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 18644072,
+            "range": "± 586339",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 23562512,
+            "range": "± 707805",
             "unit": "ns/iter"
           }
         ]
