@@ -1881,7 +1881,7 @@ mod tests {
             )
             .expect("the lane is opened");
         let witness_lane = dial_requests.try_recv().expect("the witness is dialed");
-        endpoint.bind_lane(witness.addr(), witness_lane.lane_id, witness);
+        endpoint.bind_lane(witness.addr(), witness_lane.generation, witness);
         while witness_lane.control_rx.try_recv().is_ok() {}
 
         let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);

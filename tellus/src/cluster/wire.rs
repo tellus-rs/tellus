@@ -180,8 +180,7 @@ mod tests {
     };
     use serde::{Deserialize, Serialize};
 
-    /// The bytes the trait object codec this one replaced encoded a manifest and a [WireRef]
-    /// into.
+    /// The pinned bytes of a manifest and a [WireRef], as a peer of an earlier build sends them.
     const WIRE_REF_PAYLOAD: &[u8] = &[
         19, 116, 101, 108, 108, 117, 115, 46, 116, 101, 115, 116, 46, 82, 101, 113, 117, 101, 115,
         116, 0, 127, 0, 0, 1, 248, 19, 16, 1, 161, 219, 7, 101, 218, 119, 87, 150, 37, 188, 240,
@@ -189,10 +188,9 @@ mod tests {
         75,
     ];
 
-    /// An actor reference serialized by the trait object codec decodes here, and encodes back
-    /// into the same bytes.
+    /// An actor reference decodes from its pinned bytes and encodes back into the same bytes.
     #[test]
-    fn a_wire_ref_matches_the_trait_object_codec() {
+    fn a_wire_ref_matches_its_pinned_bytes() {
         let (manifest, wire_ref) = Codec::Postcard
             .decode::<(String, WireRef)>(WIRE_REF_PAYLOAD)
             .expect("decodes");

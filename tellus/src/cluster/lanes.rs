@@ -93,14 +93,14 @@ impl Lanes {
     {
         {
             let lanes = read(&self.lanes);
-            if let Some(outbound_tx) = matching_lane(&lanes, peer, &frame)? {
+            if let Some(outbound_tx) = matching_sender(&lanes, peer, &frame)? {
                 return try_send(outbound_tx, frame, peer);
             }
         }
 
         let snapshot = prepare()?;
         let mut lanes = write(&self.lanes);
-        if let Some(outbound_tx) = matching_lane(&lanes, peer, &frame)? {
+        if let Some(outbound_tx) = matching_sender(&lanes, peer, &frame)? {
             return try_send(outbound_tx, frame, peer);
         }
         if !may_open() {
@@ -167,7 +167,7 @@ impl Lanes {
     pub(crate) fn is_open(&self, addr: SocketAddr, generation: Generation) -> bool {
         read(&self.lanes)
             .get(&addr)
-            .is_some_and(|lane| lane.id == generation)
+            .is_some_and(|lane| lane.generation == generation)
     }
 
     /// `true` if this call removed the lane, i.e. it was still the address's current one.
@@ -210,7 +210,7 @@ impl Lanes {
         snapshot: Arc<Snapshot>,
     ) -> &'a CountedSender<Frame<'static>> {
         let quota = Quota::bounded(self.outbound_capacity);
-        let lane_id = Generation(self.next_generation.fetch_add(1, Ordering::Relaxed));
+        let generation = Generation(self.next_generation.fetch_add(1, Ordering::Relaxed));
 
         let (control_tx, control_rx) = flume::unbounded();
         let control_tx = CountedSender::new(control_tx, quota.clone());
@@ -225,7 +225,7 @@ impl Lanes {
         let (connected_tx, connected_rx) = watch::channel(None);
         let (done_tx, done_rx) = oneshot::channel();
         let lane = Lane {
-            id: lane_id,
+            generation,
             peer: None,
             connected: false,
             control_tx,
@@ -238,7 +238,7 @@ impl Lanes {
 
         let dial_request = DialRequest {
             addr,
-            lane_id,
+            generation,
             control_rx,
             data_rx,
             quota,
@@ -259,7 +259,7 @@ impl Lanes {
 }
 
 struct Lane {
-    id: Generation,
+    generation: Generation,
     peer: Option<NodeId>,
     connected: bool,
     control_tx: CountedSender<Frame<'static>>,
@@ -288,12 +288,12 @@ fn current(
     generation: Generation,
 ) -> Option<OccupiedEntry<'_, SocketAddr, Lane>> {
     match lanes.entry(addr) {
-        Entry::Occupied(lane) if lane.get().id == generation => Some(lane),
+        Entry::Occupied(lane) if lane.get().generation == generation => Some(lane),
         _ => None,
     }
 }
 
-fn matching_lane<'a>(
+fn matching_sender<'a>(
     lanes: &'a HashMap<SocketAddr, Lane>,
     peer: NodeId,
     frame: &Frame,
@@ -344,7 +344,7 @@ mod tests {
         cluster::{
             discovery::Nonce,
             frame::{Frame, StreamKey},
-            lanes::{Generation, Lane, LaneError, Lanes, matching_lane, stream_index, try_send},
+            lanes::{Generation, Lane, LaneError, Lanes, matching_sender, stream_index, try_send},
             node::NodeId,
         },
         quota::{CountedSender, Quota},
@@ -414,7 +414,7 @@ mod tests {
             .unzip::<_, _, Vec<_>, Vec<_>>();
 
         let lane = Lane {
-            id: Generation(0),
+            generation: Generation(0),
             peer: None,
             connected: false,
             control_tx,
@@ -459,19 +459,19 @@ mod tests {
         let lanes = HashMap::from([(addr, lane)]);
 
         assert!(matches!(
-            matching_lane(&lanes, peer, &gossip()),
+            matching_sender(&lanes, peer, &gossip()),
             Ok(Some(_))
         ));
 
         let successor = NodeId::new(addr);
         assert!(matches!(
-            matching_lane(&lanes, successor, &gossip()),
+            matching_sender(&lanes, successor, &gossip()),
             Err(LaneError::NodeUnreachable(_))
         ));
 
         let unknown = NodeId::new("127.0.0.1:2553".parse().expect("valid address"));
         assert!(matches!(
-            matching_lane(&lanes, unknown, &gossip()),
+            matching_sender(&lanes, unknown, &gossip()),
             Ok(None)
         ));
     }

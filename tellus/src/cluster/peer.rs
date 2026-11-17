@@ -44,6 +44,8 @@ use tokio::{
 use tracing::{debug, error, info, warn};
 
 #[cfg(test)]
+use crate::sync::lock;
+#[cfg(test)]
 use std::{
     collections::HashSet,
     sync::{LazyLock, Mutex},
@@ -61,7 +63,7 @@ static DEAD_LETTERS: LazyLock<Mutex<HashSet<ActorId>>> =
 
 pub(crate) struct DialRequest {
     pub(crate) addr: SocketAddr,
-    pub(crate) lane_id: Generation,
+    pub(crate) generation: Generation,
     pub(crate) control_rx: Receiver<Frame<'static>>,
     pub(crate) data_rx: Vec<Receiver<Frame<'static>>>,
     pub(crate) quota: Quota,
@@ -497,8 +499,8 @@ where
             task::spawn(async move {
                 let severed = read_streams(
                     connection,
-                    frame_receiver,
                     frame_sender,
+                    frame_receiver,
                     peer,
                     Admitted { liveness, inbound },
                     endpoint,
@@ -513,6 +515,139 @@ where
         .await;
 }
 
+/// The identity check comes first, so an unproven address reaches nothing, not even the
+/// supersession. The cluster check precedes the Down check, so a node of another cluster never
+/// meets this cluster's Down fences; both precede any admission.
+fn admit_inbound(
+    peer: NodeId,
+    intent: HandshakeIntent,
+    cluster: Option<ClusterId>,
+    codec: &str,
+    identity: Option<PeerIdentity>,
+    endpoint: &'static EndpointInner,
+) -> Admission {
+    if endpoint.downed() {
+        return Admission::Drop;
+    }
+    if !identity_binds(peer, identity) {
+        warn!(%peer, "dropping connection, certificate does not cover the advertised address");
+        return Admission::Drop;
+    }
+    if codec != endpoint.codec().name() {
+        error!(%peer, codec, this_codec = endpoint.codec().name(), "refusing connection, another payload codec");
+        return Admission::Refuse(RefusalReason::CodecMismatch);
+    }
+    if intent == HandshakeIntent::Probe {
+        debug!(%peer, "answering probe");
+        return Admission::Probe;
+    }
+    if let Some(this_cluster) = endpoint.effective_cluster()
+        && let Some(cluster) = cluster
+        && cluster != this_cluster
+    {
+        error!(%peer, %cluster, %this_cluster, "refusing connection, a member of another cluster");
+        endpoint.sight_cluster(peer.addr(), Some(cluster));
+        return Admission::Refuse(RefusalReason::ForeignCluster);
+    }
+    if intent != HandshakeIntent::Member && endpoint.membership().is_down(peer) {
+        warn!(%peer, "refusing connection, dead node incarnation");
+        return Admission::Refuse(RefusalReason::Down);
+    }
+
+    match intent {
+        HandshakeIntent::Member => match endpoint.admit_member(peer) {
+            MemberAdmission::Member(inbound) => {
+                Admission::Admit(endpoint.track_liveness(peer), inbound)
+            }
+
+            MemberAdmission::Draining(inbound) => {
+                debug!(%peer, "admitting a departed node to drain its connection");
+                Admission::Admit(endpoint.track_liveness(peer), inbound)
+            }
+
+            MemberAdmission::Dead => {
+                warn!(%peer, "refusing connection, dead node incarnation");
+                Admission::Refuse(RefusalReason::Down)
+            }
+
+            MemberAdmission::Unknown => {
+                debug!(%peer, "refusing connection, not (yet) a member");
+                Admission::Refuse(RefusalReason::UnknownMember)
+            }
+        },
+
+        HandshakeIntent::Join => {
+            if let Some(refusal) = endpoint.join_refusal() {
+                debug!(%peer, ?refusal, "refusing join, this node is not a member of any cluster yet");
+                return Admission::Refuse(refusal);
+            }
+
+            let (admission, inbound) = endpoint
+                .update(|membership, reachability| {
+                    let mut departures = endpoint.departures();
+                    let admission = membership.admit_join(peer, reachability);
+                    let inbound = matches!(
+                        admission,
+                        JoinAdmission::Admitted { .. } | JoinAdmission::AlreadyUp
+                    )
+                    .then(|| endpoint.count_inbound(&mut departures, peer));
+                    (admission, inbound)
+                })
+                .result;
+            match (admission, inbound) {
+                (JoinAdmission::Admitted { superseded }, Some(inbound)) => {
+                    if let Some((previous, outcome)) = superseded {
+                        warn!(%peer, %previous, "node death, address superseded by a joining incarnation");
+                        endpoint.death_consequences(previous, outcome);
+                    }
+                    debug!(%peer, "member joined");
+                    endpoint.unrefuse(peer.addr());
+                    endpoint.receptionist().origin_up(peer);
+                    endpoint.push_gossip();
+                    Admission::Admit(endpoint.track_liveness(peer), inbound)
+                }
+
+                (JoinAdmission::AlreadyUp, Some(inbound)) => {
+                    Admission::Admit(endpoint.track_liveness(peer), inbound)
+                }
+
+                (JoinAdmission::Admitted { .. } | JoinAdmission::AlreadyUp, None) => {
+                    unreachable!("an admitted join is counted as an inbound connection")
+                }
+
+                (JoinAdmission::Dead, _) => {
+                    warn!(%peer, "refusing join, dead node incarnation");
+                    Admission::Refuse(RefusalReason::Down)
+                }
+
+                (JoinAdmission::Held { unreachable }, _) => {
+                    info!(%peer, %unreachable, "holding back join, a member is unreachable");
+                    Admission::Refuse(RefusalReason::JoinsHeld)
+                }
+
+                (JoinAdmission::Leaving, _) => {
+                    info!(%peer, "holding back join, this node is leaving");
+                    Admission::Refuse(RefusalReason::JoinsHeld)
+                }
+
+                (JoinAdmission::Stale { outcome }, _) => {
+                    warn!(%peer, "refusing join, stale incarnation for its address");
+                    endpoint.death_consequences(peer, outcome);
+                    Admission::Refuse(RefusalReason::Down)
+                }
+
+                (JoinAdmission::SupersedesThisNode, _) => {
+                    warn!(%peer, "a younger incarnation joins at this node's address");
+                    endpoint.self_down();
+                    Admission::Drop
+                }
+            }
+        }
+
+        HandshakeIntent::Probe => Admission::Probe,
+    }
+}
+
 /// The [JoinSet] is awaited on every exit, else a successor reader overlaps a delivery draining
 /// here; a poisoned stream ends the whole connection, unless its peer's departure is deferred.
 /// Neither a finished stream nor a closed connection ends a reader: each runs until its own
@@ -522,8 +657,8 @@ where
 /// it, if one did.
 async fn read_streams<C>(
     connection: C,
-    control_rx: C::Receiver,
     mut frame_sender: C::Sender,
+    control_rx: C::Receiver,
     peer: NodeId,
     admitted: Admitted,
     endpoint: &'static EndpointInner,
@@ -631,7 +766,7 @@ where
 {
     let DialRequest {
         addr,
-        lane_id,
+        generation,
         control_rx,
         data_rx,
         quota,
@@ -705,7 +840,7 @@ where
                     }
                 });
 
-                endpoint.bind_lane(addr, lane_id, peer);
+                endpoint.bind_lane(addr, generation, peer);
                 connected_tx.send_replace(Some(peer));
                 let connected_at = Instant::now();
                 debug!(%peer, version = greeting.version, "outbound connection established");
@@ -753,7 +888,7 @@ where
                     },
                 )
                 .await;
-                endpoint.mark_lane_disconnected(addr, lane_id);
+                endpoint.mark_lane_disconnected(addr, generation);
                 reader.abort();
                 let _ = reader.await;
 
@@ -767,8 +902,8 @@ where
 
                     WriterEnd::ConnectionLost => {}
 
-                    WriterEnd::Severed(generation) => {
-                        endpoint.note_severed(addr, ConnectionDirection::Outbound, generation);
+                    WriterEnd::Severed(sever) => {
+                        endpoint.note_severed(addr, ConnectionDirection::Outbound, sever);
                     }
                 }
 
@@ -811,13 +946,13 @@ where
             }
         }
 
-        if !endpoint.is_lane_open(addr, lane_id) && !endpoint.leaving() {
+        if !endpoint.is_lane_open(addr, generation) && !endpoint.leaving() {
             break;
         }
     }
 
     // A downed endpoint settles nothing locally!
-    if endpoint.remove_lane(addr, lane_id) && !endpoint.downed() {
+    if endpoint.remove_lane(addr, generation) && !endpoint.downed() {
         endpoint.pending_replies().fail_addr(addr);
         watch::fail_watchers_at(endpoint, addr);
     }
@@ -825,45 +960,6 @@ where
         drain_dead_letters(outbound_rx, addr).await;
     }
     let _ = done_tx.send(drain);
-}
-
-/// A member's address is retried forever: downing, not the attempt count, settles its fate.
-async fn backoff_or_give_up(endpoint: &EndpointInner, addr: SocketAddr, attempts: u32) -> bool {
-    if !endpoint.membership().has_up_member_at(addr)
-        && attempts >= endpoint.config().max_connect_attempts.get()
-    {
-        warn!(peer_addr = %addr, "giving up connecting to node");
-        return false;
-    }
-
-    let backoff = sleep(endpoint.reconnect_backoff(attempts));
-    if endpoint.leaving() {
-        let mut state_rx = endpoint.state_rx();
-        select! {
-            () = backoff => {}
-            _ = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr)) => {}
-        }
-    } else {
-        let mut leave_rx = endpoint.leave_rx();
-        select! {
-            () = backoff => {}
-            _ = leave_rx.wait_for(|leaving| *leaving) => {}
-        }
-    }
-    true
-}
-
-/// Resolves once this node is leaving and no member is Up at `addr` any more.
-async fn no_member_up_while_leaving(endpoint: &EndpointInner, addr: SocketAddr) {
-    let mut leave_rx = endpoint.leave_rx();
-    if leave_rx.wait_for(|leaving| *leaving).await.is_err() {
-        return pending().await;
-    }
-    let mut state_rx = endpoint.state_rx();
-    let gone = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr));
-    if gone.await.is_err() {
-        pending::<()>().await;
-    }
 }
 
 async fn connect<T>(
@@ -911,8 +1007,8 @@ async fn exchange_handshakes<S, R>(
     within: Duration,
 ) -> Result<Greeting, ConnectError>
 where
-    R: FrameReceiver,
     S: FrameSender,
+    R: FrameReceiver,
 {
     let exchange = async {
         send_handshake(frame_sender, handshake).await?;
@@ -950,6 +1046,19 @@ where
         Ok(frame_senders) => frame_senders,
 
         Err(_) => Err(ConnectError::DataStreams(streams)),
+    }
+}
+
+/// Resolves once this node is leaving and no member is Up at `addr` any more.
+async fn no_member_up_while_leaving(endpoint: &EndpointInner, addr: SocketAddr) {
+    let mut leave_rx = endpoint.leave_rx();
+    if leave_rx.wait_for(|leaving| *leaving).await.is_err() {
+        return pending().await;
+    }
+    let mut state_rx = endpoint.state_rx();
+    let gone = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr));
+    if gone.await.is_err() {
+        pending::<()>().await;
     }
 }
 
@@ -1234,6 +1343,32 @@ fn writer_result<S>(
     })
 }
 
+/// A member's address is retried forever: downing, not the attempt count, settles its fate.
+async fn backoff_or_give_up(endpoint: &EndpointInner, addr: SocketAddr, attempts: u32) -> bool {
+    if !endpoint.membership().has_up_member_at(addr)
+        && attempts >= endpoint.config().max_connect_attempts.get()
+    {
+        warn!(peer_addr = %addr, "giving up connecting to node");
+        return false;
+    }
+
+    let backoff = sleep(endpoint.reconnect_backoff(attempts));
+    if endpoint.leaving() {
+        let mut state_rx = endpoint.state_rx();
+        select! {
+            () = backoff => {}
+            _ = state_rx.wait_for(|state| !state.up().any(|member| member.addr() == addr)) => {}
+        }
+    } else {
+        let mut leave_rx = endpoint.leave_rx();
+        select! {
+            () = backoff => {}
+            _ = leave_rx.wait_for(|leaving| *leaving) => {}
+        }
+    }
+    true
+}
+
 /// Each delivery holds the peer's gate and rechecks the tombstone, in arrival order.
 async fn read_frames<R>(
     mut frame_receiver: R,
@@ -1409,139 +1544,6 @@ where
     }
 }
 
-/// The identity check comes first, so an unproven address reaches nothing, not even the
-/// supersession. The cluster check precedes the Down check, so a node of another cluster never
-/// meets this cluster's Down fences; both precede any admission.
-fn admit_inbound(
-    peer: NodeId,
-    intent: HandshakeIntent,
-    cluster: Option<ClusterId>,
-    codec: &str,
-    identity: Option<PeerIdentity>,
-    endpoint: &'static EndpointInner,
-) -> Admission {
-    if endpoint.downed() {
-        return Admission::Drop;
-    }
-    if !identity_binds(peer, identity) {
-        warn!(%peer, "dropping connection, certificate does not cover the advertised address");
-        return Admission::Drop;
-    }
-    if codec != endpoint.codec().name() {
-        error!(%peer, codec, this_codec = endpoint.codec().name(), "refusing connection, another payload codec");
-        return Admission::Refuse(RefusalReason::CodecMismatch);
-    }
-    if intent == HandshakeIntent::Probe {
-        debug!(%peer, "answering probe");
-        return Admission::Probe;
-    }
-    if let Some(this_cluster) = endpoint.effective_cluster()
-        && let Some(cluster) = cluster
-        && cluster != this_cluster
-    {
-        error!(%peer, %cluster, %this_cluster, "refusing connection, a member of another cluster");
-        endpoint.sight_cluster(peer.addr(), Some(cluster));
-        return Admission::Refuse(RefusalReason::ForeignCluster);
-    }
-    if intent != HandshakeIntent::Member && endpoint.membership().is_down(peer) {
-        warn!(%peer, "refusing connection, dead node incarnation");
-        return Admission::Refuse(RefusalReason::Down);
-    }
-
-    match intent {
-        HandshakeIntent::Member => match endpoint.admit_member(peer) {
-            MemberAdmission::Member(inbound) => {
-                Admission::Admit(endpoint.track_liveness(peer), inbound)
-            }
-
-            MemberAdmission::Draining(inbound) => {
-                debug!(%peer, "admitting a departed node to drain its connection");
-                Admission::Admit(endpoint.track_liveness(peer), inbound)
-            }
-
-            MemberAdmission::Dead => {
-                warn!(%peer, "refusing connection, dead node incarnation");
-                Admission::Refuse(RefusalReason::Down)
-            }
-
-            MemberAdmission::Unknown => {
-                debug!(%peer, "refusing connection, not (yet) a member");
-                Admission::Refuse(RefusalReason::UnknownMember)
-            }
-        },
-
-        HandshakeIntent::Join => {
-            if let Some(refusal) = endpoint.join_refusal() {
-                debug!(%peer, ?refusal, "refusing join, this node is not a member of any cluster yet");
-                return Admission::Refuse(refusal);
-            }
-
-            let (admission, inbound) = endpoint
-                .update(|membership, reachability| {
-                    let mut departures = endpoint.departures();
-                    let admission = membership.admit_join(peer, reachability);
-                    let inbound = matches!(
-                        admission,
-                        JoinAdmission::Admitted { .. } | JoinAdmission::AlreadyUp
-                    )
-                    .then(|| endpoint.count_inbound(&mut departures, peer));
-                    (admission, inbound)
-                })
-                .result;
-            match (admission, inbound) {
-                (JoinAdmission::Admitted { superseded }, Some(inbound)) => {
-                    if let Some((previous, outcome)) = superseded {
-                        warn!(%peer, %previous, "node death, address superseded by a joining incarnation");
-                        endpoint.death_consequences(previous, outcome);
-                    }
-                    debug!(%peer, "member joined");
-                    endpoint.unrefuse(peer.addr());
-                    endpoint.receptionist().origin_up(peer);
-                    endpoint.push_gossip();
-                    Admission::Admit(endpoint.track_liveness(peer), inbound)
-                }
-
-                (JoinAdmission::AlreadyUp, Some(inbound)) => {
-                    Admission::Admit(endpoint.track_liveness(peer), inbound)
-                }
-
-                (JoinAdmission::Admitted { .. } | JoinAdmission::AlreadyUp, None) => {
-                    unreachable!("an admitted join is counted as an inbound connection")
-                }
-
-                (JoinAdmission::Dead, _) => {
-                    warn!(%peer, "refusing join, dead node incarnation");
-                    Admission::Refuse(RefusalReason::Down)
-                }
-
-                (JoinAdmission::Held { unreachable }, _) => {
-                    info!(%peer, %unreachable, "holding back join, a member is unreachable");
-                    Admission::Refuse(RefusalReason::JoinsHeld)
-                }
-
-                (JoinAdmission::Leaving, _) => {
-                    info!(%peer, "holding back join, this node is leaving");
-                    Admission::Refuse(RefusalReason::JoinsHeld)
-                }
-
-                (JoinAdmission::Stale { outcome }, _) => {
-                    warn!(%peer, "refusing join, stale incarnation for its address");
-                    endpoint.death_consequences(peer, outcome);
-                    Admission::Refuse(RefusalReason::Down)
-                }
-
-                (JoinAdmission::SupersedesThisNode, _) => {
-                    warn!(%peer, "a younger incarnation joins at this node's address");
-                    endpoint.self_down();
-                    Admission::Drop
-                }
-            }
-        }
-
-        HandshakeIntent::Probe => Admission::Probe,
-    }
-}
-
 /// No Up check on the dial side; whether this node may connect as a member is the responder's
 /// decision.
 fn admit_outbound(
@@ -1598,7 +1600,6 @@ fn check_dialed(
     if endpoint.membership().is_down(peer) {
         return Err(ConnectError::Dead);
     }
-
     Ok(())
 }
 
@@ -1839,7 +1840,6 @@ where
     if !identity_binds(peer, connection.peer_identity()) {
         return Err(ConnectError::Identity);
     }
-
     Ok(cluster)
 }
 
@@ -1876,8 +1876,8 @@ async fn answer_and_close<S, R>(
     frame_receiver: &mut R,
     answer: Result<Vec<u8>, postcard::Error>,
 ) where
-    R: FrameReceiver,
     S: FrameSender,
+    R: FrameReceiver,
 {
     let sent = match answer {
         Ok(answer) => frame_sender.send(&answer).await,
@@ -1955,7 +1955,7 @@ fn dead_letter(frame: Frame<'static>, addr: SocketAddr, reason: &'static str) {
 
     for target in delivered_targets(&frame) {
         #[cfg(test)]
-        crate::sync::lock(&DEAD_LETTERS).insert(*target);
+        lock(&DEAD_LETTERS).insert(*target);
         warn!(actor_id = %target, peer_addr = %addr, reason, "dead letter");
     }
 }
@@ -2086,7 +2086,8 @@ mod tests {
             atomic::{AtomicBool, Ordering},
             mpsc,
         },
-        time::Duration,
+        thread,
+        time::{self, Duration},
     };
     use tokio::{
         select,
@@ -2370,7 +2371,7 @@ mod tests {
         );
 
         for target in targets {
-            assert!(crate::sync::lock(&super::DEAD_LETTERS).remove(&target));
+            assert!(lock(&DEAD_LETTERS).remove(&target));
         }
     }
 
@@ -2379,7 +2380,7 @@ mod tests {
 
     impl FrameReceiver for SilentReceiver {
         async fn recv(&mut self) -> Result<Option<&[u8]>, TransportError> {
-            std::future::pending().await
+            pending().await
         }
     }
 
@@ -2874,7 +2875,7 @@ mod tests {
     #[tokio::test]
     async fn aborting_a_sibling_writer_dead_letters_its_in_flight_frame() {
         let target = ActorId::new();
-        crate::sync::lock(&super::DEAD_LETTERS).remove(&target);
+        lock(&DEAD_LETTERS).remove(&target);
         let (blocked_tx, blocked_rx) = flume::unbounded();
         blocked_tx
             .send(Frame::Message {
@@ -2909,7 +2910,7 @@ mod tests {
         )
         .await;
         assert!(matches!(end, WriterEnd::ConnectionLost));
-        assert!(crate::sync::lock(&super::DEAD_LETTERS).remove(&target));
+        assert!(lock(&DEAD_LETTERS).remove(&target));
     }
 
     /// The slot holds the newest snapshot only: three offered to a stalled writer are written as
@@ -3144,6 +3145,7 @@ mod tests {
             Err(ConnectError::Decode(_))
         ));
     }
+
     fn addr(port: u16) -> SocketAddr {
         SocketAddr::from((Ipv4Addr::LOCALHOST, port))
     }
@@ -5398,8 +5400,8 @@ mod tests {
 
         let swept = Membership::new(NodeId::new(addr(3)), NonZeroUsize::MAX, Duration::ZERO);
         swept.add_up(node);
-        swept.leave(node, std::time::Instant::now());
-        swept.sweep(std::time::Instant::now());
+        swept.leave(node, time::Instant::now());
+        swept.sweep(time::Instant::now());
         let snapshot = swept.handshake_snapshot();
         assert!(snapshot.contains(&Member::new(node, MemberState::Left)));
         assert!(!swept.members().iter().any(|member| member.node() == node));
@@ -6522,7 +6524,7 @@ mod tests {
         fn decode(codec: Codec, _: SchemaVersion, payload: &[u8]) -> Result<Self, CodecError> {
             GATE_DECODE_STARTED.store(true, Ordering::SeqCst);
             while !GATE_DECODE_RELEASED.load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(1));
+                thread::sleep(Duration::from_millis(1));
             }
             codec.decode(payload).map(BlocksWhenDecoded)
         }
@@ -6557,7 +6559,7 @@ mod tests {
             sleep(Duration::from_millis(1)).await;
         }
 
-        let death = std::thread::spawn(move || endpoint.node_death(peer));
+        let death = thread::spawn(move || endpoint.node_death(peer));
         sleep(Duration::from_millis(100)).await;
         let returned_during_the_delivery = death.is_finished();
         GATE_DECODE_RELEASED.store(true, Ordering::SeqCst);
@@ -6613,7 +6615,7 @@ mod tests {
             task::yield_now().await;
         }
         sleep(left_after).await;
-        endpoint.update(|membership, _| membership.leave(departing, std::time::Instant::now()));
+        endpoint.update(|membership, _| membership.leave(departing, time::Instant::now()));
         let departure = leaving
             .await
             .expect("the departure does not panic")
@@ -6656,7 +6658,7 @@ mod tests {
             task::yield_now().await;
         }
         endpoint.update(|membership, _| {
-            membership.leave(predecessor, std::time::Instant::now());
+            membership.leave(predecessor, time::Instant::now());
             membership.add_up(successor);
         });
         let (connected, mut acceptor) = Acceptor::connected();
@@ -6734,7 +6736,7 @@ mod tests {
             }
             sleep(left_after).await;
             let left_at = tokio::time::Instant::now();
-            endpoint.update(|membership, _| membership.leave(departing, std::time::Instant::now()));
+            endpoint.update(|membership, _| membership.leave(departing, time::Instant::now()));
             let departure = leaving
                 .await
                 .expect("the departure does not panic")
@@ -7074,7 +7076,7 @@ mod tests {
             peer::{Admitted, read_streams},
             transport::QuicTransport,
         };
-        use std::{sync::Barrier, thread, time::Instant};
+        use std::{sync::Barrier, time::Instant};
         use tokio::{runtime, sync::watch};
 
         const WORKERS: usize = 4;
@@ -7181,8 +7183,8 @@ mod tests {
                     let (_shutdown_tx, shutdown_rx) = watch::channel(());
                     let reader = task::spawn(read_streams(
                         connection,
-                        control_rx,
                         frame_sender,
+                        control_rx,
                         leaver,
                         Admitted { liveness, inbound },
                         endpoint,
@@ -7242,7 +7244,7 @@ mod tests {
             let index = usize::try_from(gate).expect("a gate index");
             TEARDOWN_DECODE_STARTED[index].store(true, Ordering::SeqCst);
             while !TEARDOWN_DECODE_RELEASED[index].load(Ordering::SeqCst) {
-                std::thread::sleep(Duration::from_millis(1));
+                thread::sleep(Duration::from_millis(1));
             }
             Ok(HoldsTeardown(gate))
         }
@@ -7313,7 +7315,7 @@ mod tests {
             if HELD_SEND_ARMED.load(Ordering::SeqCst) {
                 HELD_SEND_STARTED.store(true, Ordering::SeqCst);
                 while !HELD_SEND_RELEASED.load(Ordering::SeqCst) {
-                    std::thread::sleep(Duration::from_millis(1));
+                    thread::sleep(Duration::from_millis(1));
                 }
             }
         }

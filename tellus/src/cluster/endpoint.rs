@@ -1314,8 +1314,8 @@ impl EndpointInner {
         self.lanes.connected(addr)
     }
 
-    pub(crate) fn mark_lane_disconnected(&self, addr: SocketAddr, lane_id: Generation) {
-        self.lanes.disconnect(addr, lane_id);
+    pub(crate) fn mark_lane_disconnected(&self, addr: SocketAddr, generation: Generation) {
+        self.lanes.disconnect(addr, generation);
     }
 
     /// Mark Down, close the lane, quiesce deliveries, then fail asks and flush synthesized signals.
@@ -1496,9 +1496,9 @@ impl EndpointInner {
         lock(&self.gossiped_versions).retain(|node, _| up.contains(node));
     }
 
-    pub(crate) fn bind_lane(&self, addr: SocketAddr, lane_id: Generation, peer: NodeId) {
+    pub(crate) fn bind_lane(&self, addr: SocketAddr, generation: Generation, peer: NodeId) {
         self.lanes
-            .bind(addr, lane_id, peer, || self.membership.is_down(peer));
+            .bind(addr, generation, peer, || self.membership.is_down(peer));
     }
 
     /// Held from the old reader's shutdown to the new one's spawn, else two readers overlap.
@@ -1586,13 +1586,13 @@ impl EndpointInner {
         self.departure_panics.store(true, Ordering::Relaxed);
     }
 
-    pub(crate) fn is_lane_open(&self, addr: SocketAddr, lane_id: Generation) -> bool {
-        self.lanes.is_open(addr, lane_id)
+    pub(crate) fn is_lane_open(&self, addr: SocketAddr, generation: Generation) -> bool {
+        self.lanes.is_open(addr, generation)
     }
 
     /// `true` if this call removed the lane, i.e. it was still the address's current one.
-    pub(crate) fn remove_lane(&self, addr: SocketAddr, lane_id: Generation) -> bool {
-        self.lanes.remove(addr, lane_id)
+    pub(crate) fn remove_lane(&self, addr: SocketAddr, generation: Generation) -> bool {
+        self.lanes.remove(addr, generation)
     }
 
     fn sweep_foreign_clusters(&self, now: tokio_time::Instant) {
@@ -3363,7 +3363,7 @@ mod tests {
     ) -> DialRequest {
         endpoint.send(peer, gossip()).expect("the lane opens");
         let lane = dial_requests.try_recv().expect("the lane is dialed");
-        endpoint.bind_lane(peer.addr(), lane.lane_id, peer);
+        endpoint.bind_lane(peer.addr(), lane.generation, peer);
         assert_eq!(gossip_members(&lane), [Vec::new()]);
         lane
     }
@@ -4736,7 +4736,7 @@ mod tests {
         let mut dial = |member: NodeId| dials.remove(&member.addr()).expect("the lane is dialed");
         let successor = NodeId::new(superseded.addr());
         let superseded_dial = dial(superseded);
-        endpoint.bind_lane(superseded.addr(), superseded_dial.lane_id, successor);
+        endpoint.bind_lane(superseded.addr(), superseded_dial.generation, successor);
         endpoint.update(|membership, _| membership.add_up(successor));
         endpoint.update(|membership, _| membership.leave(gone, Instant::now()));
 
