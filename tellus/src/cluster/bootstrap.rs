@@ -61,6 +61,9 @@ where
 
 /// The [SeedDiscovery] for a statically configured cluster: resolves to the same fixed
 /// addresses every time. Deserializes from a sequence of addresses with the `serde` feature.
+///
+/// Name every node of the cluster: a partitioned minority holding most of the seeds can otherwise
+/// form a second cluster after a restart.
 #[derive(Debug, Clone)]
 #[cfg_attr(
     feature = "serde",
