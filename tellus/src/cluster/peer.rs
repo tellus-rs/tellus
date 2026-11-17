@@ -2231,8 +2231,9 @@ mod tests {
     }
 
     /// Once a peer's death has closed the delivery gate, a leaving node still takes the peer's
-    /// `DrainAck` for its own drain, while every other frame of that peer is dropped, so nothing
-    /// arrives behind the synthesized signal. A node which is not leaving closes the connection.
+    /// `DrainAck` for its own drain, also behind gossip of the dead incarnation, while every other
+    /// frame of that peer is dropped, so nothing arrives behind the synthesized signal. A node
+    /// which is not leaving closes the connection.
     #[tokio::test]
     async fn a_leaving_node_takes_a_drain_ack_past_a_closed_gate() {
         for leaving in [true, false] {
@@ -2244,8 +2245,16 @@ mod tests {
             if leaving {
                 endpoint.leave().await.expect("a departure");
             }
-            let frames = [message(endpoint, recipient.id(), 1), Frame::DrainAck]
-                .map(|frame| frame.encode_into(Vec::new()).expect("frame encodes"));
+            let gossip = Frame::Gossip {
+                members: Vec::new(),
+                more: false,
+            };
+            let frames = [
+                message(endpoint, recipient.id(), 1),
+                gossip,
+                Frame::DrainAck,
+            ]
+            .map(|frame| frame.encode_into(Vec::new()).expect("frame encodes"));
 
             let end = read_frames(
                 FakeReceiver::new(frames),
