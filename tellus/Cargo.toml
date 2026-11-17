@@ -17,6 +17,8 @@ all-features = true
 rustdoc-args = [ "--cfg", "docsrs" ]
 
 [features]
+# Test and bench support for tellus itself: not public API!
+__internal = [  ]
 cluster = [
     "dep:postcard",
     "dep:quinn",
@@ -259,7 +261,7 @@ required-features = [ "persistence", "persistence-in-memory" ]
 [[test]]
 name              = "cluster"
 harness           = false
-required-features = [ "cluster-dev" ]
+required-features = [ "__internal", "cluster-dev" ]
 
 [[test]]
 name              = "host_persistence"

@@ -56,9 +56,8 @@
 //! The `cluster` feature adds remoting in the [cluster] module: [ActorRef] becomes serializable and
 //! actors on different nodes message and watch each other through the same API. Without that
 //! feature tellus is purely local and pulls in none of the remoting dependencies. The
-//! `cluster-dev` feature implies `cluster` and adds helpers for development and tests, among them
-//! `QuicTransport::dev`, a transport which does not verify certificates; never enable it in
-//! production.
+//! `cluster-dev` feature implies `cluster` and adds `QuicTransport::dev` for development and tests,
+//! a transport which does not verify certificates; never enable it in production.
 //!
 //! The `serde` feature makes the configuration deserializable, [ActorConfig] and [HostConfig] as
 //! well as the cluster's [EndpointConfig](cluster::EndpointConfig),

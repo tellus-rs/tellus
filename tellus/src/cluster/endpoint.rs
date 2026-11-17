@@ -685,9 +685,9 @@ pub(crate) struct EndpointInner {
     // A leaf lock: never held while user code runs!
     peers: RwLock<HashMap<NodeId, Arc<Peer>>>,
     gossip_ticks: AtomicU64,
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     dropped_terminated: AtomicU64,
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     gossip_bytes: AtomicU64,
     #[cfg(test)]
     departure_panics: AtomicBool,
@@ -923,12 +923,12 @@ impl EndpointInner {
             return Err(LaneError::NodeUnreachable(peer));
         }
 
-        #[cfg(feature = "cluster-dev")]
+        #[cfg(feature = "__internal")]
         if matches!(frame, Frame::Terminated { .. }) && self.drop_terminated() {
             debug!(%peer, "dropping terminated frame, fault injection");
             return Ok(());
         }
-        #[cfg(feature = "cluster-dev")]
+        #[cfg(feature = "__internal")]
         let gossip_len = self.gossip_len(&frame);
 
         let enqueued = self.lanes.enqueue(
@@ -942,7 +942,7 @@ impl EndpointInner {
             // Under the lock, since a leave collects the lanes once, under the same lock.
             || !self.leaving() && !self.is_refused(peer.addr()),
         );
-        #[cfg(feature = "cluster-dev")]
+        #[cfg(feature = "__internal")]
         if enqueued.is_ok() {
             self.gossip_bytes.fetch_add(gossip_len, Ordering::Relaxed);
         }
@@ -1532,12 +1532,12 @@ impl EndpointInner {
         self.sever_tx.send_modify(|generation| *generation += 1);
     }
 
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     pub(crate) fn arm_terminated_drop(&self, count: u64) {
         self.dropped_terminated.store(count, Ordering::Relaxed);
     }
 
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     pub(crate) fn gossip_bytes(&self) -> u64 {
         self.gossip_bytes.load(Ordering::Relaxed)
     }
@@ -1624,9 +1624,9 @@ impl EndpointInner {
             gossiped_versions: Mutex::new(HashMap::new()),
             peers: RwLock::new(HashMap::new()),
             gossip_ticks: AtomicU64::new(0),
-            #[cfg(feature = "cluster-dev")]
+            #[cfg(feature = "__internal")]
             dropped_terminated: AtomicU64::new(0),
-            #[cfg(feature = "cluster-dev")]
+            #[cfg(feature = "__internal")]
             gossip_bytes: AtomicU64::new(0),
             #[cfg(test)]
             departure_panics: AtomicBool::new(false),
@@ -1811,7 +1811,7 @@ impl EndpointInner {
         self.sever();
     }
 
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     fn drop_terminated(&self) -> bool {
         self.dropped_terminated
             .try_update(Ordering::Relaxed, Ordering::Relaxed, |count| {
@@ -1820,7 +1820,7 @@ impl EndpointInner {
             .is_ok()
     }
 
-    #[cfg(feature = "cluster-dev")]
+    #[cfg(feature = "__internal")]
     fn gossip_len(&self, frame: &Frame<'_>) -> u64 {
         if !matches!(frame, Frame::Gossip { .. }) {
             return 0;

@@ -161,10 +161,9 @@ pub(crate) use crate::cluster::{
 /// lost, lanes keep their queues and reconnect, which is the fault the reconnect guarantees are
 /// stated for. `false` if the endpoint is not started.
 ///
-/// Only available with the `cluster-dev` feature, so it cannot reach a production build which
-/// does not ask for it.
-#[cfg(feature = "cluster-dev")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cluster-dev")))]
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
 pub fn sever_connections() -> bool {
     match endpoint::get() {
         Some(endpoint) => {
@@ -179,10 +178,9 @@ pub fn sever_connections() -> bool {
 /// The bytes of the Gossip frames this process's endpoint has queued for its peers since it
 /// started, without framing or transport overhead. `None` if the endpoint is not started.
 ///
-/// Only available with the `cluster-dev` feature, so it cannot reach a production build which
-/// does not ask for it.
-#[cfg(feature = "cluster-dev")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cluster-dev")))]
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
 pub fn gossip_bytes() -> Option<u64> {
     endpoint::get().map(|endpoint| endpoint.gossip_bytes())
 }
@@ -190,10 +188,9 @@ pub fn gossip_bytes() -> Option<u64> {
 /// Arms the endpoint to silently drop the next `count` outbound terminated signal frames, for
 /// tests: the loss the periodic watch refresh must heal. `false` if the endpoint is not started.
 ///
-/// Only available with the `cluster-dev` feature, so it cannot reach a production build which
-/// does not ask for it.
-#[cfg(feature = "cluster-dev")]
-#[cfg_attr(docsrs, doc(cfg(feature = "cluster-dev")))]
+/// Test support for tellus itself, not public API.
+#[cfg(feature = "__internal")]
+#[doc(hidden)]
 pub fn drop_terminated_frames(count: u64) -> bool {
     match endpoint::get() {
         Some(endpoint) => {

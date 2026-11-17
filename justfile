@@ -16,12 +16,14 @@ bench_regression_threshold := "0.15"
 # `persistence`/`persistence-tests` nor `cluster`/`cluster-dev`: cargo-hack resolves a group, so
 # that also drops `persistence-tests,persistence-in-memory`, the one combination which compiles
 # tests/persistence_tests.rs. Implications need no group anyway, since cargo-hack drops a
-# combination whose features resolve to the same set.
-powerset := "--feature-powerset --exclude-features hotpath,hotpath-alloc,hotpath-callgrind,hotpath-cloud"
+# combination whose features resolve to the same set. `__internal` implies nothing and gates only
+# items which also need `cluster`, so one explicit run covers it.
+powerset := "--feature-powerset --exclude-features __internal,hotpath,hotpath-alloc,hotpath-callgrind,hotpath-cloud"
 
 check:
     cargo hack check -p tellus                      --all-targets {{ powerset }}
     cargo check      -p tellus                      --all-targets --features hotpath
+    cargo check      -p tellus                      --all-targets --features cluster,__internal
     cargo check      -p tellus                      --all-targets --all-features
     cargo hack check -p tellus-bootstrap-dns        --all-targets --feature-powerset
     cargo hack check -p tellus-bootstrap-k8s        --all-targets --feature-powerset
@@ -42,22 +44,23 @@ fmt-check: _nightly
     RUST_LOG=error taplo fmt --check
 
 lint:
-    cargo hack clippy -p tellus                      --all-targets --no-deps {{ powerset }}     -- -D warnings
-    cargo clippy      -p tellus                      --all-targets --no-deps --features hotpath -- -D warnings
-    cargo clippy      -p tellus                      --all-targets --no-deps --all-features     -- -D warnings
-    cargo hack clippy -p tellus-bootstrap-dns        --all-targets --no-deps --feature-powerset -- -D warnings
-    cargo hack clippy -p tellus-bootstrap-k8s        --all-targets --no-deps --feature-powerset -- -D warnings
-    cargo clippy      -p tellus-persistence-postgres --all-targets --no-deps                    -- -D warnings
-    cargo clippy      -p tellus-cluster-inspect      --all-targets --no-deps                    -- -D warnings
-    cargo clippy      -p tellus-cluster-demo         --all-targets --no-deps                    -- -D warnings
-    cargo clippy      -p tellus-cluster-demo-tui     --all-targets --no-deps                    -- -D warnings
+    cargo hack clippy -p tellus                      --all-targets --no-deps {{ powerset }}                -- -D warnings
+    cargo clippy      -p tellus                      --all-targets --no-deps --features hotpath            -- -D warnings
+    cargo clippy      -p tellus                      --all-targets --no-deps --features cluster,__internal -- -D warnings
+    cargo clippy      -p tellus                      --all-targets --no-deps --all-features                -- -D warnings
+    cargo hack clippy -p tellus-bootstrap-dns        --all-targets --no-deps --feature-powerset            -- -D warnings
+    cargo hack clippy -p tellus-bootstrap-k8s        --all-targets --no-deps --feature-powerset            -- -D warnings
+    cargo clippy      -p tellus-persistence-postgres --all-targets --no-deps                               -- -D warnings
+    cargo clippy      -p tellus-cluster-inspect      --all-targets --no-deps                               -- -D warnings
+    cargo clippy      -p tellus-cluster-demo         --all-targets --no-deps                               -- -D warnings
+    cargo clippy      -p tellus-cluster-demo-tui     --all-targets --no-deps                               -- -D warnings
 
 lint-fix:
     cargo clippy --all-targets --all-features --no-deps --allow-dirty --allow-staged --fix
 
 test: _nightly
     cargo test                     -p tellus
-    cargo test                     -p tellus                      --features persistence-tests,persistence-in-memory,cluster-dev,serde,test-util
+    cargo test                     -p tellus                      --features persistence-tests,persistence-in-memory,cluster-dev,serde,test-util,__internal
     cargo +{{ nightly }} hack test -p tellus                      --doc {{ powerset }}
     cargo test                     -p tellus-bootstrap-dns        --all-features
     cargo test                     -p tellus-bootstrap-k8s        --all-features
@@ -104,13 +107,13 @@ bench-stash-bencher:
     cargo bench -p tellus --features "persistence,persistence-in-memory" --bench stash -- --output-format bencher
 
 bench-gossip size="5":
-    TELLUS_REMOTING_ROLE=bench-gossip TELLUS_REMOTING_CLUSTER_SIZE={{ size }} cargo test -p tellus --test cluster --features cluster-dev --release
+    TELLUS_REMOTING_ROLE=bench-gossip TELLUS_REMOTING_CLUSTER_SIZE={{ size }} cargo test -p tellus --test cluster --features cluster-dev,__internal --release
 
 bench-streams streams="16":
-    TELLUS_REMOTING_ROLE=bench-streams TELLUS_REMOTING_STREAMS={{ streams }} cargo test -p tellus --test cluster --features cluster-dev --release
+    TELLUS_REMOTING_ROLE=bench-streams TELLUS_REMOTING_STREAMS={{ streams }} cargo test -p tellus --test cluster --features cluster-dev,__internal --release
 
 bench-cluster:
-    TELLUS_REMOTING_ROLE=bench cargo test -p tellus --test cluster --features cluster-dev --release
+    TELLUS_REMOTING_ROLE=bench cargo test -p tellus --test cluster --features cluster-dev,__internal --release
 
 bench-report:
     #!/usr/bin/env bash
