@@ -69,7 +69,7 @@ use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use std::{
     collections::{HashMap, HashSet},
     convert::Infallible,
-    env, fmt, fs,
+    env, fmt, fs, future,
     io::{self, BufRead, BufReader, Write},
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     num::NonZeroUsize,
@@ -359,15 +359,15 @@ fn mutual_node() -> anyhow::Result<()> {
                     Err(_) => "timeout",
                 };
                 println!("{JOIN_PREFIX}{verdict}");
-                std::io::stdout().flush()?;
+                io::stdout().flush()?;
                 Ok(())
             }
 
             Err(_) => {
                 cluster::form().context("forming the cluster")?;
                 println!("{JOIN_PREFIX}seed");
-                std::io::stdout().flush()?;
-                std::future::pending::<anyhow::Result<()>>().await
+                io::stdout().flush()?;
+                future::pending::<anyhow::Result<()>>().await
             }
         }
     })
@@ -407,7 +407,7 @@ fn self_down_node() -> anyhow::Result<()> {
             .context("self down within the timeout")??;
 
         println!("{JOIN_PREFIX}downed");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
         Ok(())
     })
 }
@@ -533,7 +533,7 @@ fn leave_node() -> anyhow::Result<()> {
         let system = ActorSystem::new(EchoServer);
         let bytes = cluster::serialize_ref(system.root())?;
         println!("{REF_PREFIX}{}", hex_encode(&bytes));
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         let mut subscription = cluster::cluster_state()?;
         let departure = timeout(TIMEOUT, cluster::leave_on_terminated(system))
@@ -579,14 +579,14 @@ fn zombie_node() -> anyhow::Result<()> {
             .await
             .context("joining the cluster")??;
         println!("{JOIN_PREFIX}joined");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         while cluster::lifecycle()? != Lifecycle::Downed {
             sleep(CONVERGENCE_POLL).await;
         }
 
         println!("{JOIN_PREFIX}downed");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
         Ok(())
     })
 }
@@ -625,7 +625,7 @@ fn majority_node() -> anyhow::Result<()> {
         .await
         .context("every member Up within the timeout")?;
         println!("{JOIN_PREFIX}up");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         let verdict = async {
             loop {
@@ -647,7 +647,7 @@ fn majority_node() -> anyhow::Result<()> {
             .await
             .context("a verdict within the timeout")??;
         println!("{JOIN_PREFIX}{verdict}");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
         Ok(())
     })
 }
@@ -698,13 +698,13 @@ fn cluster_id_node() -> anyhow::Result<()> {
             .cluster()
             .context("a member names its cluster")?;
         println!("{CLUSTER_PREFIX}{cluster_id}");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         if joined {
             cluster::leave().await?;
             Ok(())
         } else {
-            std::future::pending::<anyhow::Result<()>>().await
+            future::pending::<anyhow::Result<()>>().await
         }
     })
 }
@@ -737,7 +737,7 @@ fn foreign_probe_node() -> anyhow::Result<()> {
             .cluster()
             .context("a formed node names its cluster")?;
         println!("{CLUSTER_PREFIX}{cluster_id}");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         let foreign = timeout(TIMEOUT, async {
             loop {
@@ -750,9 +750,9 @@ fn foreign_probe_node() -> anyhow::Result<()> {
         .await
         .context("a foreign cluster within the timeout")?;
         println!("{FOREIGN_PREFIX}{} {}", foreign.addr(), foreign.cluster());
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
-        std::future::pending::<anyhow::Result<()>>().await
+        future::pending::<anyhow::Result<()>>().await
     })
 }
 
@@ -828,7 +828,7 @@ where
         cluster::register(&Key::new(name), system.root())?;
         let bytes = cluster::serialize_ref(system.root())?;
         println!("{REF_PREFIX}{}", hex_encode(&bytes));
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
 
         timeout(TIMEOUT, system.terminated())
             .await
@@ -1166,6 +1166,10 @@ struct Note {
 
 impl Schema for Note {}
 
+impl Manifest for Note {
+    const MANIFEST: &'static str = "note";
+}
+
 /// A reply carrying notes: a wrapper, since a `Vec` of an application type is no `Schema`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 struct Notes(Vec<Note>);
@@ -1407,8 +1411,9 @@ impl Actor for Computer {
                             reply_to,
                         })
                         .await;
-                    if let Ok(total) = computed {
-                        reply_to.reply(total);
+                    match computed {
+                        Ok(total) => reply_to.reply(total),
+                        Err(error) => eprintln!("cannot relay the job: {error}"),
                     }
                 });
                 Ok(Control::Continue(state))
@@ -1456,8 +1461,9 @@ impl Actor for LegacyComputer {
                     let computed = to
                         .ask(TIMEOUT, |reply_to| LegacyJob::Compute { factor, reply_to })
                         .await;
-                    if let Ok(total) = computed {
-                        reply_to.reply(total);
+                    match computed {
+                        Ok(total) => reply_to.reply(total),
+                        Err(error) => eprintln!("cannot relay the job: {error}"),
                     }
                 });
                 Ok(Control::Continue(state))
@@ -1468,10 +1474,6 @@ impl Actor for LegacyComputer {
             Incoming::Terminated(_) => Ok(Control::Continue(state)),
         }
     }
-}
-
-impl Manifest for Note {
-    const MANIFEST: &'static str = "note";
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -2044,17 +2046,17 @@ fn gossip_idle_node() -> anyhow::Result<()> {
         .await
         .context("every member Up within the timeout")?;
         println!("{JOIN_PREFIX}up");
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
         anyhow::Ok(())
     })?;
 
-    for line in std::io::stdin().lines() {
+    for line in io::stdin().lines() {
         line?;
         println!(
             "{GOSSIP_PREFIX}{}",
             cluster::gossip_bytes().context("endpoint started")?
         );
-        std::io::stdout().flush()?;
+        io::stdout().flush()?;
     }
     Ok(())
 }
@@ -2254,10 +2256,6 @@ struct BulkRound {
     other: Vec<Duration>,
 }
 
-/// Round trip and per-sender FIFO: ordered pings, ordered replies. The reference bytes must
-/// resolve as the type they were serialized for and be refused as any other. Then the node is
-/// killed and told anyway, and a second node is served afterward: only that further round trip
-/// proves the dead letters left the endpoint usable, which the sends alone cannot show.
 /// A node of the newer application exchanges messages with one of the older application in both
 /// directions: a job to the legacy node is encoded in its version 0 shape, its reply is upcast
 /// from version 0, and a job the legacy node sends here is upcast while the total it gets back is
@@ -2313,6 +2311,10 @@ fn schema_evolution_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Round trip and per-sender FIFO: ordered pings, ordered replies. The reference bytes must
+/// resolve as the type they were serialized for and be refused as any other. Then the node is
+/// killed and told anyway, and a second node is served afterward: only that further round trip
+/// proves the dead letters left the endpoint usable, which the sends alone cannot show.
 fn echo_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut echo_process = KillOnDrop(spawn_node(Role::Echo)?);
     let bytes = ref_bytes(&mut echo_process)?;
@@ -3077,7 +3079,7 @@ fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
     let mut echo_process = KillOnDrop(spawn_node(Role::Echo)?);
     let echo = resolve_ref::<Request>(&mut echo_process)?;
-    let echo_addr = own_addr(runtime, &echo)?;
+    let echo_addr = node_addr(runtime, &echo)?;
     await_change(runtime, &mut changes, &mut observed, |state| {
         is_up(state, echo_addr)
     })?;
@@ -3094,7 +3096,7 @@ fn changes_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 
     let mut leave_process = KillOnDrop(spawn_node(Role::Leave)?);
     let leaver = resolve_ref::<Request>(&mut leave_process)?;
-    let leaver_addr = own_addr(runtime, &leaver)?;
+    let leaver_addr = node_addr(runtime, &leaver)?;
     await_change(runtime, &mut changes, &mut observed, |state| {
         is_up(state, leaver_addr)
     })?;
@@ -3327,14 +3329,14 @@ fn receptionist_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let a = resolve_ref::<Request>(&mut a_process)?;
     let mut b_process = KillOnDrop(spawn_node(Role::Echo)?);
     let b = resolve_ref::<Request>(&mut b_process)?;
-    let a_addr = own_addr(runtime, &a)?;
-    let b_addr = own_addr(runtime, &b)?;
+    let a_addr = node_addr(runtime, &a)?;
+    let b_addr = node_addr(runtime, &b)?;
     let self_addr = *SELF_ADDR.get().context("endpoint not started")?;
 
     let refs = await_listing(runtime, &mut subscription, |refs| refs.len() == 3)?;
     let mut owners = refs
         .iter()
-        .map(|echo| own_addr(runtime, echo))
+        .map(|echo| node_addr(runtime, echo))
         .collect::<anyhow::Result<Vec<_>>>()?;
     owners.sort_unstable();
     let mut expected = vec![self_addr, a_addr, b_addr];
@@ -3535,8 +3537,8 @@ fn pubsub_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let a = resolve_ref::<Request>(&mut a_process)?;
     let mut b_process = KillOnDrop(spawn_node(Role::Echo)?);
     let b = resolve_ref::<Request>(&mut b_process)?;
-    let a_addr = own_addr(runtime, &a)?;
-    let b_addr = own_addr(runtime, &b)?;
+    let a_addr = node_addr(runtime, &a)?;
+    let b_addr = node_addr(runtime, &b)?;
     for (echo, what) in [(&a, "echo a"), (&b, "echo b")] {
         runtime
             .block_on(echo.ask(TIMEOUT, |reply_to| Request::Subscribe { reply_to }))
@@ -3789,7 +3791,7 @@ fn own() -> SocketAddr {
     *SELF_ADDR.get().expect("endpoint started")
 }
 
-fn own_addr(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<SocketAddr> {
+fn node_addr(runtime: &Runtime, echo: &ActorRef<Request>) -> anyhow::Result<SocketAddr> {
     Ok(runtime
         .block_on(echo.ask(TIMEOUT, |reply_to| Request::Members { reply_to }))
         .context("members ask")?
