@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794929169909,
+  "lastUpdate": 1794929172265,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37425,6 +37425,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6041613,
             "range": "± 354780",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a36b5a00b08d698696f010d4c3fcf2aae6ed9066",
+          "message": "Merge pull request #419 from tellus-rs/dependabot/docker/tellus-cluster-demo/debian-a72b443\n\nbuild(deps): Bump debian from `d7e1218` to `a72b443` in /tellus-cluster-demo",
+          "timestamp": "2026-11-17T16:17:54+01:00",
+          "tree_id": "6ed08b7fcc352d8b7ebd6b6d16bafe589a40dcce",
+          "url": "https://github.com/tellus-rs/tellus/commit/a36b5a00b08d698696f010d4c3fcf2aae6ed9066"
+        },
+        "date": 1794929171655,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31675145,
+            "range": "± 1620429",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31801750,
+            "range": "± 1292497",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5925479,
+            "range": "± 249201",
             "unit": "ns/iter"
           }
         ]
