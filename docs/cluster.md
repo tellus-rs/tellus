@@ -239,14 +239,14 @@ formation the endpoint refused. A decline is logged at warn level when its reaso
 differs from the previous decline, at debug level otherwise, so a node waiting for others says why
 once. `Majority` forms once a strict majority of the universe, this node included, is known to be no
 cluster, and only at the lowest address of the universe. The lowest-address condition ensures that
-only one node forms for a shared universe. The majority stops a partitioned minority from
-re-forming. Both conditions are on the universe rather than on who answered, so a node which cannot
-reach the lowest address forms nothing. Formation liveness is hence a requirement on discovery,
-which must stop resolving nodes that are gone. A reduced view must still satisfy `min_nodes` for the
-next-lowest address to inherit the role. `Unanimous` forms only once every address of the universe
-is known to be no cluster, again at the lowest, so any one unreachable address blocks a cold start.
-`Explicit` never forms: the deployment calls `cluster::form` on one node, and bootstrap only ever
-joins.
+only one node forms for a shared universe. The majority stops a partitioned minority from re-forming
+if the universe holds every node. Both conditions are on the universe rather than on who answered,
+so a node which cannot reach the lowest address forms nothing. Formation liveness is hence a
+requirement on discovery, which must stop resolving nodes that are gone. A reduced view must still
+satisfy `min_nodes` for the next-lowest address to inherit the role. `Unanimous` forms only once
+every address of the universe is known to be no cluster, again at the lowest, so any one unreachable
+address blocks a cold start. `Explicit` never forms: the deployment calls `cluster::form` on one
+node, and bootstrap only ever joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
 gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict
@@ -292,14 +292,15 @@ decision, so it is logged at warn level on every resolution. A round held back b
 a member, its own formation included, and at once when it already is. Membership owns failure
 detection and downing from then on. `min_nodes` counts the universe while the formation provider
 counts what its addresses answered. That distinction keeps a restarted node from re-forming inside a
-partition: discovery is unaffected by a partition, reachability is not. Resolve failures are retried
-and restart the settle window, since nothing was observed during them. There is no overall timeout,
-so the call is bounded by the caller's timeout. `Downed` is fatal per process and means the caller
-should exit, letting the restart mint the fresh incarnation. What does this not prevent? Nodes
-deciding on views with *different lowest addresses* can still form separate clusters, which never
-merge on their own, since the formation rule is only as good as the universe it is taken over. The
-settle window and the `min_nodes` floor make that less likely, so size `min_nodes` to the deployment
-when possible (see Limitations).
+partition: discovery is unaffected by a partition, reachability is not. `FixedSeeds` should hence
+name every node: a partitioned minority holding most of the seeds can otherwise form a second
+cluster after a restart. Resolve failures are retried and restart the settle window, since nothing
+was observed during them. There is no overall timeout, so the call is bounded by the caller's
+timeout. `Downed` is fatal per process and means the caller should exit, letting the restart mint
+the fresh incarnation. What does this not prevent? Nodes deciding on views with *different lowest
+addresses* can still form separate clusters, which never merge on their own, since the formation
+rule is only as good as the universe it is taken over. The settle window and the `min_nodes` floor
+make that less likely, so size `min_nodes` to the deployment when possible (see Limitations).
 
 *Foreign cluster probe*: once bootstrap has made this node a member, it spawns a task which keeps
 the discovery and resolves it again every `probe_interval` (see [Configuration](#configuration);
