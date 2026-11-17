@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794909877042,
+  "lastUpdate": 1794909879090,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -31117,6 +31117,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 85028,
             "range": "± 1955",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8e094be611728f63ef4748607d940ab45eeeba2e",
+          "message": "Merge pull request #462 from tellus-rs/test/concurrent-leave-timeouts\n\ntest(cluster): require only the stayer's ack of concurrent leavers",
+          "timestamp": "2026-11-17T10:56:58+01:00",
+          "tree_id": "68886538fc3f5c5194c266bc6496e369dc71fa76",
+          "url": "https://github.com/tellus-rs/tellus/commit/8e094be611728f63ef4748607d940ab45eeeba2e"
+        },
+        "date": 1794909878489,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2847585,
+            "range": "± 146277",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2848455,
+            "range": "± 46458",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 669840,
+            "range": "± 11381",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 86279,
+            "range": "± 4119",
             "unit": "ns/iter"
           }
         ]
