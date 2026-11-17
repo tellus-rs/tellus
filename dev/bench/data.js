@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794913230006,
+  "lastUpdate": 1794913231935,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35325,6 +35325,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3866058,
             "range": "± 206907",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "22f7e60c394c8b3df4c333ef70f341596dc12fb5",
+          "message": "Merge pull request #465 from tellus-rs/style/381-bootstrap\n\nstyle(bootstrap): drop blank lines before Ok and bound names in where",
+          "timestamp": "2026-11-17T11:52:48+01:00",
+          "tree_id": "6b6ac9e27134be948b5420248f6c5cb8318813f2",
+          "url": "https://github.com/tellus-rs/tellus/commit/22f7e60c394c8b3df4c333ef70f341596dc12fb5"
+        },
+        "date": 1794913231449,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24966757,
+            "range": "± 1151131",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24508122,
+            "range": "± 1751257",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4666993,
+            "range": "± 198458",
             "unit": "ns/iter"
           }
         ]
