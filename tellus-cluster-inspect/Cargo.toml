@@ -13,9 +13,9 @@ categories    = [ "network-programming", "development-tools::debugging" ]
 publish       = true
 
 [dependencies]
-axum         = { workspace = true, features = [ "http1", "json", "tokio" ] }
-futures-util = { workspace = true }
-serde        = { workspace = true, features = [ "derive" ] }
+axum         = { version = "0.8", default-features = false, features = [ "http1", "json", "tokio" ] }
+futures-util = { version = "0.3" }
+serde        = { version = "1.0", features = [ "derive" ] }
 tellus       = { workspace = true, features = [ "cluster", "serde" ] }
 thiserror    = { workspace = true }
 tokio        = { workspace = true, features = [ "rt", "sync" ] }

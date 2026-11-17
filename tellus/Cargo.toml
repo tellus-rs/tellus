@@ -48,17 +48,17 @@ flume           = { workspace = true, features = [ "async" ] }
 hotpath         = { workspace = true, optional = true }
 humantime-serde = { workspace = true, optional = true }
 postcard        = { workspace = true, features = [ "use-std" ], optional = true }
-quinn           = { workspace = true, features = [ "runtime-tokio", "rustls-ring" ], optional = true }
-rcgen           = { workspace = true, features = [ "crypto", "ring" ], optional = true }
-rustls          = { workspace = true, features = [ "ring", "std" ], optional = true }
-semver          = { workspace = true, features = [ "serde" ], optional = true }
-serde           = { workspace = true, features = [ "derive" ], optional = true }
+quinn           = { version = "0.11", default-features = false, features = [ "runtime-tokio", "rustls-ring" ], optional = true }
+rcgen           = { version = "0.14", default-features = false, features = [ "crypto", "ring" ], optional = true }
+rustls          = { version = "0.23", default-features = false, features = [ "ring", "std" ], optional = true }
+semver          = { version = "1.0", features = [ "serde" ], optional = true }
+serde           = { version = "1.0", features = [ "derive" ], optional = true }
 serde_json      = { workspace = true, features = [ "float_roundtrip" ], optional = true }
 thiserror       = { workspace = true }
-tokio           = { workspace = true, features = [ "macros", "rt", "sync", "time" ] }
+tokio           = { version = "1", features = [ "macros", "rt", "sync", "time" ] }
 tracing         = { workspace = true }
 trait-variant   = { workspace = true, optional = true }
-uuid            = { workspace = true, features = [ "v7" ] }
+uuid            = { version = "1.24", features = [ "v7" ] }
 x509-parser     = { workspace = true, optional = true }
 
 [dev-dependencies]
