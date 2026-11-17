@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794939181697,
+  "lastUpdate": 1794939183872,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33637,6 +33637,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 106978,
             "range": "± 2671",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e0a93fd8470bc11cdab7b52c21142f4162d5c400",
+          "message": "Merge pull request #483 from tellus-rs/docs/review-corrections\n\ndocs: correct statements found in review of the 0.6 docs",
+          "timestamp": "2026-11-17T18:57:46+01:00",
+          "tree_id": "9a593468a42dde95402933013e587a8821ce14ce",
+          "url": "https://github.com/tellus-rs/tellus/commit/e0a93fd8470bc11cdab7b52c21142f4162d5c400"
+        },
+        "date": 1794939183315,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4318723,
+            "range": "± 214099",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4605806,
+            "range": "± 181780",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1118095,
+            "range": "± 19334",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 133548,
+            "range": "± 3001",
             "unit": "ns/iter"
           }
         ]
