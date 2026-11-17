@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794898004663,
+  "lastUpdate": 1794898006211,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -30277,6 +30277,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 104242,
             "range": "± 2445",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "1676ba8357545c495bd2f69a386033407d32160b",
+          "message": "Merge pull request #457 from tellus-rs/refactor/internal-feature\n\nrefactor(cluster)!: move test support from cluster-dev to __internal",
+          "timestamp": "2026-11-17T07:38:38+01:00",
+          "tree_id": "45f68dd86530902c802ad8da7f1ad83128a4cd23",
+          "url": "https://github.com/tellus-rs/tellus/commit/1676ba8357545c495bd2f69a386033407d32160b"
+        },
+        "date": 1794898005949,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3934546,
+            "range": "± 112520",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3910182,
+            "range": "± 131874",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1096018,
+            "range": "± 18229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 136487,
+            "range": "± 3894",
             "unit": "ns/iter"
           }
         ]
