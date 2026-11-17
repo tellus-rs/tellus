@@ -20,9 +20,8 @@ e.g. `reply_to: ActorRef<Reply>`, and work unchanged no matter where their count
 Each process runs at most one remoting endpoint, started via `cluster::start_endpoint` with a
 `Transport` (the provided one is QUIC via quinn, TLS included) and an `EndpointConfig`. The separate
 `cluster-dev` feature adds `QuicTransport::dev`, which skips certificate verification and hence
-exists only where it is asked for. It also adds the test hooks `cluster::sever_connections`,
-`cluster::gossip_bytes` and `cluster::drop_terminated_frames`. [Configuration](#configuration) lists
-the keys of the endpoint, of bootstrap and of the QUIC transport.
+exists only where it is asked for. [Configuration](#configuration) lists the keys of the endpoint,
+of bootstrap and of the QUIC transport.
 
 Membership is not optional. A started endpoint is *not* a cluster and admits nobody, `cluster::form`
 makes it a cluster of one, and `cluster::join` makes it a member of the cluster one of its seed

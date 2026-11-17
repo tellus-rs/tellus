@@ -12,13 +12,16 @@ Tasks are defined in the [justfile](justfile):
   needs Docker.
 - `just check` / `just lint` / `just test`: the individual steps, each a feature matrix, every run
   scoped to one crate. Check and lint drive the matrix with `cargo hack --feature-powerset`: the
-  `powerset` variable in the justfile takes `hotpath`, `hotpath-alloc`, `hotpath-callgrind` and `hotpath-cloud` off the axes and
-  declares nothing mutually exclusive, which leaves 60 runs of `-p tellus`. No feature may be
+  `powerset` variable in the justfile takes `__internal`, `hotpath`, `hotpath-alloc`, `hotpath-callgrind` and `hotpath-cloud` off the axes and
+  declares nothing mutually exclusive, which leaves 60 runs of `-p tellus`. `__internal` is
+  tellus's own test and bench support, not public API (the fault injection hooks
+  `cluster::sever_connections` and `cluster::drop_terminated_frames` and the counter
+  `cluster::gossip_bytes`); it implies nothing and gates only items which also need `cluster`. No feature may be
   excluded against one which implies it: cargo-hack resolves a group, so excluding `persistence`
   against `persistence-tests` also drops `persistence-tests,persistence-in-memory`, the one
   combination which compiles `tests/persistence_tests.rs`. Implications need no group anyway,
   since cargo-hack drops a combination whose features resolve to the same set. Then there is plus one `hotpath` run, one
-  `--all-features` run (cargo-hack drops its own once either of those flags is given), the two-run
+  `cluster,__internal` run, one `--all-features` run (cargo-hack drops its own once either of those flags is given), the two-run
   powerset of each of `-p tellus-bootstrap-dns` and `-p tellus-bootstrap-k8s`, and one run each of
   `-p tellus-persistence-postgres`, `-p tellus-cluster-inspect`, `-p tellus-cluster-demo` and `-p
   tellus-cluster-demo-tui`. Adding a feature therefore extends check and lint by itself; only a
@@ -28,8 +31,9 @@ Tasks are defined in the [justfile](justfile):
   `request_response.rs` has one implementation with it and one without); every other feature just
   adds items and tests. That leaves two runs of `-p tellus`, no features (the published default,
   and the only run exercising the non-cluster `ReplyTo`) and
-  `persistence-tests,persistence-in-memory,cluster-dev,serde,test-util` (every feature that has
-  tests, with `cluster-dev` in place of `cluster` since the remoting test needs it,
+  `persistence-tests,persistence-in-memory,cluster-dev,serde,test-util,__internal` (every feature
+  that has tests, with `cluster-dev` in place of `cluster` and `__internal` since the remoting test
+  needs both,
   `persistence-in-memory` since `persistence.rs`, `host_persistence.rs` and
   `persistence_tests.rs` are gated on it, and `test-util` for `test_context.rs`), plus one run each of `-p tellus-bootstrap-dns` and `-p tellus-bootstrap-k8s` with
   `--all-features`, `-p tellus-persistence-postgres`, `-p tellus-cluster-inspect`, `-p
@@ -69,7 +73,7 @@ Tasks are defined in the [justfile](justfile):
   `fairness.rs`, `how_to_unit_test.rs`, `how_to_unit_test_event_sourced.rs`,
   `persistence_tests.rs`, `pipe_to_self.rs`, `queued.rs`, `stash.rs`, `supervision.rs`, `termination.rs`,
   `test_context.rs`, `test_context_persistence.rs`, `timers.rs`, `watch.rs`, plus `cluster.rs`,
-  which needs `--features cluster-dev`, has no test harness and runs its scenarios from `main`,
+  which needs `--features cluster-dev,__internal`, has no test harness and runs its scenarios from `main`,
   spawning itself as further nodes. `test_context.rs` and `how_to_unit_test.rs` need `--features
   test-util`, and `test_context_persistence.rs` and `how_to_unit_test_event_sourced.rs` also
   `persistence`; each target declares these as `required-features` in `tellus/Cargo.toml`. `timers.rs` holds one scheduler-sensitive test,
@@ -168,7 +172,7 @@ Benchmarks:
   asks, a bulk transfer), run by the `cluster.rs` test in its bench role across spawned processes;
   not part of CI, for comparing before and after a change to `tellus/src/cluster`.
 - `just bench-gossip <size>`: the gossip bytes per second of an idle cluster of `size` spawned
-  processes (default 5), after a warm-up, from the `cluster-dev` counter `cluster::gossip_bytes`;
+  processes (default 5), after a warm-up, from the `__internal` counter `cluster::gossip_bytes`;
   not part of CI.
 - `just bench-streams <streams>`: bulk throughput from one node to one actor and ask latency p50,
   p99 and p99.9 towards echo actors on the target's node and on a third node during the transfer,

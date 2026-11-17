@@ -33,6 +33,9 @@ just all
 formats Rust and TOML. Use `just fmt` rather than `cargo fmt`, since the rustfmt configuration
 needs nightly.
 
+The `__internal` feature of `tellus` is test and bench support for tellus itself, such as the fault
+injection of the remoting test. It is not public API and may change in any release.
+
 ## Commits and pull requests
 
 A pull request consists of exactly one commit, which CI enforces. Squash your changes and force
