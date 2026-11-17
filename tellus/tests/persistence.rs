@@ -2060,27 +2060,45 @@ async fn a_snapshot_nested_beyond_the_json_limit_is_discarded_at_every_recovery(
     }
 }
 
-/// An event nested 255 levels deep reads back with the default `Cbor`.
+/// An event nested 256 levels deep reads back with the default `Cbor`, one nested 257 levels deep
+/// is stored all the same, and then every recovery fails on it.
 #[tokio::test]
-async fn an_event_nested_to_the_cbor_limit_recovers() {
+async fn an_event_nested_beyond_the_cbor_limit_is_stored_and_fails_every_recovery() {
     let store = FaultyStore::default();
-    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+    let persistence = Persistence::new(store.clone());
+    let (probe_tx, mut probe_rx) = mpsc::unbounded_channel();
 
     let system = ActorSystem::event_sourced(
         Holder::<Value>::new("cbor-limit", probe_tx.clone()),
-        Persistence::new(store.clone()),
+        persistence.clone(),
     );
-    assert_eq!(ask_held(&system, Some(nested(255))).await, nested(255));
+    assert_eq!(ask_held(&system, Some(nested(256))).await, nested(256));
     system.root().tell(HolderCommand::Stop);
     assert_terminates(system, "first incarnation did not terminate").await;
 
     let system = ActorSystem::event_sourced(
-        Holder::<Value>::new("cbor-limit", probe_tx),
-        Persistence::new(store),
+        Holder::<Value>::new("cbor-limit", probe_tx.clone()),
+        persistence.clone(),
     );
-    assert_eq!(ask_held(&system, None).await, nested(255));
+    assert_eq!(ask_held(&system, None).await, nested(256));
+    assert_eq!(ask_held(&system, Some(nested(257))).await, nested(257));
     system.root().tell(HolderCommand::Stop);
     assert_terminates(system, "second incarnation did not terminate").await;
+    assert_eq!(
+        store.inner().events(&persistence_id("cbor-limit")).len(),
+        2,
+        "the deeper event must be stored"
+    );
+
+    received(&mut probe_rx);
+    for _ in 0..2 {
+        let system = ActorSystem::event_sourced(
+            Holder::<Value>::new("cbor-limit", probe_tx.clone()),
+            persistence.clone(),
+        );
+        assert_terminates(system, "the deeper event must fail recovery").await;
+        assert_eq!(received(&mut probe_rx), [Probe::Init]);
+    }
 }
 
 /// Neither codec preserves `Some(None)`: the live state holds it, while the state recovered from
