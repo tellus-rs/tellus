@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794927086250,
+  "lastUpdate": 1794927088055,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37005,6 +37005,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5489408,
             "range": "± 374426",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9df4bf0099c34bdfbfcc71a4a2c06ca7e19056a8",
+          "message": "Merge pull request #421 from tellus-rs/dependabot/cargo/cargo-minor-6b6bad5372\n\nbuild(deps): Bump serde_with from 3.22.0 to 3.24.0 in the cargo-minor group across 1 directory",
+          "timestamp": "2026-11-17T15:43:07+01:00",
+          "tree_id": "d815cd4ce36281375fac7d7d9e779da3e4ca92fb",
+          "url": "https://github.com/tellus-rs/tellus/commit/9df4bf0099c34bdfbfcc71a4a2c06ca7e19056a8"
+        },
+        "date": 1794927087634,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30388242,
+            "range": "± 1325746",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30325882,
+            "range": "± 1582474",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5744510,
+            "range": "± 414379",
             "unit": "ns/iter"
           }
         ]
