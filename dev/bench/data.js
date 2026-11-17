@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794904854736,
+  "lastUpdate": 1794904856547,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -30781,6 +30781,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 124592,
             "range": "± 3906",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "de7929ec18e2df4dd28c47885010b1ebf0151f98",
+          "message": "Merge pull request #460 from tellus-rs/docs/fixed-seeds-every-node\n\ndocs(cluster): name every node in FixedSeeds to keep a minority out",
+          "timestamp": "2026-11-17T09:25:44+01:00",
+          "tree_id": "e1ad3b6d02ab027a528371d5cc6eaa9b622df815",
+          "url": "https://github.com/tellus-rs/tellus/commit/de7929ec18e2df4dd28c47885010b1ebf0151f98"
+        },
+        "date": 1794904856126,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2867277,
+            "range": "± 75545",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2834316,
+            "range": "± 76548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 664495,
+            "range": "± 10678",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 85408,
+            "range": "± 5575",
             "unit": "ns/iter"
           }
         ]
