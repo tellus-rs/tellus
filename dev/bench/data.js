@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794900120295,
+  "lastUpdate": 1794900121787,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -34275,6 +34275,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5260528,
             "range": "± 298583",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "45812ecab3327e828d40333d2e2e8837bba5b59e",
+          "message": "Merge pull request #458 from tellus-rs/test/fault-injection-took-effect\n\ntest(cluster): prove the injected faults took effect",
+          "timestamp": "2026-11-17T08:13:48+01:00",
+          "tree_id": "1d42f887f9ce07c12cbe546f5f85cfccea9baa45",
+          "url": "https://github.com/tellus-rs/tellus/commit/45812ecab3327e828d40333d2e2e8837bba5b59e"
+        },
+        "date": 1794900121493,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31862410,
+            "range": "± 2023592",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 29699157,
+            "range": "± 1490179",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5186229,
+            "range": "± 354897",
             "unit": "ns/iter"
           }
         ]
