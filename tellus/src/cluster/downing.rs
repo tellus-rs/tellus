@@ -15,7 +15,9 @@ pub type DowningProviderFactory = Arc<dyn Fn() -> Box<dyn DowningProvider> + Sen
 /// Decides when an unreachable member is downed, polled once per heartbeat interval; the default
 /// is [KeepMajority]. A provider sees the whole membership, so it can resolve a partition by
 /// downing this node rather than the members it cannot reach; see docs/cluster.md on what a
-/// partition does to the guarantees either way.
+/// partition does to the guarantees either way. A provider which panics is replaced by a fresh one
+/// from its factory. On a node which is leaving, [SelfDown](Downing::SelfDown) only ends the
+/// polling, since the leave is underway.
 pub trait DowningProvider
 where
     Self: Send + 'static,
@@ -69,7 +71,7 @@ pub enum Downing {
 ///
 /// In a cluster of two every failure is an even split, so the lower address survives and the
 /// higher one downs itself, whichever of them actually failed: when the lower one crashes, the
-/// cluster is gone. Two nodes cannot tell a crash from a partition, so a two node deployment
+/// cluster is gone. Two nodes cannot tell a crash from a partition, so a two-node deployment
 /// which must survive either one failing needs a third member.
 #[derive(Debug, Clone, Copy)]
 #[cfg_attr(

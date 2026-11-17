@@ -205,14 +205,27 @@ Actors on other nodes are watched the same way. A signal traveling from there ke
 guarantee, but one synthesized because the node was downed can only promise that no further
 message from that actor will ever arrive; see [docs/cluster.md](../docs/cluster.md).
 
+### Stashing
+
+An actor which cannot handle a message in its current state can defer it. With
+`type Stash = Stashed;` it calls `ActorContext::stash` with the incoming at hand, and
+`ActorContext::unstash_all` hands every stashed item back once the state is ready, in the order
+they were stashed and ahead of the mailbox. The stash has the mailbox's capacity, and a full one
+hands the incoming back as the error of `stash`. An actor with `type Stash = Unstashed;` has no
+stash and pays nothing for it. See [docs/actors.md](../docs/actors.md#stashing) for the details.
+
 ### Supervision
 
 Each actor is configured with a `SupervisionStrategy` deciding what happens when `init` or
-`receive` returns an error or panics: `Stop` terminates the actor, `Restart` stops its children
-and re-runs `init` for a fresh state. Restarts are limited and paced by a `RestartPolicy`: they
-back off exponentially between the backoff's `min` and `max`, the actor stops when it fails again
-after `max_restarts` restarts, and running for `reset_after` without failure resets that count.
-Failures are logged at error level either way.
+`receive` returns an error or panics: `Stop`, the default, terminates the actor, `Restart` stops its
+children and re-runs `init` for a fresh state. Restarts are limited and paced by a `RestartPolicy`:
+they back off exponentially between the backoff's `min` and `max` (250 ms and 4 s by default), the
+actor stops when it fails again after `max_restarts` restarts, and running for `reset_after` (30 s
+by default) without failure resets that count. Failures are logged at error level either way.
+
+A restart keeps the actor value, its `ActorRef` and its mailbox with every queued message. It drops
+the state, which `init` rebuilds, and the timers, fired ones included. The children are stopped,
+and the stashed items are handed back, so the new state receives them first, in order.
 
 ### Hosts
 
@@ -221,12 +234,30 @@ A `Host` is an actor hosting entities: children identified by a key, spawned on 
 no message has been routed through the host for that long, by telling it `Hosted::Passivate`; an
 entity's messages are `Hosted<M>`, so passivation stays out of its domain messages `M`. The
 messages routed to an entity while it stops are buffered, up to the configured buffer, and
-delivered to its next incarnation. See [docs/actors.md](../docs/actors.md#hosts) for the
+delivered to its next incarnation. `HostConfig::default` buffers 64 messages per entity and sets no
+idle timeout, so it keeps every entity alive. See [docs/actors.md](../docs/actors.md#hosts) for the
 guarantees.
+
+### Clustering
+
+With the `cluster` feature, actors on several processes form a cluster and message each other
+through the same `ActorRef`. A node starts its endpoint with `cluster::start_endpoint` over a
+transport, QUIC with mutual TLS (`QuicTransport`). It then forms a cluster with `cluster::form`,
+joins one with `cluster::join`, or leaves both decisions to `cluster::bootstrap`, which reads the
+seed addresses from a `SeedDiscovery`. Every message type crossing nodes implements `Schema`, the
+versioned encoding which makes rolling upgrades possible. A type also implements `Manifest`, its
+stable name, where tellus checks a reference's message type across nodes: for a discovery key, a
+topic, or `serialize_ref` and `deserialize_ref`. Actors find each other through `cluster::register`
+and the receptionist's `lookup`, and `pubsub` fans a message out to every subscriber of a topic.
+`cluster::leave` ends a node's membership cleanly, and failure detection and downing end it when the
+node is gone. The `cluster-dev` feature adds `QuicTransport::dev`, which needs no certificates of
+your own, for local development. For which guarantees carry over the network and which weaken, see
+[docs/cluster.md](../docs/cluster.md).
 
 ### Configuration
 
-`ActorConfig` currently holds the mailbox capacity and the supervision strategy:
+`ActorConfig` holds the mailbox capacity, unbounded by default, and the supervision strategy,
+`Stop` by default:
 
 ```rust
 use std::num::NonZeroUsize;

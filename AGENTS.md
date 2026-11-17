@@ -82,7 +82,7 @@ Tasks are defined in the [justfile](justfile):
   started tutorial lives in `tellus/examples/tutorials/getting_started/`, one example per step.
   The remoting examples need `--features cluster-dev`, e.g. `cargo run --quiet -p tellus --features
   cluster-dev --example remote_scatter_gather` (or `cluster`).
-- Cluster demo: `just start-cluster-demo-compose` starts the forever running five node chaos
+- Cluster demo: `just start-cluster-demo-compose` starts the forever running five-node chaos
   cluster (`tellus-cluster-demo`) in Docker Compose and `stop-cluster-demo-compose` stops it and
   drops its volumes; `start-cluster-demo-k8s [dns|k8s]` and `stop-cluster-demo-k8s` do the same in
   kind; `logs-cluster-demo-compose` and `logs-cluster-demo-k8s` follow the logs of the respective
@@ -348,7 +348,7 @@ Item order within a file:
   built by the `compose!` macro, whose path argument is relative to the *calling* crate's
   manifest. Lookups panic like assertions, naming the compose file. Deliberately exposes no
   `ports` or `command`: tests use the port testcontainers maps.
-- `tellus-cluster-demo/`: a five node cluster running forever under continuous chaos, in two
+- `tellus-cluster-demo/`: a five-node cluster running forever under continuous chaos, in two
   stacks running the same two binaries. Docker Compose (`start-cluster-demo-compose`,
   `stop-cluster-demo-compose`, `logs-cluster-demo-compose`, plus the stack-agnostic
   `status-cluster-demo` and `violations-cluster-demo`): DNS seed discovery through a Docker

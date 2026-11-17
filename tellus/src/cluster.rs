@@ -9,6 +9,13 @@
 //! the actor in the endpoint's registry, so inbound messages find it; the binding is evicted once
 //! the actor terminates. Message payloads are encoded by a [Codec], by default [Codec::Postcard].
 //!
+//! Every type crossing nodes implements [Schema], whose [VERSION](Schema::VERSION) names the shape
+//! of its payload. Its `encode` sees the [Peer] and the application version that peer announced,
+//! the `app_version` of its [EndpointConfig], so it can write an older shape for an older peer.
+//! Its `decode` upcasts older versions. Together they make a rolling upgrade possible, see
+//! docs/cluster.md, "Rolling upgrades". [lifecycle] tells whether this node is a member of no
+//! cluster yet, a member of one, or downed or left for good.
+//!
 //! The nodes messaging each other form a *cluster*, and membership is not optional. A started
 //! endpoint is not a cluster and admits nobody: [form] makes it a cluster of one, [join] makes it a
 //! member of the cluster one of its seed addresses is in, and only members message each other.
@@ -41,14 +48,14 @@
 //! every subscriber the receptionist resolves.
 //!
 //! The seed addresses themselves can be discovered: [bootstrap](fn@bootstrap) resolves them through
-//! a [SeedDiscovery] and joins through them. The provided discoveries are [FixedSeeds] here, DNS in
-//! the `tellus-bootstrap-dns` crate and Kubernetes pods in the `tellus-bootstrap-k8s` crate. When
-//! no address of a settled view is a member of anything, the [FormationProvider] decides whether
-//! this node forms a cluster. The default, [Majority], forms at the lowest address of the universe
-//! once a majority of it is known to be no cluster. Requiring a majority keeps a partitioned node
-//! from coming back as a cluster of its own. Bootstrap runs once; from then on membership owns
-//! failure detection and downing, and a probe reports any other cluster at a discovered address in
-//! [ClusterState::foreign_clusters].
+//! a [SeedDiscovery] and joins through them. The provided discovery is [FixedSeeds], and other
+//! implementations resolve seeds from DNS records or Kubernetes pods. When no address of a settled
+//! view is a member of anything, the [FormationProvider] decides whether this node forms a cluster.
+//! The default, [Majority], forms at the lowest address of the universe once a majority of it is
+//! known to be no cluster. Requiring a majority keeps a partitioned node from coming back as a
+//! cluster of its own, as long as the discovery yields every node. Bootstrap runs once; from then
+//! on membership owns failure detection and downing, and a probe reports any other cluster at a
+//! discovered address in [ClusterState::foreign_clusters].
 //!
 //! Alternatively [serialize_ref] turns a local reference into bytes to be shared via configuration,
 //! command line or any other channel. [deserialize_ref] resolves them on another node, refusing
@@ -63,26 +70,26 @@
 //! one sender to one target arrive in send order. All messages toward one actor ride one ordered
 //! stream of the lane toward its node, enqueued at tell time and delivered to mailboxes in arrival
 //! order, so a large message only delays frames toward actors sharing its stream. A lost
-//! connection is reconnected with backoff; frames queued while the link is down flush in order,
+//! connection is reconnected; frames queued while the link is down flush in order,
 //! so per-sender FIFO across reconnects is "in order, with gaps".
 //!
-//! Death watch works across nodes through the ordinary [ActorContext::watch], with a two tier
+//! Death watch works across nodes through the ordinary [ActorContext::watch], with a two-tier
 //! contract. A terminated signal for a *real termination* keeps the full local guarantee: it is
 //! ordered behind all messages the terminated actor delivered to the watcher and proves its
 //! destructors have run. A signal *synthesized* when the watched actor's member is downed only
 //! proves that no message from that actor will ever be delivered through this endpoint again. The
 //! two are indistinguishable in the API. A watch on an incarnation already Left or Down fires the
 //! synthesized signal immediately, or with the node's death while its departure still drains. A
-//! node not known yet is watched like any other. See docs/cluster.md for the full contract and
-//! its rationale.
+//! node not known yet is watched like any other. See `docs/cluster.md` in the repository for the
+//! full contract and its rationale.
 //!
 //! Request-response crosses nodes the same way: [ReplyTo] is serializable and travels inside
-//! messages, so [ActorRef::ask] and [ActorContext::reply_to] work unchanged against remote
-//! actors. An ask still resolves exactly once, at latest at its timeout, and a reply keeps
-//! per-sender FIFO with the responder's other messages to the asker. The `NoReply` detection
-//! weakens to best-effort. A reply destination dropped on another node is signaled
-//! fire-and-forget, and so is a request dead-lettered undecoded on the receiving node. Downing a
-//! member fails the asks pending toward it. See docs/cluster.md for the exact contract.
+//! messages, so [ActorRef::ask] and [ActorContext::reply_to] work unchanged against remote actors.
+//! An ask still resolves exactly once, at latest at its timeout, and a reply keeps per-sender FIFO
+//! with the responder's other messages to the asker. The `NoReply` detection weakens to
+//! best-effort. A reply destination dropped on another node is signaled fire-and-forget, and so is
+//! a request dead-lettered undecoded on the receiving node. Downing a member fails the asks pending
+//! toward it. See `docs/cluster.md` in the repository for the exact contract.
 //!
 //! [Codec]: crate::cluster::codec::Codec
 //! [Codec::Postcard]: crate::cluster::codec::Codec::Postcard

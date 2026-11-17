@@ -60,7 +60,7 @@ cargo add tellus
   server, answering a snapshot of the node's cluster view and streaming every change of it as
   server-sent events, resumable and never silently skipping. See
   [its README](tellus-cluster-inspect/README.md).
-- [`tellus-cluster-demo`](tellus-cluster-demo): a five node cluster running forever under continuous
+- [`tellus-cluster-demo`](tellus-cluster-demo): a five-node cluster running forever under continuous
   chaos, managed by Docker Compose or in kind. Its nodes find each other through DNS or Kubernetes
   seed discovery, and every cycle brings one fault: a crash, a departure, a network partition or a
   rolling upgrade to another application version. A verifier checks convergence, cross-node

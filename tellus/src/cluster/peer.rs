@@ -83,7 +83,8 @@ pub(crate) struct ProbeRequest {
     pub(crate) result_tx: oneshot::Sender<Result<Option<ClusterId>, ConnectError>>,
 }
 
-/// A transport failure or a silent peer is transient, everything else is final.
+/// Why a connection attempt failed. [ConnectError::is_retryable] tells the transient failures
+/// from the final ones.
 #[derive(Debug, Error)]
 pub(crate) enum ConnectError {
     #[error(transparent)]
@@ -150,12 +151,13 @@ impl ConnectError {
         )
     }
 
-    /// A refusal as an unknown member is retryable: gossip may not have reached it yet. A refusal
-    /// from a node which is no cluster yet, or not yet a member of the cluster which admitted it,
-    /// is retryable until it has formed one or joined one. A
-    /// refusal holding back joins is retryable until the unreachable member is reachable again or
-    /// downed, or until the leaving node is gone. A refusal of a dead incarnation is retryable,
-    /// since its successor may come up at the same address.
+    /// A transport failure other than an oversize frame, a closed connection and a silent peer are
+    /// retryable. A refusal as an unknown member is retryable: gossip may not have reached it yet.
+    /// A refusal from a node which is no cluster yet, or not yet a member of the cluster which
+    /// admitted it, is retryable until it has formed one or joined one. A refusal holding back
+    /// joins is retryable until the unreachable member is reachable again or downed, or until the
+    /// leaving node is gone. `Dead`, a dead incarnation known to this node, is retryable, since its
+    /// successor may come up at the same address. A peer refusing this node as `Down` is final.
     fn is_retryable(&self) -> bool {
         match self {
             ConnectError::Transport(TransportError::FrameTooLarge { .. }) => false,
@@ -287,7 +289,7 @@ pub(crate) async fn probe_loop<T>(
     }
 }
 
-/// The data streams are ordered as their queues were, which is how [EndpointInner::send] indexes.
+/// The data streams, in the order of the lane's data queues.
 struct Connected<C>
 where
     C: Connection,

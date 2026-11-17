@@ -6,7 +6,7 @@ implementation lives in [`tellus/src/cluster`](../tellus/src/cluster). Its publi
 what every node calls, with one submodule per pluggable family (`transport`, `downing`, `failure`,
 `formation`), one for the payload codec (`codec`) and one each for the directory and the fan-out
 over it (`receptionist`, `pubsub`). [`tellus-cluster-demo`](../tellus-cluster-demo) runs five
-nodes of it under continuous crashes, departures and partitions.
+nodes of it under continuous crashes, departures, partitions and rolling upgrades.
 
 ## Overview
 
@@ -144,7 +144,9 @@ by node with the larger state per incarnation, hence commutative, associative an
 duplicated, reordered or crossed gossip cannot corrupt it, and no versioning or anti-entropy
 machinery is needed.
 
-*Joining*: `cluster::join` tries its seed addresses in order with the reconnect backoff between
+### Joining
+
+`cluster::join` tries its seed addresses in order with the reconnect backoff between
 rounds, no internal timeout, until one admits the joiner. It fails at once with `NoSeeds` when the
 seeds hold no address but this node's own, since joining never forms. A join rides one dedicated
 connection: the handshake names the joiner with `Join` intent, the seed admits it as Up and answers
@@ -161,16 +163,20 @@ of joins. Independent clusters must not share seeds: a joiner becomes a member o
 admits it first, and the two clusters never merge, since every handshake names its cluster (see
 cluster identity below).
 
-*Join holdback*: a member holds back joins while any Up member is outside its reachability
-component, the same members `ClusterState::unreachable` reports. A broken link between two members
-inside the component does not count. A held join is answered `JoinsHeld`, which is retryable, so
-`cluster::join` keeps retrying until the unreachable member is reachable again or downed. Why hold
-back? A side of a partition which admitted new nodes could grow into a majority of its own, while
-the other side still counts itself the majority too. A join from a younger incarnation at the
-address of an Up member is admitted all the same, since it supersedes that member (see
-supersession below), and so is a member joining again. A member which is leaving holds back every
-join which would add a member, see Leaving. Bootstrap retries a held seed and never asks the
-formation provider about that round, since the refusal proves that a cluster exists there.
+### Join holdback
+
+A member holds back joins while any Up member is outside its reachability component, the same
+members `ClusterState::unreachable` reports. A broken link between two members inside the component
+does not count. A held join is answered `JoinsHeld`, which is retryable, so `cluster::join` keeps
+retrying until the unreachable member is reachable again or downed. Why hold back? A side of a
+partition which admitted new nodes could grow into a majority of its own, while the other side still
+counts itself the majority too. A join from a younger incarnation at the address of an Up member is
+admitted all the same, since it supersedes that member (see [Supersession](#supersession)), and so
+is a member joining again. A member which is leaving holds back every join which would add a member,
+see [Leaving](#leaving). Bootstrap retries a held seed and never asks the formation provider about
+that round, since the refusal proves that a cluster exists there.
+
+### Exclusive and pinned joins
 
 Joining is exclusive and, once a cluster has answered, pinned. At most one join attempt runs per
 endpoint, because two overlapping ones could be admitted by two different clusters before either is
@@ -186,25 +192,29 @@ seeing the address leave a newly settled discovery view. A round in which the pi
 cluster which admitted this node may live on in the other seeds. Formation is hence decided on a
 round over every seed, not on that answer alone.
 
-*Ambiguous joins*: an attempt can also fail after its `Join` handshake was sent but before a
-validated answer pins anything. That covers a timeout, while exchanging handshakes or while opening
-the data streams, a closed connection, an undecodable or unexpected first frame and a transport
-error. It also covers a reply which fails the dialer's own checks: an advertised address other than
-the dialed one, an identity which does not cover it, a dead incarnation or a reply naming no
-cluster. A member snapshot larger than the joiner accepts counts, and so does a join task which
-panics once it has started to send the handshake. The seed may have admitted this node in each of
-these cases, so the endpoint records the address as *ambiguous* and logs a warning. While any
-address is ambiguous, `cluster::form` fails with `FormError::JoinAmbiguous`, and bootstrap reports
-that as a declined formation. Joins continue through any seed, unlike under a pin, since nothing
-proves which cluster, if any, admitted this node. The record ends once that address answers a join
-definitively (`NoCluster`, `Joining`, `UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster` or a
-reply naming another cluster), once bootstrap sees it leave a settled discovery view, or once
+### Ambiguous joins
+
+An attempt can also fail after its `Join` handshake was sent but before a
+validated answer pins anything. That covers a timeout while exchanging handshakes, a closed
+connection, an undecodable or unexpected first frame and a transport error. It also covers a reply
+which fails the dialer's own checks: an advertised address other than the dialed one, an identity
+which does not cover it, a dead incarnation, another codec or a reply naming no cluster. A member
+snapshot larger than the joiner accepts counts, and so does a join task which panics once it has
+started to send the handshake. The seed may have admitted this node in each of these cases, so the
+endpoint records the address as *ambiguous* and logs a warning. While any address is ambiguous,
+`cluster::form` fails with `FormError::JoinAmbiguous`, and bootstrap reports that as a declined
+formation. Joins continue through any seed, unlike under a pin, since nothing proves which cluster,
+if any, admitted this node. The record ends once that address answers a join definitively
+(`NoCluster`, `Joining`, `UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster`, `CodecMismatch` or
+a reply naming another cluster), once bootstrap sees it leave a settled discovery view, or once
 `EndpointConfig::ambiguous_join_bound` (see [Configuration](#configuration)) has passed. A
 definitive refusal proves that the seed did not admit this node, so initial formation proceeds
 normally after one.
 
-*Cluster identity*: every cluster has an ID, a UUIDv7 minted when a node forms it, so clusters order
-by formation time. A joiner learns its seed's ID from the seed's reply handshake and holds it
+### Cluster identity
+
+Every cluster has an ID, a UUIDv7 minted when a node forms it, so clusters
+order by formation time. A joiner learns its seed's ID from the seed's reply handshake and holds it
 *provisionally*, together with the pin. It *commits* the ID only once the seed's member snapshot has
 arrived whole, right before merging it, and from then on it is a member of that cluster for good.
 `ClusterState::cluster` reports the committed ID, `None` before there is one. While the pin lasts,
@@ -223,7 +233,9 @@ another: `cluster::join` fails with `ForeignCluster` once every seed of a round 
 of another cluster. A `Probe` handshake is answered with the reply handshake, which names this
 node's cluster, and is never admitted.
 
-*Forming*: a cluster comes into being by decision, never as a side effect. `cluster::form` makes
+### Forming
+
+A cluster comes into being by decision, never as a side effect. `cluster::form` makes
 this node a cluster of one for a deployment which decides for itself. It is refused if this node is
 already a member, has been downed, or has a join attempt, a pinned cluster or an ambiguous join
 outstanding. Otherwise `cluster::bootstrap` decides through a `FormationProvider`, a pluggable trait
@@ -260,7 +272,9 @@ gone, can form a cluster of its own beside the one they form. The foreign cluste
 bootstrap below) reports such a double formation in `ClusterState::foreign_clusters` on both sides,
 but the two clusters never merge.
 
-*Bootstrap*: `cluster::bootstrap` turns the seed addresses from configuration into discovery. A
+### Bootstrap
+
+`cluster::bootstrap` turns the seed addresses from configuration into discovery. A
 `SeedDiscovery` resolves them; the provided ones are `FixedSeeds` in tellus, SRV and A/AAAA records
 in the [`tellus-bootstrap-dns`](../tellus-bootstrap-dns) crate and pods listed by label selector in
 the [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s) crate. The *universe* is the resolved set
@@ -302,7 +316,9 @@ addresses* can still form separate clusters, which never merge on their own, sin
 rule is only as good as the universe it is taken over. The settle window and the `min_nodes` floor
 make that less likely, so size `min_nodes` to the deployment when possible (see Limitations).
 
-*Foreign cluster probe*: once bootstrap has made this node a member, it spawns a task which keeps
+### Foreign cluster probe
+
+Once bootstrap has made this node a member, it spawns a task which keeps
 the discovery and resolves it again every `probe_interval` (see [Configuration](#configuration);
 `None` turns it off). It probes every resolved address which is neither this node nor an Up member
 here, all of a round at once and the round bounded by the interval. A probe connects, sends a
@@ -315,7 +331,9 @@ probe intervals (90 s by default), or once its address is an Up member here. Two
 merge, so an entry is a split for an operator to resolve, see Limitations. The task stops once this
 node is downed. Nothing is reported before this node has committed a cluster.
 
-*Gossip*: every `heartbeat_interval` each node sends one gossip frame to every Up member. That
+### Gossip
+
+Every `heartbeat_interval` each node sends one gossip frame to every Up member. That
 frame carries the full member list unless the member has been sent the current list already, in
 which case it is empty. Every 10th tick sends the full list regardless. A node records per member
 the version of the list it last sent in full, and only once the frames were queued on the lane. A
@@ -342,19 +360,20 @@ relay past this node. A parked record naming a node which is Down here, or parke
 table, and every tick re-asserts this node's own standing unreachable statements, which together
 repair a record lost with a connection rather than dropped on arrival.
 
-Batching bounds the frames, not the replication. Every node forwards every statement it accepts to
-every Up peer, the one it came from included. A single edge change hence still costs O(n^2) copies
-of that record across the cluster, and a partition breaking e edges costs O(e * n^2). That is an
-accepted bound, not one this design removes: it is the same order as the membership push, and a
-smaller fan-out would trade the deterministic spread that downing agreement rests on for a
-probabilistic one. Reachability is free while a cluster is healthy, since nothing is then queued or
-re-asserted; membership is not, since every node sends a gossip frame to every peer each tick,
-which is O(n^2) frames per interval across the cluster. While the list is unchanged those frames
-are empty, but every 10th tick still copies the whole list, O(n^3) entries. Both are
-deliberately simple for the cluster sizes this targets, and neither is meant for hundreds of
-nodes.
+Batching bounds each frame's size but not the replication, since every node forwards every
+statement it accepts to every Up peer, the one it came from included. A single edge change hence
+still costs O(n^2) copies of that record across the cluster, and a partition breaking e edges costs
+O(e * n^2). That is an accepted bound, not one this design removes: it is the same order as the
+membership push, and a smaller fan-out would trade the deterministic spread that downing agreement
+rests on for a probabilistic one. Reachability is free while a cluster is healthy, since nothing is
+then queued or re-asserted; membership is not, since every node sends a gossip frame to every peer
+each tick, which is O(n^2) frames per interval across the cluster. While the list is unchanged those
+frames are empty, but every 10th tick still copies the whole list, O(n^3) entries. Both are
+deliberately simple for the cluster sizes this targets, and neither is meant for hundreds of nodes.
 
-*Refusal*: an inbound `Member` handshake from a node which is not an Up member is answered with a
+### Refusal
+
+An inbound `Member` handshake from a node which is not an Up member is answered with a
 refusal the dialer treats as retryable, since gossip may not have carried that node's join
 everywhere yet. The backoff retry succeeds once it has. A dead incarnation's handshake is refused
 finally. The outbound direction is optimistic: a send toward a node this endpoint does not know yet,
@@ -369,18 +388,23 @@ node's own address opens no lane, since that lane would connect this node to its
 an actor of this node's predecessor, e.g. one serialized before a restart and read back afterward at
 the same address, hence fails fast.
 
-*Supersession*: a join from a younger incarnation at an address an Up member already advertises
+### Supersession
+
+A join from a younger incarnation at an address an Up member already advertises
 proves the old process is gone, so the old incarnation is downed and the new one admitted. A join
 from an older incarnation is refused as Down and downs the joiner instead. Where both directions
 race, the younger incarnation wins: UUIDv7 incarnations order by minting time, assuming the
 restarting host's clock did not regress. The direct join handshake stays the primary path; the
 ordering only makes the gossip merge convergent.
 
-*Leaving*: `cluster::leave` announces a departure instead of leaving it to be detected: this node
+### Leaving
+
+`cluster::leave` announces a departure instead of leaving it to be detected: this node
 moves its own entry to Left, pushes that member list to every Up member, stops sending anything
 else, drains its lanes, and severs. The announcement goes to every Up member, a lane still being
-dialed included: it is the last thing this endpoint enqueues and can hence not grow a queue the way
-the periodic gossip would. Each lane's writers write out what is queued, the frame a writer holds
+dialed included. Sends are refused right after it, so it cannot grow a queue the way the periodic
+gossip would. A send racing the leave on another thread may still be queued behind it, and it is
+drained with the rest. Each lane's writers write out what is queued, the frame a writer holds
 included, and finish every data stream. Then the control stream carries a `Drained` marker as its
 final frame, naming the number of data streams this node opened on that connection. The peer answers
 with a `DrainAck` once exactly that many data streams have ended cleanly and every frame they
@@ -461,7 +485,9 @@ undecodable frame. That is a `Drained` marker on a data stream or from a member 
 node does not defer, and a `DrainAck` on an accepted connection or toward a node which is not
 leaving.
 
-*Self-down*: a Down watermark at a node's own address can cover its incarnation. When gossip or a
+### Self-down
+
+A Down watermark at a node's own address can cover its incarnation. When gossip or a
 final refusal tells the node so, it honors the verdict: it logs at error level, severs every
 connection, and refuses everything from then on; `cluster::join` fails as `Downed`. A younger
 incarnation at this node's own address, arriving as a join or as an Up entry in gossip, has the same
@@ -473,7 +499,9 @@ back, by gossip or a refusal, leaves that latch to its leave. Neither settles an
 watchers of remote actors get no signal, asks resolve only by their timeout and actor-origin
 requests not at all, which is why the process is expected to exit.
 
-*Retention*: a detailed Left or Down entry is dropped `down_retention` after this node learned of
+### Retention
+
+A detailed Left or Down entry is dropped `down_retention` after this node learned of
 it, but its address keeps the greatest Left or Down UUIDv7 incarnation as a compact watermark,
 together with its state, merged along the same lattice. A node learning a swept departure from a
 setup snapshot hence learns a departure, not a downing. That watermark refuses the dead process and
@@ -493,27 +521,29 @@ behind its handshake, and the dialer sends its own over the freshly bound lane. 
 converge, because a node absent longer than the retention has to reconnect before it can say
 anything, and either side of that reconnect hands the other its fences. A snapshot is split into as
 many `Gossip` frames as `max_frame_size` demands, every one but the last marked `more` so a joiner
-reads the whole of it; the merge, being a CRDT union, absorbs the chunks in any order. A
-`max_frame_size` too small to hold one member or one reachability record, each with its envelope, is
-refused by `cluster::start_endpoint`, since no chunking could keep a snapshot within it.
-`down_watermarks` caps the set, which bounds both the memory an endpoint spends on outlived
-addresses and the time a connection setup takes to hand them over. Above the cap, a watermark this
-node learned longer than `down_retention` ago is evicted, the earliest learned first. Learning a
-newer incarnation at an address counts as learning its watermark anew; hearing the same one again
-does not. A watermark learned within the retention is kept above the cap, so a death this node has
-just learned is not forgotten at once, and a warning is logged when the set first exceeds the cap.
-Twice `down_watermarks` is a hard ceiling, beyond which the earliest learned watermark is evicted
-regardless. A detailed Left or Down entry still refuses its own incarnation until it is swept,
-whether or not its watermark remains. A joiner accepts a snapshot of at most 2^16 members plus twice
-its own `down_watermarks` fences. Hence `down_watermarks` must not be larger on any node than on the
-nodes joining it, and in practice it is the same on every node. An address whose watermark has been
-evicted and whose detailed entry, if any, has been swept falls back to the behavior it had before
-watermarks. A zombie's `Member` handshake is then refused as an unknown member rather than told it
-is dead, and its `Join` handshake is admitted again.
+reads the whole of it; the merge, being a CRDT union, absorbs the chunks in any order.
+`cluster::start_endpoint` refuses a `max_frame_size` below 205 bytes, the widest handshake. That
+floor also holds one member and one reachability record with their envelopes, so chunking always
+keeps a snapshot within it. `down_watermarks` caps the set, which bounds both the memory an endpoint
+spends on outlived addresses and the time a connection setup takes to hand them over. Above the cap,
+a watermark this node learned longer than `down_retention` ago is evicted, the earliest learned
+first. Learning a newer incarnation at an address counts as learning its watermark anew; hearing the
+same one again does not. A watermark learned within the retention is kept above the cap, so a death
+this node has just learned is not forgotten at once, and a warning is logged when the set first
+exceeds the cap. Twice `down_watermarks` is a hard ceiling, beyond which the earliest learned
+watermark is evicted regardless. A detailed Left or Down entry still refuses its own incarnation
+until it is swept, whether or not its watermark remains. A joiner accepts a snapshot of at most 2^16
+members plus twice its own `down_watermarks` fences. Hence `down_watermarks` must not be larger on
+any node than on the nodes joining it, and in practice it is the same on every node. An address
+whose watermark has been evicted and whose detailed entry, if any, has been swept falls back to the
+behavior it had before watermarks. A zombie's `Member` handshake is then refused as an unknown
+member rather than told it is dead, and its `Join` handshake is admitted again.
 
 The fence relies on UUIDv7 incarnations being monotone at an address. In particular, a host whose
 clock moves backward across a restart can mint an incarnation below the watermark and be refused
 until an operator intervenes.
+
+### Members and downing
 
 `cluster::members` answers the member list of the current cluster state (see below), `cluster::down`
 downs a member by address, e.g. for an operator who knows a node is gone for good, and
@@ -526,6 +556,8 @@ what puts the departure behind every terminated signal the tree owes remote watc
 system did not terminate cleanly, it still announces the departure and then fails with
 `LeaveError::Terminated`. On an endpoint which has neither formed nor joined a cluster, it fails
 with `LeaveError::NotAMember` once the actor system has terminated.
+
+### Example
 
 [`examples/cluster.rs`](../tellus/examples/cluster.rs) runs all of this in four processes. It joins
 through one seed address and converges on a member list nothing was configured with. Every survivor
@@ -608,7 +640,7 @@ How much a larger pool buys was measured with `just bench-streams <streams>`, wh
 of a second node, 16,000 in all after a warm-up of 2,000. Meanwhile four serial probers ask 256 echo
 actors on that second node, which share the transfer's lane, and 256 on a third node, which do not.
 Every prober cycles over all echoes, so each echo is asked equally often. All three processes ran on
-one 10 core arm64 machine over loopback, in release mode. Five runs per stream count followed one
+one 10-core arm64 machine over loopback, in release mode. Five runs per stream count followed one
 discarded run each, interleaved:
 
 | Streams | Bulk throughput (best, range) | Same node p50 | Same node p99 (best, range) | Other node p99 |
@@ -639,16 +671,17 @@ is the last frame on its control stream, sent after every data stream is finishe
 many data streams the connection had. `DrainAck` answers it on the reply direction of the control
 stream, which otherwise carries only the accepting side's setup frames.
 
-A lost connection is reconnected with exponential backoff; frames queued while the link is down are
-delivered after the reconnect, in order. There is no replay of frames already handed to a dead
-connection: delivery stays at-most-once, per-sender FIFO becomes "in order, with gaps". An address
-no Up member advertises is given up after `max_connect_attempts` failed attempts, turning its queued
-frames into dead letters. A member's address is retried until the downing provider settles its fate,
-whatever the attempts fail with, since giving it up would fire synthesized signals for a node which
-is Up. Giving up is not final: a later message dials again. An address no Up member advertises is
-given up at the first attempt, not after `max_connect_attempts`, when the failure is one which
-retrying cannot change. That is an answer which does not speak this protocol or shares no version
-with it, a failed identity or address check, a node of another cluster, or a frame beyond
+A lost connection is reconnected, at once if it lived at least one `heartbeat_interval`, else with
+exponential backoff; frames queued while the link is down are delivered after the reconnect, in
+order. There is no replay of frames already handed to a dead connection: delivery stays
+at-most-once, per-sender FIFO becomes "in order, with gaps". An address no Up member advertises is
+given up after `max_connect_attempts` failed attempts, turning its queued frames into dead letters.
+A member's address is retried until the downing provider settles its fate, whatever the attempts
+fail with, since giving it up would fire synthesized signals for a node which is Up. Giving up is
+not final: a later message dials again. An address no Up member advertises is given up at the first
+attempt, not after `max_connect_attempts`, when the failure is one which retrying cannot change.
+That is an answer which does not speak this protocol or shares no version with it, a failed identity
+or address check, a node of another cluster or with another codec, or a frame beyond
 `max_frame_size`. Such an address is refused, and a send toward it fails without dialing. The
 refusal expires after 10 s. Every further refusal doubles that backoff, up to 10 min. A refusal
 expired for longer than 10 min is forgotten, so the next one starts at 10 s again. An inbound
@@ -722,8 +755,8 @@ way.
   promise the synthesized signal makes. It fires only when the `Watch` frame cannot be sent, see
   above. A node which never becomes a member is answered instead when its lane is given up, together
   with the asks that lane fails.
-- **Unwatch keeps its contract.** It is enforced on the watcher's side in the run loop, which does not
-  know or care whether a signal came from the local or a remote actor.
+- **Unwatch keeps its contract.** It is enforced on the watcher's side in the run loop, which does
+  not know or care whether a signal came from the local or a remote actor.
 - **Watching is race-free.** A `Watch` for an already terminated (or never bound) actor is
   answered with an immediate terminated signal by the watched node, mirroring the local atomic
   registration close.
@@ -738,74 +771,72 @@ way.
   Down incarnation, a refused address, another incarnation at this node's own address, a lane bound
   to another incarnation or this node being downed or leaving. A request which encodes beyond
   `max_frame_size` fails as `TooLarge` and one the codec cannot encode as `NotEncodable`, both at
-  the send rather than by timeout.
-
-  `ReplyDropped` is fire-and-forget: one lost with its connection resolves the ask by its timeout,
-  since a reply is not idempotent and nothing reply-related is replayed on a reconnect. An ask
-  canceled before that releases its entry itself, so a lost notification costs it nothing.
-
-  A proxy's reply which cannot be sent, because it cannot be encoded, for lack of outbound capacity,
-  because it exceeds `max_frame_size` or because the node is unreachable, is logged as a dead
-  letter. A panic in the reply's `Schema::encode` counts as a reply which cannot be encoded. It is
-  logged at error level and reaches neither the responder nor, on a node which forwards the reply,
-  that node's stream reader. The proxy then attempts the same `ReplyDropped` as for a dropped one.
-  That attempt fails if the node is unreachable, and a reply which was queued successfully and lost
-  afterward takes no such path, so the ask's timeout remains the backstop. Downing a member fails
-  every pending ask toward it as `NoReply`, after the tombstone and quiesce, so such a `NoReply` is
-  never followed by its reply. Every member is heartbeated, so a vanished node's asks are settled by
-  the downing provider, watched or not. Giving up a stale lane, one toward an address no Up member
-  advertises anymore, fails the asks stamped with its peers the same way. If the transport reports
-  the loss too late, the ask timeout still resolves the request.
-
-  A message or reply frame names its payload's reply destinations next to the payload. So a request
-  the receiving node dead-letters undecoded, e.g. toward a meanwhile terminated actor, is answered
-  with `ReplyDropped` for each of them, and such an ask resolves as `NoReply` rather than by its
-  timeout. A reply the asker's node dead-letters is answered the same way, whether it arrives after
-  its ask ended, names another incarnation or fails to decode. A reply destination carried in a
-  reply for the asker's current incarnation is hence released at the responder by that
-  `ReplyDropped`, rather than kept until the responding actor terminates. One carried in a reply for
-  a predecessor at the asker's address is not released by the frame. The responder stamped its entry
-  with the predecessor, while the `ReplyDropped` comes from the current incarnation, so the
-  responder ignores it, as described below. The responder releases that entry once it fences the
-  predecessor as Left or Down. A request or reply this node itself drops, one whose framed size
-  exceeds `max_frame_size` or one lost with its connection before the transport has taken it,
-  releases the same destinations locally, since such a frame never reaches its peer as a whole. One
-  lost with its connection after the transport has taken it is not released when it is lost, but
-  only later, for instance once this node fences that peer. Only the peer a request was sent to
-  settles it. A pending entry is stamped with that peer before its frame is queued. A `Reply` frame
-  naming a nonce stamped with anybody else is dropped as a dead letter, and a `ReplyDropped` frame
-  naming one is ignored. Nonces are unique to one process only, since every process counts from
-  zero. So both frames also name the incarnation which asked. One naming another incarnation of this
-  node, such as its predecessor at the same address, is dropped or ignored the same way and settles
-  nothing here.
-
-  An ask which ends without its reply, by its timeout or by its future being dropped, releases its
-  own reply destination, the one no actor awaits. So an ask which nothing answers costs its entry
-  only until its timeout, not until the node dies. A destination the request carried for an actor is
-  that actor's to wait for and stays. An actor-origin request has no timeout at all, so its entry is
-  instead bounded by the life of the actor awaiting the reply: that actor's termination evicts it,
-  through the same watcher mechanism the reference registry evicts routes with.
-
-  A `ReplyTo` may be forwarded to a third node, and each hop chains its reply through the previous
-  one. The hop in the middle holds an entry of its own, stamped with the next node and remembering
-  the origin it forwards for. Downing evicts it with either: with its next node, which owes the
-  reply, as for any request, and with its origin, which nothing would deliver the reply to anymore.
-  An entry which was sent can also be released without its reply, by an ask's timeout or drop or by
-  its recipient's termination. Its node then sends a `ReplyCanceled` frame to the peer it was sent
-  to, on the stream which carried the request. That frame is never sent before the request is
-  queued, so the cancellation never overtakes it. That peer releases what it forwarded on behalf of
-  that entry and cancels further down the chain in turn, so no hop outlives the origin's interest.
-  The cancellation outlives the receipt: a reply destination forwarded only after it was canceled is
-  canceled at its next peer right behind the request carrying it. A cancellation is fire-and-forget
-  like `ReplyDropped`: one lost with its connection leaves the hop's entry to downing.
-
-  A `ReplyTo` serialized anywhere else, e.g. through a codec call of the application's own, is
-  stamped with no peer, so neither downing nor a cancellation reaches its entry, and its bytes
-  may never come home. No `Reply` or `ReplyDropped` frame settles such an entry either, since a
-  frame settles only an entry stamped with its sender; only the bytes returning to this node and
-  being deserialized there do. An ask's destination is hence also bound by the ask itself: once the
-  ask has returned or its future was dropped, the membership tick releases the entry, canceling it
-  at its peer if it was sent. An actor-origin destination stays bound by its actor.
+  the send rather than by timeout. `ReplyDropped` is fire-and-forget: one lost with its connection
+  resolves the ask by its timeout, since a reply is not idempotent and nothing reply-related is
+  replayed on a reconnect. An ask canceled before that releases its entry itself, so a lost
+  notification costs it nothing.
+- **A lost reply leaves the ask to `ReplyDropped`, downing or its timeout.** A proxy's reply which
+  cannot be sent, because it cannot be encoded, for lack of outbound capacity, because it exceeds
+  `max_frame_size` or because the node is unreachable, is logged as a dead letter. A panic in the
+  reply's `Schema::encode` counts as a reply which cannot be encoded. It is logged at error level
+  and reaches neither the responder nor, on a node which forwards the reply, that node's stream
+  reader. The proxy then attempts the same `ReplyDropped` as for a dropped one. That attempt fails
+  if the node is unreachable, and a reply which was queued successfully and lost afterward takes no
+  such path, so then the ask's timeout remains the fallback. Downing a member fails every pending
+  ask toward it as `NoReply`, after the tombstone and quiesce, so such a `NoReply` is never followed
+  by its reply. Every member is heartbeated, so a vanished node's asks are settled by the downing
+  provider, watched or not. Giving up a stale lane, one toward an address no Up member advertises
+  anymore, fails the asks stamped with its peers the same way. If the transport reports the loss too
+  late, the ask timeout still resolves the request.
+- **A dropped request or reply releases the reply destinations it carries.** A message or reply
+  frame names its payload's reply destinations next to the payload. So a request the receiving node
+  dead-letters undecoded, e.g. toward a meanwhile terminated actor, is answered with `ReplyDropped`
+  for each of them, and such an ask resolves as `NoReply` rather than by its timeout. A reply the
+  asker's node dead-letters is answered the same way, whether it arrives after its ask ended, names
+  another incarnation or fails to decode. A reply destination carried in a reply for the asker's
+  current incarnation is hence released at the responder by that `ReplyDropped`, rather than kept
+  until the responding actor terminates. One carried in a reply for a predecessor at the asker's
+  address is not released by the frame. The responder stamped its entry with the predecessor, while
+  the `ReplyDropped` comes from the current incarnation, so the responder ignores it, as described
+  below. The responder releases that entry once it fences the predecessor as Left or Down. A request
+  or reply this node itself drops, one whose framed size exceeds `max_frame_size` or one lost with
+  its connection before the transport has taken it, releases the same destinations locally, since
+  such a frame never reaches its peer as a whole. One lost with its connection after the transport
+  has taken it is not released when it is lost, but only later, for instance once this node fences
+  that peer. Only the peer a request was sent to settles it. A pending entry is stamped with that
+  peer before its frame is queued. A `Reply` frame naming a nonce stamped with anybody else is
+  dropped as a dead letter, and a `ReplyDropped` frame naming one is ignored. Nonces are unique to
+  one process only, since every process counts from zero. So both frames also name the incarnation
+  which asked. One naming another incarnation of this node, such as its predecessor at the same
+  address, is dropped or ignored the same way and settles nothing here.
+- **A pending entry lives only as long as its ask or its actor.** An ask which ends without its
+  reply, by its timeout or by its future being dropped, releases its own reply destination, the one
+  no actor awaits. So an ask which nothing answers costs its entry only until its timeout, not until
+  the node dies. A destination the request carried for an actor is that actor's to wait for and
+  stays. An actor-origin request has no timeout at all, so its entry is instead bounded by the life
+  of the actor awaiting the reply: that actor's termination evicts it, through the same watcher
+  mechanism the reference registry evicts routes with.
+- **A forwarded `ReplyTo` chains through every hop, and so does its cancellation.** A `ReplyTo` may
+  be forwarded to a third node, and each hop chains its reply through the previous one. The hop in
+  the middle holds an entry of its own, stamped with the next node and remembering the origin it
+  forwards for. Downing evicts it with either: with its next node, which owes the reply, as for any
+  request, and with its origin, which nothing would deliver the reply to anymore. An entry which was
+  sent can also be released without its reply, by an ask's timeout or drop or by its recipient's
+  termination. Its node then sends a `ReplyCanceled` frame to the peer it was sent to, on the stream
+  which carried the request. That frame is never sent before the request is queued, so the
+  cancellation never overtakes it. That peer releases what it forwarded on behalf of that entry and
+  cancels further down the chain in turn, so no hop outlives the origin's interest. The cancellation
+  outlives the receipt: a reply destination forwarded only after it was canceled is canceled at its
+  next peer right behind the request carrying it. A cancellation is fire-and-forget like
+  `ReplyDropped`: one lost with its connection leaves the hop's entry to downing.
+- **A `ReplyTo` serialized outside tellus is bound by its ask or its actor.** A `ReplyTo` serialized
+  anywhere else, e.g. through a codec call of the application's own, is stamped with no peer, so
+  neither downing nor a cancellation reaches its entry, and its bytes may never come home. No
+  `Reply` or `ReplyDropped` frame settles such an entry either, since a frame settles only an entry
+  stamped with its sender; only the bytes returning to this node and being deserialized there do. An
+  ask's destination is hence also bound by the ask itself: once the ask has returned or its future
+  was dropped, the membership tick releases the entry, canceling it at its peer if it was sent. An
+  actor-origin destination stays bound by its actor.
 
 ## Discovery
 
@@ -817,11 +848,12 @@ advertising `addr`, from the registrations that member replicated here (see Rece
 frame is sent for a lookup: the answer is this node's copy of the member's registrations. Only a
 join makes a node a member, so an address which is not a member's answers empty.
 
-A `Key<M>` carries the message type next to the name, and the type travels as its manifest:
-`M` implements `cluster::Manifest`, whose `MANIFEST` is a stable name chosen by the application,
-e.g. `"worker-job"`. A key naming another manifest is refused as `TypeMismatch` rather than
-resolved into a reference which drops every message told to it. Serialized references carry the
-manifest the same way.
+A `Key<M>` carries the message type next to the name, and the type travels as its manifest: `M`
+implements `cluster::Manifest`, whose `MANIFEST` is a stable name chosen by the application, e.g.
+`"worker-job"`. A key naming another manifest is refused as `TypeMismatch` rather than resolved into
+a reference which drops every message told to it. The bytes of `serialize_ref` carry the manifest
+the same way. A reference inside a message carries only its node and actor ID, so nothing refuses
+one decoded as the wrong type.
 
 tellus compares manifests, but it cannot check that a manifest names the same type on every node. A
 manifest must be unique per type across the cluster, and every node must use a compatible payload
@@ -909,10 +941,13 @@ per quiet window, with every mixed cluster verified.
 
 Every node of a cluster uses one codec. Its name rides every handshake, and a peer naming another
 one is refused as `CodecMismatch`, terminal like `ForeignCluster`, so switching the codec is no
-rolling upgrade. The codec is one of the variants of `Codec`, so there is no custom codec. The
-rendered application version is bounded to 64 bytes, refused by `start_endpoint`. A peer's
-handshake is refused if its codec name or application version exceeds 64 bytes, and the widest
-handshake, 205 bytes, is the floor of `max_frame_size`.
+rolling upgrade. The codec is one of the variants of `cluster::codec::Codec`, so there is no custom
+codec. Persistence has a `Codec` of its own, a trait an application may implement, see
+[persistence.md](persistence.md). The rendered application version is bounded to 64 bytes, refused
+by `start_endpoint`. A peer's handshake whose codec name or application version exceeds 64 bytes, or
+whose application version is not a semantic version, does not decode: the acceptor drops the
+connection without a refusal, and the dialer retries. The widest handshake, 205 bytes, is the floor
+of `max_frame_size`.
 
 ## Receptionist
 
@@ -976,11 +1011,11 @@ replica lock whenever the verdict or the version it judges changes, in order wit
 consumer learns a flip without polling and never sees a verdict before the state it judges.
 `receptionist::settlement` and `settled(version)` compute fresh.
 
-The guarantee is eventual: after the last change, every connected member's answer converges to
-the same set, and no answer names an actor of an incarnation this node has marked Down. A
-subscriber sees a registration once the origin's set has reached this node and the origin is Up,
-never earlier and never after the origin is Down. Cluster-aware routers, round robin or consistent
-hashing over the resolved set, fall out of this without further work.
+The guarantee is eventual: after the last change, every connected member's answer converges to the
+same set, and no answer names an actor of an incarnation this node has marked Down. A subscriber
+sees a registration once the origin's set has reached this node and the origin is Up, never earlier
+and never after the origin is Down. Cluster-aware routers, round-robin or consistent hashing over
+the resolved set, fall out of this without further work.
 
 ## Pub-sub
 
@@ -991,11 +1026,12 @@ resolved subscriber, this node's own included. This node's own subscribers are t
 clone of the message, which is why `M: Clone` is required. There is no mediator and no second queue.
 The message is serialized only if a subscriber lives on another node, and then once per node, since
 `Schema::encode` may shape it per peer. Toward each node, the subscribers hashing onto one data
-stream share one `Multicast` frame, which names them all and carries the payload once. A group too large for `max_frame_size` is split over several
-frames on that stream, in order. The receiving node delivers a multicast to each of its targets in
-turn, and a target it cannot deliver to is a dead letter of its own. The answer is the number of
-subscribers told, never of deliveries: an unreachable node or a full outbound queue makes the
-message a dead letter for every subscriber its frame names, as for a `tell`.
+stream share one `Multicast` frame, which names them all and carries the payload once. A group too
+large for `max_frame_size` is split over several frames on that stream, in order. The receiving node
+delivers a multicast to each of its targets in turn, and a target it cannot deliver to is a dead
+letter of its own. The answer is the number of subscribers told, never of deliveries: an unreachable
+node or a full outbound queue makes the message a dead letter for every subscriber its frame names,
+as for a `tell`.
 
 Serializing a `ReplyTo` moves its destination into this node's pending replies, so one
 destination cannot travel to several nodes. A message whose serialization takes one is possible
@@ -1081,9 +1117,9 @@ from gossiped membership rather than from an external arbiter cannot rule that o
 two every failure is an even split: the higher address downs itself even when it is the lower one
 which crashed. So a two-node deployment which must survive either one failing needs a third member.
 `DownAfterDeadline` is the unilateral alternative, downing whatever is unreachable past a deadline:
-each side of a partition downs the other and one cluster becomes two, each honestly satisfying its
-own synthesized-signal contract. It is a development and testing choice, where downing on nothing
-but a deadline is what makes a node death reproducible.
+each side of a partition downs the other and one cluster becomes two, each satisfying its own
+synthesized-signal contract. It is a development and testing choice, where downing on nothing but a
+deadline is what makes a node death reproducible.
 
 What no provider removes is the fundamental part: a crashed node and an unreachable one are
 indistinguishable, so a surviving side downs members which may well still be running, and a
@@ -1180,15 +1216,16 @@ provider's deadline, and a consumer deriving from the Up set has no use for it.
 TLS is mandatory for QUIC, but server-only TLS authenticates just the dialed side: any client able
 to reach the port can complete a handshake. Production deployments hence use mutual TLS via
 `QuicTransport::mutual_tls`. Every node presents one certificate as both its server and its client
-identity, verified against the cluster's certificate authority. A stranger hence cannot complete a
-connection and reaches neither the protocol nor the membership. Every node's certificate must also
-be issued for the cluster's `server_name`, which every dialer verifies with TLS; the address
-binding below comes on top of that. Issuing and renewing the
-certificates is established automation, e.g. cert-manager on Kubernetes, whose `Certificate`
-requests both forms of address binding below. SPIRE cannot issue either form. The SPIFFE X.509
-SVID specification forbids a URI SAN next to the `spiffe://` ID, which excludes the `tellus://`
-form, but it permits other SAN types, IP addresses included. A SPIRE registration entry adds DNS
-names only, though, so an SVID issued by SPIRE carries no IP address SAN either.
+identity, verified against the cluster's certificate authority. Revocation is not checked, so a
+certificate stays trusted until it expires, which favors short-lived certificates. A stranger hence
+cannot complete a connection and reaches neither the protocol nor the membership. Every node's
+certificate must also be issued for the cluster's `server_name`, which every dialer verifies with
+TLS; the address binding below comes on top of that. Issuing and renewing the certificates is
+established automation, e.g. cert-manager on Kubernetes, whose `Certificate` requests both forms of
+address binding below. SPIRE cannot issue either form. The SPIFFE X.509 SVID specification forbids a
+URI SAN next to the `spiffe://` ID, which excludes the `tellus://` form, but it permits other SAN
+types, IP addresses included. A SPIRE registration entry adds DNS names only, though, so an SVID
+issued by SPIRE carries no IP address SAN either.
 
 The TLS configuration uses rustls's process default `CryptoProvider` if the application has
 installed one, otherwise ring's default provider. tellus never installs a process default itself.
@@ -1312,7 +1349,7 @@ swap is added.
   definitively, leaves a settled discovery view or `ambiguous_join_bound` passes. Joins continue
   through any seed meanwhile. Past the bound this node can form although the seed's cluster still
   counts it as a member, until that cluster's failure detection and downing remove it. Pinning on
-  the ambiguity instead would wedge bootstrap behind any slow seed, which costs more than the
+  the ambiguity instead would hold bootstrap back behind any slow seed, which costs more than the
   ambiguity does.
 - **Fences are bounded.** Detailed Left and Down entries are remembered for `down_retention`. After
   that, the greatest incarnation per address remains as a watermark with its state, which refuses
@@ -1327,12 +1364,12 @@ swap is added.
   with the advertised addresses added. SPIRE cannot issue either form, see Trust.
 - **A refusal costs one attempt per backoff.** An address no Up member advertises is refused when it
   answered without speaking this protocol, shares no version with it, failed the identity or address
-  check, belongs to another cluster or sent a frame beyond `max_frame_size`. A refused address is
-  not dialed again until the refusal expires, after 10 s doubling up to 10 min with every further
-  refusal. A refusal expired for 10 min is forgotten, so the next one starts at 10 s again. A
-  member's address is never refused but retried, logging each failure. A tellus node coming up at a
-  refused address is reachable at once when it dials this node, joins it or is gossiped as Up.
-  Otherwise it is reachable from here once the refusal expires.
+  check, belongs to another cluster, uses another codec or sent a frame beyond `max_frame_size`. A
+  refused address is not dialed again until the refusal expires, after 10 s doubling up to 10 min
+  with every further refusal. A refusal expired for 10 min is forgotten, so the next one starts at
+  10 s again. A member's address is never refused but retried, logging each failure. A tellus node
+  coming up at a refused address is reachable at once when it dials this node, joins it or is
+  gossiped as Up. Otherwise it is reachable from here once the refusal expires.
 - **Registrations are replicated whole.** Every change of a node's registrations sends its full set
   to every Up peer as one snapshot; there are no deltas. A node with many registrations which change
   often hence pays for the whole set on every change. 2^20 registrations and 64 MiB per node are
@@ -1350,8 +1387,8 @@ swap is added.
   encoded with `None` as the peer's version, hence in the oldest shape the application still
   encodes, and the receiver's upcast delivers it without a trace of what that shape lacks. The
   window is the handshake of the first connection. A lane toward a new member usually opens through
-  gossip before an application holds a ref at that address, but a ref carried in a message from a
-  third node can arrive earlier.
+  gossip before an application holds a reference at that address, but a reference carried in a
+  message from a third node can arrive earlier.
 - **The codec, postcard, has no limit on nesting.** A node can encode and send a message which nests
   deeper than the receiving node can decode. Decoding it overflows the stack of the thread running
   the stream reader. That aborts the receiving node's process, and no dead letter is logged. In a
