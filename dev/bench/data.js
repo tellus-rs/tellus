@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794904858286,
+  "lastUpdate": 1794908835800,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20699,6 +20699,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 21956291,
             "range": "± 719099",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e8358a179e33ece4de0674bfbbae51c72b76d1a5",
+          "message": "Merge pull request #461 from tellus-rs/test/drain-ack-past-gossip\n\ntest(cluster): pin a drain ack taken behind a dead incarnation's gossip",
+          "timestamp": "2026-11-17T10:39:46+01:00",
+          "tree_id": "27f57f6625553f3ceffe0e66f88c792c26983b0e",
+          "url": "https://github.com/tellus-rs/tellus/commit/e8358a179e33ece4de0674bfbbae51c72b76d1a5"
+        },
+        "date": 1794908834466,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 10155929,
+            "range": "± 343588",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9750716,
+            "range": "± 435691",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 722625,
+            "range": "± 7206",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 544332,
+            "range": "± 7094",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3769264,
+            "range": "± 141217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2917527,
+            "range": "± 84165",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 14404538,
+            "range": "± 764548",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 15428060,
+            "range": "± 292158",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 14309485,
+            "range": "± 347765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 15629442,
+            "range": "± 506872",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 14955782,
+            "range": "± 495909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 17678468,
+            "range": "± 693097",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 21414044,
+            "range": "± 696023",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 14972715,
+            "range": "± 292400",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 17689848,
+            "range": "± 558559",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 22213192,
+            "range": "± 593995",
             "unit": "ns/iter"
           }
         ]
