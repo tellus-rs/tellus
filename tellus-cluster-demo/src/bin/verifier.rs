@@ -36,7 +36,7 @@ use tokio::{
     time::{Instant, sleep},
 };
 use tracing::{debug, error, info};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const HTTP_PORT: u16 = 8080;
 const CHECK_INTERVAL: Duration = Duration::from_secs(2);
@@ -284,7 +284,7 @@ impl Roll {
 fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer())
+        .with(fmt::layer())
         .init();
 }
 
@@ -301,7 +301,6 @@ fn nodes(value: &str) -> anyhow::Result<Vec<String>> {
     if nodes.is_empty() {
         bail!("TELLUS_NODES names no node");
     }
-
     Ok(nodes)
 }
 
@@ -799,7 +798,10 @@ mod tests {
     use tellus_cluster_demo::{
         ClusterView, Phase, Probe, ProbeOutcome, ProbeReport, VerifierEvent,
     };
-    use tokio::{net::TcpListener, time::Instant};
+    use tokio::{
+        net::TcpListener,
+        time::{self, Instant},
+    };
 
     const LB_OUTAGE: Duration = Duration::from_secs(5);
     const CLUSTER: &str = "019a0000-0000-7000-8000-0000000000c1";
@@ -1135,7 +1137,7 @@ mod tests {
         let state = VerifierState::new(LB_OUTAGE);
         state.lb_observed(true).await;
         state.lb_observed(false).await;
-        tokio::time::advance(Duration::from_millis(700)).await;
+        time::advance(Duration::from_millis(700)).await;
         state.lb_observed(true).await;
 
         let status = state.report.lock().await.status();

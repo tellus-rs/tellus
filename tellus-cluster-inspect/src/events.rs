@@ -15,6 +15,7 @@ use std::{
     collections::VecDeque,
     convert::Infallible,
     fmt::{self, Display, Formatter},
+    iter,
     num::NonZeroUsize,
     str::FromStr,
     sync::{Arc, Mutex},
@@ -155,7 +156,6 @@ where
         })
     }
 
-    /// `None` if `seq + 1` was forgotten already.
     fn read_after(&self, seq: u64) -> Option<VecDeque<(u64, Stamped<E>)>> {
         let ring = self.ring.lock().expect("not poisoned");
         if ring
@@ -180,10 +180,10 @@ where
 pub struct Replay<E> {
     /// Whether the entries continue right after the cursor the client gave.
     pub resumed: bool,
+    entries: Vec<(u64, Stamped<E>)>,
 
     /// The sequence number the log stood at, which [EventLog::follow_from] continues after.
     pub anchor: u64,
-    entries: Vec<(u64, Stamped<E>)>,
 }
 
 impl<E> Replay<E> {
@@ -286,7 +286,7 @@ where
         event: hello,
     };
     let opening = stream::iter(
-        std::iter::once((None, hello))
+        iter::once((None, hello))
             .chain(items)
             .map(|(cursor, stamped)| Ok::<_, Infallible>(event(cursor, &stamped))),
     );
@@ -337,10 +337,10 @@ where
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::events::*;
     use http_body_util::BodyExt;
     use std::{future, time::Duration};
-    use tokio::time::timeout;
+    use tokio::{task::JoinSet, time::timeout};
 
     const STARTED_AT: u64 = 1_700_000_000_000;
 
@@ -539,7 +539,7 @@ mod tests {
     #[tokio::test]
     async fn concurrent_pushes_stay_gapless() {
         let log = log(1_024);
-        let mut tasks = tokio::task::JoinSet::new();
+        let mut tasks = JoinSet::new();
         for task in 0..8u32 {
             let log = log.clone();
             tasks.spawn(async move {

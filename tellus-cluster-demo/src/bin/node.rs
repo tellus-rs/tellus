@@ -60,7 +60,7 @@ use tokio::{
     time::{sleep, timeout},
 };
 use tracing::{debug, error, info, warn};
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// The latest event's sequence number and arrival per publisher, shared by the listener writing
 /// it and the HTTP API reading it.
@@ -524,7 +524,7 @@ impl Transport for BoundedConnect {
 fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
-        .with(tracing_subscriber::fmt::layer())
+        .with(fmt::layer())
         .init();
 }
 
@@ -548,6 +548,47 @@ fn start_endpoint(config: EndpointConfig) -> anyhow::Result<()> {
     let transport = BoundedConnect(transport);
 
     cluster::start_endpoint(config, transport).context("remoting endpoint")
+}
+
+async fn log_changes() {
+    let mut changes = cluster::changes().expect("remoting endpoint started");
+    let mut previous = None::<ClusterState>;
+    loop {
+        match changes.next().await {
+            Change::State(current) => {
+                let version = current.version();
+                if let Some(previous) = &previous {
+                    for transition in current.diff(previous) {
+                        let member = transition.member();
+                        let what = match transition {
+                            Transition::Up(_) | Transition::Left(_) | Transition::Down(_) => {
+                                "member changed"
+                            }
+                            Transition::Forgotten(_) => "member forgotten",
+                            Transition::Unreachable(_) => "member unreachable",
+                            Transition::Reachable(_) => "member reachable again",
+                        };
+                        info!(
+                            version,
+                            addr = %member.addr(),
+                            incarnation = %member.incarnation(),
+                            state = %member.state(),
+                            what
+                        );
+                    }
+                }
+                previous = Some(current);
+            }
+
+            Change::Settled(settlement) => debug!(
+                version = settlement.version(),
+                settled = settlement.settled(),
+                "receptionist verdict"
+            ),
+
+            Change::Gap { dropped } => warn!(dropped, "fell behind the cluster state"),
+        }
+    }
 }
 
 /// Everything after the endpoint has started, for the application the node runs: the HTTP API,
@@ -912,47 +953,6 @@ fn record_counts(state: &NodeState, counts: ReceptionistCounts) {
         workers: counts.workers,
         subscribers: counts.subscribers,
     });
-}
-
-async fn log_changes() {
-    let mut changes = cluster::changes().expect("remoting endpoint started");
-    let mut previous = None::<ClusterState>;
-    loop {
-        match changes.next().await {
-            Change::State(current) => {
-                let version = current.version();
-                if let Some(previous) = &previous {
-                    for transition in current.diff(previous) {
-                        let member = transition.member();
-                        let what = match transition {
-                            Transition::Up(_) | Transition::Left(_) | Transition::Down(_) => {
-                                "member changed"
-                            }
-                            Transition::Forgotten(_) => "member forgotten",
-                            Transition::Unreachable(_) => "member unreachable",
-                            Transition::Reachable(_) => "member reachable again",
-                        };
-                        info!(
-                            version,
-                            addr = %member.addr(),
-                            incarnation = %member.incarnation(),
-                            state = %member.state(),
-                            what
-                        );
-                    }
-                }
-                previous = Some(current);
-            }
-
-            Change::Settled(settlement) => debug!(
-                version = settlement.version(),
-                settled = settlement.settled(),
-                "receptionist verdict"
-            ),
-
-            Change::Gap { dropped } => warn!(dropped, "fell behind the cluster state"),
-        }
-    }
 }
 
 /// By incarnation: a predecessor's Down entry at the same address does not count.

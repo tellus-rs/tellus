@@ -15,7 +15,6 @@ configured             = { workspace = true }
 k8s-openapi            = { workspace = true, features = [ "v1_36" ] }
 reqwest                = { workspace = true, features = [ "json" ] }
 serde                  = { workspace = true, features = [ "derive" ] }
-serde_json             = { workspace = true }
 tellus                 = { workspace = true, features = [ "cluster-dev", "serde" ] }
 tellus-bootstrap-dns   = { workspace = true, features = [ "serde" ] }
 tellus-bootstrap-k8s   = { workspace = true, features = [ "serde" ] }
@@ -25,4 +24,5 @@ tracing                = { workspace = true }
 tracing-subscriber     = { workspace = true, features = [ "env-filter", "fmt" ] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = [ "test-util" ] }
+serde_json = { workspace = true }
+tokio      = { workspace = true, features = [ "test-util" ] }

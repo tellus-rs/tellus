@@ -1,3 +1,5 @@
+use std::mem;
+
 /// A server-sent events parser. A message carries the id of its own `id` field only, so the
 /// caller keeps the last one for `Last-Event-ID`.
 #[derive(Debug, Default)]
@@ -30,7 +32,7 @@ impl SseParser {
                 self.id = None;
                 return None;
             }
-            let data = std::mem::take(&mut self.data);
+            let data = mem::take(&mut self.data);
             return Some(SseMessage {
                 id: self.id.take(),
                 data,
@@ -67,7 +69,7 @@ pub struct SseMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::sse::*;
 
     fn message(id: Option<&str>, data: &str) -> SseMessage {
         SseMessage {

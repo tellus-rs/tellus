@@ -108,6 +108,13 @@ struct Position {
     backoff: Duration,
 }
 
+fn client() -> Client {
+    Client::builder()
+        .connect_timeout(HTTP_TIMEOUT)
+        .build()
+        .expect("HTTP client")
+}
+
 async fn stream<E, W>(client: Arc<Client>, url: String, tx: mpsc::Sender<Input>, wrap: W)
 where
     E: DeserializeOwned,
@@ -234,13 +241,6 @@ async fn poll<T, W>(
         }
         sleep(interval).await;
     }
-}
-
-fn client() -> Client {
-    Client::builder()
-        .connect_timeout(HTTP_TIMEOUT)
-        .build()
-        .expect("HTTP client")
 }
 
 #[cfg(test)]

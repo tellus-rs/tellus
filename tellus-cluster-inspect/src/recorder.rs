@@ -115,10 +115,12 @@ struct Current {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::tests::{settlement, state};
+    use crate::{
+        recorder::*,
+        tests::{settlement, state},
+    };
     use futures_util::{FutureExt, stream};
-    use std::{collections::VecDeque, future, time::Duration};
+    use std::{collections::VecDeque, future, thread, time::Duration};
     use tokio::{
         sync::oneshot,
         time::{sleep, timeout},
@@ -252,7 +254,7 @@ mod tests {
         let capture = recorder.capture(None);
         assert_eq!(capture.anchor, 2);
 
-        let flips = std::thread::spawn({
+        let flips = thread::spawn({
             let recorder = recorder.clone();
             move || {
                 recorder.push(InspectEvent::Settled(settlement(1, true)));

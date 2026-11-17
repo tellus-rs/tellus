@@ -16,14 +16,14 @@ publish       = true
 axum         = { workspace = true, features = [ "http1", "json", "tokio" ] }
 futures-util = { workspace = true }
 serde        = { workspace = true, features = [ "derive" ] }
-serde_json   = { workspace = true }
 tellus       = { workspace = true, features = [ "cluster", "serde" ] }
 thiserror    = { workspace = true }
-tokio        = { workspace = true, features = [ "macros", "rt", "sync", "time" ] }
+tokio        = { workspace = true, features = [ "rt", "sync" ] }
 
 [dev-dependencies]
 anyhow         = { workspace = true }
 http-body-util = { workspace = true }
+serde_json     = { workspace = true }
 tellus         = { workspace = true, features = [ "cluster-dev" ] }
-tokio          = { workspace = true, features = [ "net", "rt-multi-thread", "signal" ] }
+tokio          = { workspace = true, features = [ "macros", "net", "rt-multi-thread", "signal", "time" ] }
 tower          = { workspace = true, features = [ "util" ] }

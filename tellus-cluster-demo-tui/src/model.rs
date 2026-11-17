@@ -699,6 +699,10 @@ pub struct NodeSource {
 }
 
 impl NodeSource {
+    pub fn label(&self) -> &str {
+        self.name.as_deref().unwrap_or(&self.url)
+    }
+
     fn new(url: &str) -> Self {
         Self {
             url: url.to_string(),
@@ -721,10 +725,6 @@ impl NodeSource {
             shown_through: None,
             recovery: None,
         }
-    }
-
-    pub fn label(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.url)
     }
 
     fn reset_demo_facts(&mut self) {
@@ -855,7 +855,7 @@ fn describe(transition: &Transition) -> (Severity, String) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::model::*;
     use serde_json::{Value, json};
     use std::iter;
     use tellus_cluster_demo::ClusterView;

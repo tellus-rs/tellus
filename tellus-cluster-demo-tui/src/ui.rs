@@ -4,7 +4,7 @@ use ratatui::{
     layout::{Constraint, Layout, Rect},
     style::{Color, Modifier, Style, Stylize},
     text::{Line, Span},
-    widgets::{Block, Borders, List, ListItem, Paragraph, Row, Table, Wrap},
+    widgets::{self, Block, Borders, List, ListItem, Paragraph, Row, Table, Wrap},
 };
 use std::time::Duration;
 use tellus_cluster_demo::{Phase, ProbeOutcome};
@@ -38,37 +38,6 @@ pub fn draw(frame: &mut Frame, app: &App) {
         Line::from(" q quit   ↑/↓ or tab select node   p pause timeline   c clear timeline").dim(),
         footer,
     );
-}
-
-fn body(frame: &mut Frame, app: &App, area: Rect) {
-    let matrix_height = u16::try_from(app.nodes.len())
-        .unwrap_or(u16::MAX)
-        .saturating_add(3);
-    if area.width >= WIDE {
-        let [left, right] =
-            Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)])
-                .areas(area);
-        let [matrix, detail] =
-            Layout::vertical([Constraint::Length(matrix_height), Constraint::Min(1)]).areas(left);
-        self::matrix(frame, app, matrix);
-        self::detail(frame, app, detail);
-        timeline(frame, app, right);
-    } else if area.height >= TALL {
-        let [matrix, detail, timeline] = Layout::vertical([
-            Constraint::Length(matrix_height),
-            Constraint::Length(15),
-            Constraint::Min(1),
-        ])
-        .areas(area);
-        self::matrix(frame, app, matrix);
-        self::detail(frame, app, detail);
-        self::timeline(frame, app, timeline);
-    } else {
-        let [matrix, timeline] =
-            Layout::vertical([Constraint::Length(matrix_height), Constraint::Min(1)]).areas(area);
-        self::matrix(frame, app, matrix);
-        self::timeline(frame, app, timeline);
-    }
 }
 
 fn verifier_strip(frame: &mut Frame, app: &App, area: Rect) {
@@ -138,6 +107,37 @@ fn verifier_strip(frame: &mut Frame, app: &App, area: Rect) {
     );
 }
 
+fn body(frame: &mut Frame, app: &App, area: Rect) {
+    let matrix_height = u16::try_from(app.nodes.len())
+        .unwrap_or(u16::MAX)
+        .saturating_add(3);
+    if area.width >= WIDE {
+        let [left, right] =
+            Layout::horizontal([Constraint::Percentage(55), Constraint::Percentage(45)])
+                .areas(area);
+        let [matrix, detail] =
+            Layout::vertical([Constraint::Length(matrix_height), Constraint::Min(1)]).areas(left);
+        self::matrix(frame, app, matrix);
+        self::detail(frame, app, detail);
+        timeline(frame, app, right);
+    } else if area.height >= TALL {
+        let [matrix, detail, timeline] = Layout::vertical([
+            Constraint::Length(matrix_height),
+            Constraint::Length(15),
+            Constraint::Min(1),
+        ])
+        .areas(area);
+        self::matrix(frame, app, matrix);
+        self::detail(frame, app, detail);
+        self::timeline(frame, app, timeline);
+    } else {
+        let [matrix, timeline] =
+            Layout::vertical([Constraint::Length(matrix_height), Constraint::Min(1)]).areas(area);
+        self::matrix(frame, app, matrix);
+        self::timeline(frame, app, timeline);
+    }
+}
+
 fn matrix(frame: &mut Frame, app: &App, area: Rect) {
     let columns = app.columns();
     let mut header = vec![
@@ -158,17 +158,17 @@ fn matrix(frame: &mut Frame, app: &App, area: Rect) {
             node.label().to_string()
         };
         let mut cells = vec![
-            ratatui::widgets::Cell::from(Line::from(vec![
+            widgets::Cell::from(Line::from(vec![
                 connection_span(&node.inspect_connection),
                 Span::raw(" "),
                 Span::raw(label),
             ])),
-            ratatui::widgets::Cell::from(phase_span(node.phase)),
-            ratatui::widgets::Cell::from(version_span(node.app_version.as_deref())),
+            widgets::Cell::from(phase_span(node.phase)),
+            widgets::Cell::from(version_span(node.app_version.as_deref())),
         ];
         cells.extend(columns.iter().map(|addr| {
             let span = cell_span(app.cell(index, *addr));
-            ratatui::widgets::Cell::from(if stale { span.dim() } else { span })
+            widgets::Cell::from(if stale { span.dim() } else { span })
         }));
         let row = Row::new(cells);
         if index == app.selected {
@@ -462,10 +462,10 @@ fn chaos_style(chaos: &str) -> Style {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::{
         config::Config,
         sources::{Input, NodeInput, StreamInput, VerifierInput},
+        ui::*,
     };
     use ratatui::{Terminal, backend::TestBackend};
     use serde_json::{Value, json};
