@@ -147,7 +147,6 @@ where
     let sources = Arc::new(Endpoint {
         recorder: recorder.clone(),
     });
-
     Ok(recording_router(sources, recorder, changes, shutdown))
 }
 
@@ -157,7 +156,10 @@ struct RouterState {
     shutdown: Shared<BoxFuture<'static, ()>>,
 }
 
-trait Sources: Send + Sync {
+trait Sources
+where
+    Self: Send + Sync,
+{
     fn snapshot(&self) -> Snapshot;
     fn recorder(&self) -> &Recorder;
 }
@@ -167,9 +169,8 @@ struct Endpoint {
 }
 
 impl Sources for Endpoint {
-    /// The verdict first, then the state: an update in between leaves the verdict older, never
-    /// newer, than the state it is shown with.
     fn snapshot(&self) -> Snapshot {
+        // The verdict before the state, else an update in between makes it newer than the state!
         let settlement = cluster::receptionist::settlement().expect("remoting endpoint started");
         let state = Arc::unwrap_or_clone(
             cluster::cluster_state()
@@ -234,11 +235,11 @@ async fn events(State(state): State<RouterState>, headers: HeaderMap) -> impl In
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::events::Stamped;
+    use crate::{events::Stamped, *};
     use axum::{
         body::Body,
         http::{Request, StatusCode, header},
+        response::Response,
     };
     use http_body_util::BodyExt;
     use serde_json::Value;
@@ -354,11 +355,7 @@ mod tests {
             .collect()
     }
 
-    async fn get(
-        router: &Router,
-        uri: &str,
-        last_event_id: Option<&str>,
-    ) -> axum::response::Response {
+    async fn get(router: &Router, uri: &str, last_event_id: Option<&str>) -> Response {
         let mut request = Request::builder().uri(uri);
         if let Some(id) = last_event_id {
             request = request.header("last-event-id", id);
