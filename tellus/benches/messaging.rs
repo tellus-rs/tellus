@@ -284,14 +284,12 @@ fn next_remaining(remaining: usize) -> Option<usize> {
     remaining.checked_sub(1).filter(|n| *n > 0)
 }
 
-/// Whether the actor reads its own mailbox depth on every message.
 #[derive(Clone, Copy)]
 enum Probe {
     Never,
     Every,
 }
 
-/// A countdown which reads its mailbox depth on every message if its probe says so.
 struct Probing {
     messages: usize,
     probe: Probe,
@@ -325,8 +323,6 @@ impl Actor for Probing {
     }
 }
 
-/// Whether the actor starts no idle timer, starts one in `init` and leaves it pending, or restarts
-/// one on every message.
 #[derive(Clone, Copy)]
 enum IdleTimer {
     None,
@@ -334,8 +330,7 @@ enum IdleTimer {
     RestartEach,
 }
 
-/// A countdown which starts an idle timer as its `idle_timer` says. The timer's delay outlasts the
-/// run, so it never fires.
+// The idle timer's delay outlasts the run, so it never fires!
 struct IdleTimeout {
     messages: usize,
     idle_timer: IdleTimer,

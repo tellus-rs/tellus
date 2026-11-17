@@ -32,22 +32,24 @@ async fn main() -> anyhow::Result<()> {
         ("cellar", "boiler", f64::NAN),
     ];
     for (group_name, device_name, degrees) in readings {
-        manager.tell(Command::Record {
+        manager.tell(DeviceManagerMessage::Record {
             group_name,
             device_name,
             degrees,
         });
     }
-    manager.tell(Command::Retire {
+    manager.tell(DeviceManagerMessage::Retire {
         group_name: "attic",
         device_name: "right",
     });
 
     for group_name in ["attic", "cellar", "garage"] {
         let average = manager
-            .ask(Duration::from_secs(5), |reply_to| Command::Average {
-                group_name,
-                reply_to,
+            .ask(Duration::from_secs(5), |reply_to| {
+                DeviceManagerMessage::Average {
+                    group_name,
+                    reply_to,
+                }
             })
             .await
             .context("asking for the average temperature")?;
@@ -81,7 +83,7 @@ fn init_tracing() {
 struct DeviceManager;
 
 impl Actor for DeviceManager {
-    type Message = Command;
+    type Message = DeviceManagerMessage;
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<GroupMessage>>;
@@ -102,7 +104,7 @@ impl Actor for DeviceManager {
         };
 
         match command {
-            Command::Record {
+            DeviceManagerMessage::Record {
                 group_name,
                 device_name,
                 degrees,
@@ -117,7 +119,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Retire {
+            DeviceManagerMessage::Retire {
                 group_name,
                 device_name,
             } => {
@@ -127,7 +129,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Average {
+            DeviceManagerMessage::Average {
                 group_name,
                 reply_to,
             } => {
@@ -141,7 +143,7 @@ impl Actor for DeviceManager {
     }
 }
 
-enum Command {
+enum DeviceManagerMessage {
     Record {
         group_name: &'static str,
         device_name: &'static str,

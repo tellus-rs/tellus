@@ -308,9 +308,8 @@ impl Actor for Watcher {
     }
 }
 
-/// The deadlines are deliberately impatient, so a killed node is downed within seconds and the
-/// example finishes quickly; the defaults are the adaptive [PhiAccrualFailureDetector] and
-/// [KeepMajority] with a ten second deadline.
+/// Impatient deadlines, so a killed node is downed within seconds; the defaults are the adaptive
+/// [PhiAccrualFailureDetector] and [KeepMajority] with a ten second deadline.
 ///
 /// [PhiAccrualFailureDetector]: tellus::cluster::failure::PhiAccrualFailureDetector
 fn start_endpoint(bind_addr: SocketAddr) -> anyhow::Result<SocketAddr> {
@@ -328,10 +327,8 @@ fn start_endpoint(bind_addr: SocketAddr) -> anyhow::Result<SocketAddr> {
     Ok(advertised_addr)
 }
 
-/// Addresses the OS has just handed out and nothing holds anymore, so the nodes about to be
-/// spawned can bind them. Every socket is held until the last address is read, else one port
-/// could be handed out twice. Nothing reserves the ports, so another process may take one before
-/// its node binds it.
+/// Free addresses for the nodes about to be spawned. Every socket is held until the last address
+/// is read, else one port could be handed out twice.
 fn free_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
     let sockets = (0..count)
         .map(|_| UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))))
@@ -388,9 +385,8 @@ fn sees_down(view: &View, addr: SocketAddr) -> bool {
         .any(|(member, state)| *member == addr && *state == MemberState::Down)
 }
 
-/// Polls what every node sees, this one locally and the others by asking them, until all of them
-/// have settled. Asking rather than gossiping a verdict is the point: each node decides on its
-/// own, so only its own answer proves what it sees.
+/// Polls what every node sees, this one locally and the others by asking them, until all have
+/// settled: only a node's own answer proves what it sees.
 async fn await_views<F>(
     observer: SocketAddr,
     workers: &[ActorRef<Job>],

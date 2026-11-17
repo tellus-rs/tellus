@@ -21,7 +21,7 @@ use tellus::{
 };
 use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
 use thiserror::Error;
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const DATABASE_URL: &str = "postgres://tellus:tellus@localhost:5432/tellus";
 
@@ -60,7 +60,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),

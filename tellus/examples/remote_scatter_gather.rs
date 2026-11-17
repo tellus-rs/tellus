@@ -274,9 +274,8 @@ fn start_endpoint(bind_addr: SocketAddr) -> anyhow::Result<SocketAddr> {
     Ok(advertised_addr)
 }
 
-/// A port the OS has just handed out and nothing holds anymore, so the worker node about to be
-/// spawned can bind it: the gatherer has to name that address before the node exists. Nothing
-/// reserves the port, so another process may take it before the worker node binds it.
+/// A free port for the worker node about to be spawned, since the gatherer has to name that
+/// address before the node exists.
 fn free_addr() -> anyhow::Result<SocketAddr> {
     let socket = UdpSocket::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
         .context("binding a free loopback port")?;
