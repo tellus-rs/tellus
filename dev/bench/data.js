@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794924777962,
+  "lastUpdate": 1794924779972,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -36585,6 +36585,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4809305,
             "range": "± 327467",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "7ca79fd2ca51c034574a56ea0a7d167e87ae7234",
+          "message": "Merge pull request #477 from tellus-rs/docs/370-readmes\n\ndocs: fix review findings in READMEs, roadmap, demo and examples",
+          "timestamp": "2026-11-17T14:57:42+01:00",
+          "tree_id": "181a1e9082fc0685656540143a304c25d5777361",
+          "url": "https://github.com/tellus-rs/tellus/commit/7ca79fd2ca51c034574a56ea0a7d167e87ae7234"
+        },
+        "date": 1794924779462,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25845017,
+            "range": "± 1502516",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 23742028,
+            "range": "± 1192879",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4839969,
+            "range": "± 316896",
             "unit": "ns/iter"
           }
         ]
