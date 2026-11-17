@@ -337,19 +337,6 @@ impl<M> TimerTable<M> {
         })
     }
 
-    pub(crate) fn take_all(&mut self) -> Vec<M> {
-        self.slots_by_key.clear();
-        self.free_slots.clear();
-        self.sleep = None;
-        self.due_timers.clear();
-
-        self.slots
-            .drain(..)
-            .flatten()
-            .map(|timer| timer.message)
-            .collect()
-    }
-
     #[cfg(feature = "test-util")]
     pub(crate) fn pending(&self) -> Vec<(&'static str, Instant)> {
         let mut pending = self
@@ -380,6 +367,19 @@ impl<M> TimerTable<M> {
         let id = TimerId::new(slot, timer.generation);
         self.due_timers.push_back(DueTimer { deliver_at, id });
         true
+    }
+
+    fn take_all(&mut self) -> Vec<M> {
+        self.slots_by_key.clear();
+        self.free_slots.clear();
+        self.sleep = None;
+        self.due_timers.clear();
+
+        self.slots
+            .drain(..)
+            .flatten()
+            .map(|timer| timer.message)
+            .collect()
     }
 
     fn arm(&mut self, deadline: Instant) {
@@ -515,7 +515,7 @@ struct Timer<M> {
     message: M,
 }
 
-// Outside a runtime, as for a TestContext in a plain test, no run loop polls a sleep.
+// Outside a runtime, as in a plain test, no run loop polls a sleep.
 fn new_sleep(deadline: Instant) -> Option<Pin<Box<Sleep>>> {
     Handle::try_current()
         .is_ok()

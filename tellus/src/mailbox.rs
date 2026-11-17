@@ -1,5 +1,5 @@
 use crate::{
-    ActorId, Incoming, MailboxCapacity,
+    Incoming, MailboxCapacity,
     quota::{CountedSendError, CountedSender, Full, Quota},
     watch::{ActorTerminated, TerminatedHandler, WatcherRegistration, WatcherRegistry},
 };
@@ -109,16 +109,6 @@ impl From<CountedSendError> for SendError {
             CountedSendError::Full(full) => Self::MailboxFull(full),
             CountedSendError::Disconnected(_) => Self::ActorTerminated(ActorTerminated),
         }
-    }
-}
-
-impl<M> TerminatedHandler for CountedSender<Incoming<M>>
-where
-    M: Send + 'static,
-{
-    fn handle_terminated(&self, actor_id: ActorId) -> Result<(), ActorTerminated> {
-        self.try_send_uncounted(Incoming::Terminated(actor_id))
-            .map_err(|_| ActorTerminated)
     }
 }
 

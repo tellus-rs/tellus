@@ -280,7 +280,7 @@ where
     /// it like the mailbox.
     ///
     /// # Errors
-    /// Fails if the stash is full, returning the incoming, so the actor decides what to do with it.
+    /// Fails if the stash is full, returning the incoming.
     pub fn stash(&self, incoming: Incoming<M>) -> Result<(), Incoming<M>> {
         self.stash.borrow_mut().request_stash(incoming)
     }
@@ -425,8 +425,7 @@ impl Display for PanicPayload<'_> {
     }
 }
 
-/// The context of a run loop. A loop without a stash does not name the capacity, so its task future
-/// does not capture it.
+/// The context of a run loop, which captures the capacity only for a loop with a stash.
 macro_rules! new_context {
     (unstashed, $self_ref:expr, $config:expr) => {
         ActorContext::new($self_ref)
@@ -591,8 +590,7 @@ pub(crate) use next_incoming;
 pub(crate) use next_incoming_timed;
 pub(crate) use next_unstashed;
 
-/// The task future of a run loop, expanded once per [TimerMode] and [StashMode] with its wait
-/// macro and the stash arm of that macro.
+/// The task future of a run loop, expanded once per [TimerMode] and [StashMode].
 macro_rules! run_actor {
     (
         $next_incoming:ident,
@@ -816,7 +814,7 @@ where
     }
 }
 
-// Separate unwind boundaries: dropping while unwinding a formatting panic would abort.
+/// Separate unwind boundaries: dropping while unwinding a formatting panic would abort.
 pub(crate) fn dispose_error<E, L>(actor_id: ActorId, error: E, log: L)
 where
     L: FnOnce(&E),
@@ -857,8 +855,8 @@ where
     }
 }
 
-// Only polls are caught: `fut` must be a local async fn or async block, whose construction cannot
-// run the code it guards.
+/// Only polls are caught: `fut` must be a local async fn or async block, whose construction cannot
+/// run the code it guards.
 pub(crate) async fn catch_unwind_async<T, Fut>(fut: Fut) -> Result<T, Box<dyn Any + Send>>
 where
     Fut: Future<Output = T>,
@@ -926,10 +924,8 @@ where
     }
 }
 
-/// The state must already have been dropped by the caller. The channel is dropped before the
-/// destructors of the queued messages run, and the stashed items and the messages of the timers
-/// are dropped right after the queued ones. The watchers are signaled last, since a terminated
-/// signal must prove that the actor's destructors have run.
+/// The caller must have dropped the state. The watchers are signaled last: a terminated signal
+/// must prove that the actor's destructors have run.
 #[cfg_attr(feature = "hotpath", hotpath::measure)]
 pub(crate) async fn terminate<A, M, T, S>(
     actor: A,
