@@ -41,7 +41,7 @@ Three workloads, modeled on [`tellus/benches/messaging.rs`](../tellus/benches/me
 
 - `flood`: the bench thread floods a single counting actor with 100,000 messages.
 - `ping_pong`: pairs of actors play ping-pong for 1,000 rounds, with one pair and eight pairs.
-- `fan_out`: the bench thread sends 100,000 messages round robin to eight and to 32 workers.
+- `fan_out`: the bench thread sends 100,000 messages round-robin to eight and to 32 workers.
 
 Actor counts are fixed, so benchmark IDs stay stable across machines and published results remain
 comparable. Unlike the tellus bench, `fan_out` has the bench thread rather than a root actor

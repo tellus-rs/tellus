@@ -35,7 +35,7 @@
 //! A terminated signal survives a sever in the middle of the stream it must stay behind, with no
 //! message after it. A downed node frozen until its Down entry was swept is refused by the address
 //! watermark alone when it comes back. Frozen nodes stand in for partitions in clusters of their
-//! own: `KeepMajority` downs a minority of one, and decides a two node split by the lowest address
+//! own: `KeepMajority` downs a minority of one, and decides a two-node split by the lowest address
 //! in both directions. A lookup at this node's own address answers its own registrations.
 //!
 //! A join is held back while a frozen member is unreachable and admitted once it is downed.
@@ -2879,7 +2879,7 @@ fn ask_down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Downing derives from the shared reachability graph, not from this node's own detector: in a
-/// three node cluster the client alone cannot put the killed node outside its component, because
+/// three-node cluster the client alone cannot put the killed node outside its component, because
 /// the surviving node is still a path to it. The synthesized signal hence only arrives once the
 /// survivor's observation has been relayed here, and the survivor itself stays Up throughout.
 fn relayed_reachability_scenario(runtime: &Runtime) -> anyhow::Result<()> {

@@ -1,4 +1,4 @@
-//! How-to example: publish to a topic. Both nodes of a two node cluster subscribe a listener to
+//! How-to example: publish to a topic. Both nodes of a two-node cluster subscribe a listener to
 //! the topic before they bootstrap, so once the receptionist has settled, a lookup on the first
 //! node lists both. One publish then tells the local listener and the remote one, and each
 //! answers with a receipt.

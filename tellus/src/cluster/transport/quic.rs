@@ -186,6 +186,7 @@ impl QuicTransport {
     /// neither the protocol nor the failure detection of any node.
     ///
     /// The certificates are fixed for the transport's lifetime: renewing them takes a restart.
+    /// Revocation is not checked, so a certificate stays trusted until it expires.
     ///
     /// The TLS configuration uses rustls's process default [CryptoProvider] if the application has
     /// installed one, otherwise ring's default provider; it never installs a process default

@@ -148,15 +148,16 @@ where
 /// downed and every connection severed, and only then does any caller learn of it. Every call,
 /// concurrent or later, then fails as [Incomplete](LeaveError::Incomplete).
 ///
-/// Nothing is enqueued once the departure is announced. An acknowledgment proves that the peer
-/// dispatched every frame to its local mailboxes, or logged it as a dead letter there. It does not
-/// prove that any actor handled them. The whole drain is bounded by one
+/// Sends are refused once the departure is announced. A send racing the announcement on another
+/// thread may still be queued behind it, and it is drained with the rest. An acknowledgment proves
+/// that the peer dispatched every frame to its local mailboxes, or logged it as a dead letter
+/// there. It does not prove that any actor handled them. The whole drain is bounded by one
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout) deadline. A member which is gone
-/// already costs that timeout and learns of the departure from another member's gossip, or, with
-/// no live path at all, from its own failure detection, exactly as it would from a crash. A peer
-/// which leaves at the same time can still acknowledge after this node has seen its departure.
-/// Otherwise the drain towards it is reported as [departed](Departure::departed), never as
-/// acknowledged, and the drain gives up as soon as no member is Up at its address.
+/// already costs that timeout and learns of the departure from another member's gossip, or, with no
+/// live path at all, from its own failure detection, exactly as it would from a crash. A peer which
+/// leaves at the same time can still acknowledge after this node has seen its departure. Otherwise
+/// the drain towards it is reported as [departed](Departure::departed), never as acknowledged, and
+/// the drain gives up as soon as no member is Up at its address.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if

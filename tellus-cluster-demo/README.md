@@ -1,6 +1,6 @@
 # tellus-cluster-demo
 
-A five node tellus cluster which runs forever under continuous chaos, on Docker Compose or on
+A five-node tellus cluster which runs forever under continuous chaos, on Docker Compose or on
 Kubernetes.
 
 The nodes find each other through seed discovery, DNS or the Kubernetes API. Every cycle a chaos

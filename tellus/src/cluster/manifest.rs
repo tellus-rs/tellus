@@ -8,9 +8,11 @@ use std::{
     sync::{LazyLock, Mutex},
 };
 
-/// A message type named for the cluster. Discovery keys, topics and serialized references carry
-/// the manifest instead of the Rust type, so a lookup or a resolution as another type is refused
-/// rather than answered with a reference which drops every message told to it.
+/// A message type named for the cluster. Discovery keys, topics and the bytes of
+/// [serialize_ref](crate::cluster::serialize_ref) carry the manifest instead of the Rust type, so a
+/// lookup or a resolution as another type is refused rather than answered with a reference which
+/// drops every message told to it. A reference inside a message carries no manifest, so nothing
+/// refuses one decoded as the wrong type.
 ///
 /// A manifest must be unique per type across the cluster. Every node must use a compatible
 /// payload schema for it, which [Schema] versions. Collisions across nodes are unsupported: the

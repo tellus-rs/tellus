@@ -66,7 +66,7 @@ Such a release also kept its events and snapshots in tables of other names. The
 ## Timeouts
 
 tellus bounds every store call by the timeout of its `Persistence`, 10 s by default, but only as a
-backstop: it gives up on a call by dropping it. A dropped call does not end a statement which has
+last resort: it gives up on a call by dropping it. A dropped call does not end a statement which has
 reached the server. sqlx sends no cancel request, so the statement runs on, and its connection
 returns to the pool only once the statement has ended. A dropped append can hence still commit, even
 after the replay of the actor's next incarnation has read the stream. Its events are then in the
@@ -110,9 +110,9 @@ let persistence = Persistence::new(store.clone())
 One case stays ambiguous: a call which fails after its statement has begun to commit and before the
 answer has arrived. Neither `statement_timeout` nor `transaction_timeout` covers the commit which
 ends a statement, since PostgreSQL disarms both before it commits. A commit which stalls in the
-server, e.g. waiting for a synchronous standby, outlives them, and only the backstop ends the call.
-A lost connection or a crash of the process at that point leaves the outcome open in the same way.
-Such an append can land after the replay, as above.
+server, e.g. waiting for a synchronous standby, outlives them. Only the timeout of `Persistence`
+ends the call then. A lost connection or a crash of the process at that point leaves the outcome
+open in the same way. Such an append can land after the replay, as above.
 [docs/persistence.md](../docs/persistence.md#store-timeout) describes what follows for the actor.
 
 ## Schema

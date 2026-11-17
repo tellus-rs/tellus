@@ -69,6 +69,63 @@ the pair follows. A changed `started_at` between two hellos means the node resta
 A client which falls more than `events_kept` messages behind has its stream closed by the server.
 Its reconnect then gets `resumed: false` and a recovery.
 
+## Wire format
+
+A client in another language reads plain JSON. This is what the example above answers, a node which
+formed a cluster of one. `GET /cluster`:
+
+```json
+{
+  "state": {
+    "version": 1,
+    "this": {
+      "addr": "127.0.0.1:46377",
+      "incarnation": "01a1e9d7-b22d-72f9-8f5c-1881bcf17826"
+    },
+    "cluster": "01a1e9d7-b22e-70a3-9952-f9da27c41049",
+    "members": [
+      {
+        "addr": "127.0.0.1:46377",
+        "incarnation": "01a1e9d7-b22d-72f9-8f5c-1881bcf17826",
+        "state": "up"
+      }
+    ],
+    "unreachable": [],
+    "broken_links": [],
+    "foreign_clusters": []
+  },
+  "lifecycle": "formed",
+  "settlement": {
+    "version": 1,
+    "settled": true
+  }
+}
+```
+
+Incarnations and cluster IDs are UUIDv7 strings, and `cluster` is `null` while the node is a member
+of none. A member's `state` is `up`, `left` or `down`. `unreachable` holds members in the same
+shape, `broken_links` holds `{"observer": member, "subject": member}` and `foreign_clusters` holds
+`{"addr": ..., "cluster": ...}`.
+
+The first connection to `GET /events` gets a hello and a recovery (`this` and `members` elided):
+
+```text
+data: {"at":1794924589621,"event":{"kind":"hello","started_at":1794924589614,"resumed":false}}
+
+data: {"at":1794924589614,"event":{"kind":"state","version":1,"this":{...},"cluster":"01a1e9d7-b22e-70a3-9952-f9da27c41049","members":[...],"unreachable":[],"broken_links":[],"foreign_clusters":[]}}
+
+data: {"at":1794924589614,"event":{"kind":"settled","version":1,"settled":true}}
+
+data: {"at":1794924589614,"event":{"kind":"state","version":1,"this":{...},"cluster":"01a1e9d7-b22e-70a3-9952-f9da27c41049","members":[...],"unreachable":[],"broken_links":[],"foreign_clusters":[]}}
+
+data: {"at":1794924589614,"event":{"kind":"settled","version":1,"settled":true}}
+id: 1794924589614:2
+```
+
+A `state` event flattens the `ClusterState` next to `kind`, and a `settled` event the `Settlement`.
+A gap reads `{"kind":"gap","dropped":3}`. Reconnecting with `Last-Event-ID: 1794924589614:2` gets
+the hello with `"resumed":true` and then only what is newer.
+
 ## Configuration
 
 `InspectConfig` has one field, `events_kept`, the size of the log. It is not part of the node's

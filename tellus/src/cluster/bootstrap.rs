@@ -28,8 +28,8 @@ use tokio::{
 };
 use tracing::{debug, warn};
 
-/// A source of seed addresses for [bootstrap], e.g. a static list ([FixedSeeds]), DNS (the
-/// `tellus-bootstrap-dns` crate) or Kubernetes pods (the `tellus-bootstrap-k8s` crate).
+/// A source of seed addresses for [bootstrap], e.g. a static list ([FixedSeeds]), DNS records or
+/// Kubernetes pods.
 ///
 /// [bootstrap] counts the resolved addresses, for [min_nodes](BootstrapConfig::min_nodes) and for
 /// the majority a [FormationProvider] counts. It admits a peer only at the address the peer

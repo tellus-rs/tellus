@@ -655,8 +655,8 @@ mod tests {
         );
     }
 
-    /// Protocol version 1 pins the frame discriminants to hardcoded wire bytes: a round
-    /// trip cannot catch a format break, since reordered variants change both directions at once.
+    /// The frame discriminants are pinned to hardcoded wire bytes: a round trip cannot catch a
+    /// format break, since reordered variants change both directions at once.
     #[test]
     fn gossip_matches_its_pinned_wire_bytes() {
         let bytes = [7, 0, 0];
@@ -1009,8 +1009,8 @@ mod tests {
         }
     }
 
-    /// Every frame survives a round trip through the wire format; a change to the variant order
-    /// or to a field breaks this, which is what makes the format explicit rather than incidental.
+    /// Every frame survives a round trip through the wire format. A change to the variant order or
+    /// to a field is caught by the pinned-byte tests, not by this one.
     #[test]
     fn frames_round_trip() {
         let node = NodeId::new("127.0.0.1:1234".parse().expect("valid address"));

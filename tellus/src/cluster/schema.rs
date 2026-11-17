@@ -64,6 +64,10 @@ where
     /// [VERSION](Schema::VERSION) only; an override upcasts older versions, typically by decoding
     /// the old shape into its own type with [Codec::decode] and converting.
     ///
+    /// Decode a payload once, as the given version. Deserializing a [ReplyTo](crate::ReplyTo)
+    /// claims its reply destination, so an attempt which fails after that leaves the asker without
+    /// a reply.
+    ///
     /// # Errors
     /// Implementations fail if `schema_version` is one they cannot decode, with
     /// [UnsupportedSchemaVersion] as the source, or if the payload does not decode as that

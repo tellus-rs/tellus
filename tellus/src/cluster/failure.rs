@@ -29,8 +29,9 @@ where
     /// Record a heartbeat observed at the given instant.
     fn record_heartbeat(&mut self, at: Instant);
 
-    /// Whether the node is to be considered available at the given instant. A node not heard from
-    /// yet is available, so arming a detector never condemns the member it was armed for.
+    /// Whether the node is to be considered available at the given instant. The caller records a
+    /// heartbeat when it arms a detector, so a member which never sends a frame counts as silent
+    /// from its arming on, and the gap to its first frame is an interval like any other.
     fn is_available(&self, at: Instant) -> bool;
 }
 
