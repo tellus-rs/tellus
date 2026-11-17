@@ -1,7 +1,7 @@
 use crate::{
     ActorId,
     cluster::{
-        endpoint::{EndpointInner, InboundSlot, MemberAdmission},
+        endpoint::{ConnectionDirection, EndpointInner, InboundSlot, MemberAdmission},
         failure::PeerLiveness,
         frame::{
             Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
@@ -318,6 +318,7 @@ enum WriterEnd {
     Acknowledged,
     Unacknowledged,
     ConnectionLost,
+    Severed(u64),
 }
 
 enum ReadEnd {
@@ -493,15 +494,21 @@ where
 
     endpoint
         .supersede_inbound_reader(peer.addr(), |shutdown_rx| {
-            task::spawn(read_streams(
-                connection,
-                frame_receiver,
-                frame_sender,
-                peer,
-                Admitted { liveness, inbound },
-                endpoint,
-                shutdown_rx,
-            ))
+            task::spawn(async move {
+                let severed = read_streams(
+                    connection,
+                    frame_receiver,
+                    frame_sender,
+                    peer,
+                    Admitted { liveness, inbound },
+                    endpoint,
+                    shutdown_rx,
+                )
+                .await;
+                if let Some(generation) = severed {
+                    endpoint.note_severed(peer.addr(), ConnectionDirection::Inbound, generation);
+                }
+            })
         })
         .await;
 }
@@ -511,7 +518,8 @@ where
 /// Neither a finished stream nor a closed connection ends a reader: each runs until its own
 /// stream ends, so a departed peer's last frames are delivered before its death. A departed
 /// peer's drain marker is acknowledged once exactly as many data streams as it announces have
-/// ended cleanly, those which ended before it included.
+/// ended cleanly, those which ended before it included. The generation of the sever which ended
+/// it, if one did.
 async fn read_streams<C>(
     connection: C,
     control_rx: C::Receiver,
@@ -520,7 +528,8 @@ async fn read_streams<C>(
     admitted: Admitted,
     endpoint: &'static EndpointInner,
     mut shutdown_rx: tokio::sync::watch::Receiver<()>,
-) where
+) -> Option<u64>
+where
     C: Connection,
 {
     let Admitted {
@@ -536,6 +545,7 @@ async fn read_streams<C>(
         .id();
     let mut drain = InboundDrain::default();
     let mut open = true;
+    let mut severed = None;
 
     while open || !readers.is_empty() {
         select! {
@@ -543,7 +553,10 @@ async fn read_streams<C>(
 
             _ = shutdown_rx.changed() => break,
 
-            _ = sever_rx.changed() => break,
+            _ = sever_rx.changed() => {
+                severed = Some(*sever_rx.borrow_and_update());
+                break;
+            }
 
             joined = readers.join_next_with_id(), if !readers.is_empty() => {
                 let (id, end) = match joined {
@@ -608,6 +621,7 @@ async fn read_streams<C>(
     readers.shutdown().await;
     drop(frame_sender);
     drop(inbound);
+    severed
 }
 
 /// Abort and await the reader before the next dial, or two readers can overlap.
@@ -717,24 +731,28 @@ where
                         warn!(%peer, actor_id = %target, %error, "cannot re-establish remote watch");
                     }
                 }
-                let end = select! {
-                    end = write_streams(
-                        frame_senders,
-                        &outbound_rx,
-                        &quota,
-                        addr,
-                        frame_limit,
-                        snapshot_rx.clone(),
-                        LeaveSignals {
-                            leaving: endpoint.leaving_flag(),
-                            drain_ack_rx,
-                        },
-                    ) => end,
+                let end = write_streams(
+                    frame_senders,
+                    &outbound_rx,
+                    &quota,
+                    addr,
+                    frame_limit,
+                    snapshot_rx.clone(),
+                    LeaveSignals {
+                        leaving: endpoint.leaving_flag(),
+                        drain_ack_rx,
+                    },
+                    async {
+                        select! {
+                            _ = sever_rx.changed() => {
+                                WriterEnd::Severed(*sever_rx.borrow_and_update())
+                            }
 
-                    _ = sever_rx.changed() => WriterEnd::ConnectionLost,
-
-                    Ok(()) = &mut lost_rx => WriterEnd::ConnectionLost,
-                };
+                            Ok(()) = &mut lost_rx => WriterEnd::ConnectionLost,
+                        }
+                    },
+                )
+                .await;
                 endpoint.mark_lane_disconnected(addr, lane_id);
                 reader.abort();
                 let _ = reader.await;
@@ -748,6 +766,10 @@ where
                     WriterEnd::LaneClosed | WriterEnd::Unacknowledged => break,
 
                     WriterEnd::ConnectionLost => {}
+
+                    WriterEnd::Severed(generation) => {
+                        endpoint.note_severed(addr, ConnectionDirection::Outbound, generation);
+                    }
                 }
 
                 // One heartbeat is the shortest lifetime proving the peer answered here.
@@ -932,8 +954,10 @@ where
 }
 
 /// Leaving, every data stream is finished first, then the control stream carries the drain
-/// marker, and the lane is acknowledged only once the peer answers the marker.
-async fn write_streams<S>(
+/// marker, and the lane is acknowledged only once the peer answers the marker. `interrupted`
+/// ends the writing with its end, once every writer task has finished.
+#[expect(clippy::too_many_arguments)]
+async fn write_streams<S, I>(
     frame_senders: Vec<S>,
     outbound_rx: &[Receiver<Frame<'static>>],
     quota: &Quota,
@@ -941,9 +965,11 @@ async fn write_streams<S>(
     max_frame_size: usize,
     snapshot_rx: tokio::sync::watch::Receiver<Option<Arc<Snapshot>>>,
     leave: LeaveSignals,
+    interrupted: I,
 ) -> WriterEnd
 where
     S: FrameSender,
+    I: Future<Output = WriterEnd>,
 {
     let LeaveSignals {
         leaving,
@@ -985,6 +1011,26 @@ where
         });
     }
 
+    let end = select! {
+        end = drain_writers(&mut writers, addr, leaving, data_streams, drain_ack_rx) => end,
+
+        end = interrupted => end,
+    };
+    // A writer still running holds a sender, which keeps the connection open!
+    writers.shutdown().await;
+    end
+}
+
+async fn drain_writers<S>(
+    writers: &mut JoinSet<Result<Option<S>, WriterEnd>>,
+    addr: SocketAddr,
+    leaving: &AtomicBool,
+    data_streams: usize,
+    drain_ack_rx: oneshot::Receiver<()>,
+) -> WriterEnd
+where
+    S: FrameSender,
+{
     let mut written = match writers.join_next().await {
         Some(joined) => writer_result(joined, addr),
         None => Err(WriterEnd::ConnectionLost),
@@ -2058,6 +2104,18 @@ mod tests {
     static DECODE_PANICKED: AtomicBool = AtomicBool::new(false);
     static GATE_DECODE_STARTED: AtomicBool = AtomicBool::new(false);
     static GATE_DECODE_RELEASED: AtomicBool = AtomicBool::new(false);
+    #[cfg(feature = "__internal")]
+    static TEARDOWN_DECODE_STARTED: [AtomicBool; 2] =
+        [AtomicBool::new(false), AtomicBool::new(false)];
+    #[cfg(feature = "__internal")]
+    static TEARDOWN_DECODE_RELEASED: [AtomicBool; 2] =
+        [AtomicBool::new(false), AtomicBool::new(false)];
+    #[cfg(feature = "__internal")]
+    static HELD_SEND_ARMED: AtomicBool = AtomicBool::new(false);
+    #[cfg(feature = "__internal")]
+    static HELD_SEND_STARTED: AtomicBool = AtomicBool::new(false);
+    #[cfg(feature = "__internal")]
+    static HELD_SEND_RELEASED: AtomicBool = AtomicBool::new(false);
 
     struct FakeReceiver {
         frames: VecDeque<Vec<u8>>,
@@ -2777,6 +2835,7 @@ mod tests {
                     1024,
                     tokio::sync::watch::channel(None).1,
                     leave,
+                    pending(),
                 ),
             )
             .await
@@ -2837,6 +2896,7 @@ mod tests {
             1024,
             tokio::sync::watch::channel(None).1,
             leave_signals(&NOT_LEAVING).1,
+            pending(),
         )
         .await;
         assert!(matches!(end, WriterEnd::ConnectionLost));
@@ -7158,5 +7218,200 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// Blocks its decode until the gate its value names is released, so the reader delivering it
+    /// holds its connection's teardown open.
+    #[cfg(feature = "__internal")]
+    #[derive(Serialize, Deserialize)]
+    struct HoldsTeardown(u64);
+
+    #[cfg(feature = "__internal")]
+    impl Schema for HoldsTeardown {
+        fn decode(codec: Codec, _: SchemaVersion, payload: &[u8]) -> Result<Self, CodecError> {
+            let gate = codec.decode::<u64>(payload)?;
+            let index = usize::try_from(gate).expect("a gate index");
+            TEARDOWN_DECODE_STARTED[index].store(true, Ordering::SeqCst);
+            while !TEARDOWN_DECODE_RELEASED[index].load(Ordering::SeqCst) {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            Ok(HoldsTeardown(gate))
+        }
+    }
+
+    /// A [ScriptedTransport] whose senders block their send while [HELD_SEND_ARMED] is set,
+    /// until [HELD_SEND_RELEASED] is, so a writer task holds its sender.
+    #[cfg(feature = "__internal")]
+    struct HoldingTransport(ScriptedTransport);
+
+    #[cfg(feature = "__internal")]
+    impl Transport for HoldingTransport {
+        type Connection = HoldingConnection;
+
+        fn data_streams(&self) -> Option<NonZeroUsize> {
+            self.0.data_streams()
+        }
+
+        async fn connect(
+            &self,
+            addr: SocketAddr,
+            max_frame_size: usize,
+        ) -> Result<ConnectedControl<HoldingConnection>, TransportError> {
+            let ConnectedControl {
+                connection,
+                control_tx,
+                control_rx,
+            } = self.0.connect(addr, max_frame_size).await?;
+            Ok(ConnectedControl {
+                connection: HoldingConnection(connection),
+                control_tx: HoldingSender(control_tx),
+                control_rx,
+            })
+        }
+
+        async fn accept(&self, _: usize) -> Result<HoldingConnection, TransportError> {
+            pending().await
+        }
+    }
+
+    #[cfg(feature = "__internal")]
+    struct HoldingConnection(ScriptedConnection);
+
+    #[cfg(feature = "__internal")]
+    impl Connection for HoldingConnection {
+        type Sender = HoldingSender;
+        type Receiver = ChannelReceiver;
+
+        async fn accept_control(&self) -> Result<(HoldingSender, ChannelReceiver), TransportError> {
+            unreachable!("the dialing side opens the control stream")
+        }
+
+        async fn open_data(&self) -> Result<HoldingSender, TransportError> {
+            self.0.open_data().await.map(HoldingSender)
+        }
+
+        async fn accept_data(&self) -> Result<Option<ChannelReceiver>, TransportError> {
+            pending().await
+        }
+    }
+
+    #[cfg(feature = "__internal")]
+    struct HoldingSender(ChannelSender);
+
+    #[cfg(feature = "__internal")]
+    impl HoldingSender {
+        fn hold_while_armed() {
+            if HELD_SEND_ARMED.load(Ordering::SeqCst) {
+                HELD_SEND_STARTED.store(true, Ordering::SeqCst);
+                while !HELD_SEND_RELEASED.load(Ordering::SeqCst) {
+                    std::thread::sleep(Duration::from_millis(1));
+                }
+            }
+        }
+    }
+
+    #[cfg(feature = "__internal")]
+    impl FrameSender for HoldingSender {
+        async fn send(&mut self, frame: &[u8]) -> Result<(), TransportError> {
+            HoldingSender::hold_while_armed();
+            self.0.send(frame).await
+        }
+
+        async fn send_batch(&mut self, frames: &[Vec<u8>]) -> Result<(), TransportError> {
+            HoldingSender::hold_while_armed();
+            self.0.send_batch(frames).await
+        }
+
+        async fn finish(&mut self) -> Result<(), TransportError> {
+            self.0.finish().await
+        }
+    }
+
+    /// A sever is recorded for an outbound connection only once the lane has torn it down, here
+    /// once its reader has finished the delivery it was in and its writer the send it was in.
+    #[cfg(feature = "__internal")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    async fn an_outbound_sever_is_recorded_after_the_teardown() {
+        use crate::cluster::endpoint::ConnectionDirection;
+
+        const GATE: u64 = 0;
+
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let member = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(member));
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(HoldingTransport(ScriptedTransport(dial_tx))),
+            lane_dials,
+            endpoint,
+        ));
+        let gossip = || Frame::Gossip {
+            members: Vec::new(),
+            more: false,
+        };
+        endpoint.send(member, gossip()).expect("the lane opens");
+        let acceptor = accepted_lane(endpoint, &mut dials, member).await;
+
+        HELD_SEND_ARMED.store(true, Ordering::SeqCst);
+        endpoint.send(member, gossip()).expect("the lane is open");
+        eventually(|| HELD_SEND_STARTED.load(Ordering::SeqCst)).await;
+        let (target, _mailbox) =
+            SelfRef::<HoldsTeardown>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        endpoint.registry().bind(target.actor_ref());
+        acceptor.send(&message(endpoint, target.actor_ref().actor_id(), GATE));
+        let gate = usize::try_from(GATE).expect("a gate index");
+        eventually(|| TEARDOWN_DECODE_STARTED[gate].load(Ordering::SeqCst)).await;
+
+        let generation = endpoint.sever();
+        sleep(Duration::from_millis(100)).await;
+        let recorded_during_the_delivery =
+            endpoint.severed_since(addr(2), ConnectionDirection::Outbound, generation);
+        TEARDOWN_DECODE_RELEASED[gate].store(true, Ordering::SeqCst);
+        sleep(Duration::from_millis(100)).await;
+        let recorded_during_the_send =
+            endpoint.severed_since(addr(2), ConnectionDirection::Outbound, generation);
+        HELD_SEND_RELEASED.store(true, Ordering::SeqCst);
+
+        assert!(
+            !recorded_during_the_delivery,
+            "the reader still holds the teardown open"
+        );
+        assert!(
+            !recorded_during_the_send,
+            "the writer still holds the teardown open"
+        );
+        eventually(|| endpoint.severed_since(addr(2), ConnectionDirection::Outbound, generation))
+            .await;
+    }
+
+    /// A sever is recorded for an inbound connection only once its reader task has torn it down,
+    /// here once a stream reader has finished the delivery it was in.
+    #[cfg(feature = "__internal")]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn an_inbound_sever_is_recorded_after_the_teardown() {
+        use crate::cluster::endpoint::ConnectionDirection;
+
+        const GATE: u64 = 1;
+
+        let endpoint = formed(1);
+        let peer = InboundPeer::admitted_by(endpoint, 2).await;
+        let (target, _mailbox) =
+            SelfRef::<HoldsTeardown>::new(ActorId::new(), MailboxCapacity::Unbounded);
+        endpoint.registry().bind(target.actor_ref());
+        peer.send(&message(endpoint, target.actor_ref().actor_id(), GATE));
+        let gate = usize::try_from(GATE).expect("a gate index");
+        eventually(|| TEARDOWN_DECODE_STARTED[gate].load(Ordering::SeqCst)).await;
+
+        let generation = endpoint.sever();
+        sleep(Duration::from_millis(100)).await;
+        let recorded_during_the_delivery =
+            endpoint.severed_since(addr(2), ConnectionDirection::Inbound, generation);
+        TEARDOWN_DECODE_RELEASED[gate].store(true, Ordering::SeqCst);
+
+        assert!(!recorded_during_the_delivery, "the teardown is still open");
+        eventually(|| endpoint.severed_since(addr(2), ConnectionDirection::Inbound, generation))
+            .await;
     }
 }

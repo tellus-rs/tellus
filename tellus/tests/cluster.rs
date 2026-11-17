@@ -1579,6 +1579,11 @@ impl Actor for Keeper {
                 Ok(Control::Continue(state))
             }
 
+            Incoming::Message(KeeperMessage::ArmedDrops { reply_to }) => {
+                reply_to.reply(cluster::armed_terminated_drops().expect("endpoint started"));
+                Ok(Control::Continue(state))
+            }
+
             Incoming::Message(KeeperMessage::Stop) => Ok(Control::Stop),
 
             Incoming::Terminated(_) => Ok(Control::Continue(state)),
@@ -1595,6 +1600,10 @@ enum KeeperMessage {
     DropTerminated {
         count: u64,
         reply_to: ActorRef<ClientEvent>,
+    },
+
+    ArmedDrops {
+        reply_to: ReplyTo<u64>,
     },
 
     Stop,
@@ -1727,6 +1736,7 @@ fn client() -> anyhow::Result<()> {
 
     let mut keeper_process = KillOnDrop(spawn_node(Role::Keeper)?);
     let keeper = resolve_ref::<KeeperMessage>(&mut keeper_process)?;
+    let keeper_addr = bound_addr(&keeper_process.0)?;
 
     ordered_termination_scenario(&runtime, &keeper).context("ordered termination scenario")?;
     watch_terminated_scenario(&runtime, &keeper).context("watch terminated scenario")?;
@@ -1734,8 +1744,9 @@ fn client() -> anyhow::Result<()> {
     two_watchers_scenario(&runtime, &keeper).context("two watchers scenario")?;
     head_of_line_scenario(&runtime, &keeper).context("head of line scenario")?;
     oversize_scenario(&runtime, &keeper).context("oversize scenario")?;
-    sever_scenario(&runtime, &keeper).context("sever scenario")?;
-    sever_terminated_scenario(&runtime, &keeper).context("sever terminated scenario")?;
+    sever_scenario(&runtime, &keeper, keeper_addr).context("sever scenario")?;
+    sever_terminated_scenario(&runtime, &keeper, keeper_addr)
+        .context("sever terminated scenario")?;
     lost_terminated_scenario(&runtime, &keeper).context("lost terminated scenario")?;
     dead_target_ask_scenario(&runtime, &keeper).context("dead target ask scenario")?;
 
@@ -2527,8 +2538,13 @@ fn oversize_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> any
 /// acknowledgments arrive strictly ascending, i.e. "in order, with gaps", and a marker told
 /// after the sever arrives over the reconnected lane, proving it survived with its queue. This
 /// also exercises inbound reader supersession: the reconnected connection's reader takes over
-/// from the severed one.
-fn sever_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> anyhow::Result<()> {
+/// from the severed one. The outbound connection to the keeper, which carries the stream, must
+/// have been torn down by the sever.
+fn sever_scenario(
+    runtime: &Runtime,
+    keeper: &ActorRef<KeeperMessage>,
+    keeper_addr: SocketAddr,
+) -> anyhow::Result<()> {
     let (event_tx, event_rx) = mpsc::channel();
     let system = ActorSystem::new(SeverFifo {
         keeper: keeper.clone(),
@@ -2541,9 +2557,7 @@ fn sever_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> anyhow
     }
 
     thread::sleep(SEVER_DELAY);
-    if !cluster::sever_connections() {
-        bail!("cannot sever, endpoint not started");
-    }
+    sever_and_confirm(keeper_addr, Direction::Outbound)?;
 
     let mut done = None;
     for _ in 0..MARKER_ATTEMPTS {
@@ -2573,10 +2587,12 @@ fn sever_scenario(runtime: &Runtime, keeper: &ActorRef<KeeperMessage>) -> anyhow
 
 /// A watched remote actor streams large messages and stops while the client severs every
 /// connection: frames are lost, but the terminated signal still arrives, through the reconnect or
-/// the watch refresh, and no message from the actor arrives after it.
+/// the watch refresh, and no message from the actor arrives after it. The inbound connection from
+/// the keeper, which carries the stream, must have been torn down by the sever.
 fn sever_terminated_scenario(
     runtime: &Runtime,
     keeper: &ActorRef<KeeperMessage>,
+    keeper_addr: SocketAddr,
 ) -> anyhow::Result<()> {
     let (event_tx, event_rx) = mpsc::channel();
     let system = ActorSystem::new(SeverTerminated {
@@ -2589,9 +2605,7 @@ fn sever_terminated_scenario(
         _ => bail!("unexpected event from the sever terminated client"),
     }
     thread::sleep(SEVER_DELAY);
-    if !cluster::sever_connections() {
-        bail!("cannot sever, endpoint not started");
-    }
+    sever_and_confirm(keeper_addr, Direction::Inbound)?;
 
     match recv(&event_rx)? {
         TestEvent::StreamedAll => {}
@@ -2610,7 +2624,8 @@ fn sever_terminated_scenario(
 
 /// A terminated frame dropped on the watched node (fault injection) must still reach the watcher:
 /// the periodic watch refresh re-asserts the watch, and the watched node answers a watch for a
-/// meanwhile terminated actor with `Terminated`.
+/// meanwhile terminated actor with `Terminated`. The keeper's node must have dropped the armed
+/// frame.
 fn lost_terminated_scenario(
     runtime: &Runtime,
     keeper: &ActorRef<KeeperMessage>,
@@ -2621,7 +2636,15 @@ fn lost_terminated_scenario(
             event_tx,
         }
     })?;
-    expect_done(&event_rx)
+    expect_done(&event_rx)?;
+
+    let armed = runtime
+        .block_on(keeper.ask(TIMEOUT, |reply_to| KeeperMessage::ArmedDrops { reply_to }))
+        .context("armed drops ask")?;
+    if armed != 0 {
+        bail!("{armed} armed terminated frame drops never happened");
+    }
+    Ok(())
 }
 
 /// An ask toward a terminated remote actor is dead-lettered on the receiving node without being
@@ -2838,7 +2861,7 @@ fn ask_down_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     }
 
     echo_process.0.kill().context("killing the echo process")?;
-    if !cluster::sever_connections() {
+    if cluster::sever_connections().is_none() {
         bail!("cannot sever, endpoint not started");
     }
 
@@ -5876,6 +5899,30 @@ fn reserved_addrs(count: usize) -> anyhow::Result<Vec<SocketAddr>> {
 /// The address a node binds to when the OS is to choose its port, which it then reports.
 fn any_port() -> SocketAddr {
     SocketAddr::from((Ipv4Addr::LOCALHOST, 0))
+}
+
+/// Which connection between this node and a peer [sever_and_confirm] requires to be torn down.
+enum Direction {
+    Outbound,
+    Inbound,
+}
+
+/// Severs every connection of this process, then waits until the connection in `direction`
+/// between this node and `peer` has been torn down by that sever or a later one.
+fn sever_and_confirm(peer: SocketAddr, direction: Direction) -> anyhow::Result<()> {
+    let generation = cluster::sever_connections().context("cannot sever, endpoint not started")?;
+    let severed = match direction {
+        Direction::Outbound => cluster::outbound_severed,
+        Direction::Inbound => cluster::inbound_severed,
+    };
+    let deadline = Instant::now() + TIMEOUT;
+    while !severed(peer, generation) {
+        if Instant::now() >= deadline {
+            bail!("the sever did not tear down the connection with {peer}");
+        }
+        thread::sleep(Duration::from_millis(10));
+    }
+    Ok(())
 }
 
 /// The address a spawned node reported once it was bound.
