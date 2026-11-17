@@ -8,7 +8,11 @@ use tellus::{
     Actor, ActorContext, Control, Incoming, MailboxCapacity, Unstashed, Untimed,
     testing::{PendingTimer, TestContext},
 };
-use tokio::{sync::mpsc, task::block_in_place, time::timeout};
+use tokio::{
+    sync::mpsc,
+    task::{self, block_in_place},
+    time::timeout,
+};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -273,7 +277,7 @@ async fn termination_signals_watchers_only_after_descendants_terminated() {
         })),
     });
 
-    let terminating = tokio::spawn(other.terminate());
+    let terminating = task::spawn(other.terminate());
     block_in_place(|| entered_rx.recv_timeout(TIMEOUT)).expect("child did not start shutting down");
 
     assert!(watcher.take_incoming().is_empty());
@@ -453,7 +457,6 @@ impl Actor for Reporter {
                 .send(n)
                 .expect("the test awaits the report");
         }
-
         Ok(Control::Continue(()))
     }
 }

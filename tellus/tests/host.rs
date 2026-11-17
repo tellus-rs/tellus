@@ -18,7 +18,7 @@ use tellus::{
 };
 use tokio::{
     sync::{Mutex as AsyncMutex, Notify, mpsc},
-    task::block_in_place,
+    task::{self, block_in_place},
     time::{sleep, timeout},
 };
 
@@ -363,7 +363,7 @@ async fn direct_tells_and_timers_do_not_count_as_use() {
         .await
         .expect("no entity spawned in time")
         .expect("the host keeps the sender");
-    tokio::spawn(async move {
+    task::spawn(async move {
         loop {
             sleep(IDLE_TIMEOUT / 4).await;
             entity.tell(BusyMessage::Poke.into());
@@ -558,7 +558,7 @@ impl Actor for Entity {
                 match released {
                     Some(released) => {
                         let entity = context.self_ref().clone();
-                        tokio::spawn(async move {
+                        task::spawn(async move {
                             released.await;
                             entity.tell(Message::Die.into());
                         });
@@ -572,7 +572,6 @@ impl Actor for Entity {
 
             Incoming::Terminated(_) => {}
         }
-
         Ok(Control::Continue(state))
     }
 }

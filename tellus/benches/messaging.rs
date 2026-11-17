@@ -407,7 +407,6 @@ impl Actor for PingPongRoot {
                     });
                     context.watch(&pinger);
                 }
-
                 Ok(Control::Continue(remaining))
             }
 
@@ -537,7 +536,6 @@ impl Actor for FanOutRoot {
                 {
                     worker.tell(Tick);
                 }
-
                 Ok(Control::Continue(state))
             }
 
