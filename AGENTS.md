@@ -59,7 +59,7 @@ Tasks are defined in the [justfile](justfile):
   dev-dependencies are not built: plain `cargo check`, `cargo build`, `just doc` and
   rust-analyzer. Only a binary may pick the Kubernetes version through a `v1_*` feature, so
   `tellus-bootstrap-k8s` enables `latest` in its dev-dependency alone, which is what covers every
-  `--all-targets` run, while `tellus-cluster-demo`, being a binary, names `v1_36` itself. All
+  `--all-targets` run, while `tellus-cluster-demo`, being a binary, names `v1_37` itself. All
   three must name the same version; a mismatch fails the build loudly.
 - `just fmt`: formats Rust (nightly rustfmt, the justfile derives the matching nightly from the
   installed stable) and TOML (taplo). Plain `cargo fmt` is not enough; the rustfmt config uses

@@ -12,7 +12,7 @@ publish       = false
 anyhow                 = { workspace = true }
 axum                   = { workspace = true, features = [ "http1", "json", "tokio" ] }
 configured             = { workspace = true }
-k8s-openapi            = { workspace = true, features = [ "v1_36" ] }
+k8s-openapi            = { workspace = true, features = [ "v1_37" ] }
 reqwest                = { workspace = true, features = [ "json" ] }
 serde                  = { workspace = true, features = [ "derive" ] }
 tellus                 = { workspace = true, features = [ "cluster-dev", "serde" ] }
