@@ -32,9 +32,10 @@ use tokio::{
     process::{self, Child},
     time::{sleep, timeout},
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const MANAGER_NODE_ARG: &str = "manager-node";
+const NODES: usize = 2;
 const MANAGER_KEY: &str = "device-manager";
 const MAX_RESTARTS: NonZeroU32 = NonZeroU32::new(3).expect("3 is not zero");
 const BOOTSTRAP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -58,7 +59,7 @@ fn init_tracing() {
     tracing_subscriber::registry()
         .with(EnvFilter::from_default_env())
         .with(
-            tracing_subscriber::fmt::layer()
+            fmt::layer()
                 .json()
                 .flatten_event(true)
                 .with_writer(io::stderr),
@@ -68,7 +69,7 @@ fn init_tracing() {
 
 // ANCHOR: first-node
 async fn first_node() -> anyhow::Result<()> {
-    let seeds = free_addrs(2)?;
+    let seeds = free_addrs(NODES)?;
     let _manager_node = spawn_node(MANAGER_NODE_ARG, seeds[1], &seeds)?;
     join_cluster(seeds[0], seeds.clone()).await?;
     let manager = lookup_manager(seeds[1]).await?;

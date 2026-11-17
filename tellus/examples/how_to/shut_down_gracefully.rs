@@ -31,9 +31,11 @@ use tokio::{
     net::TcpListener,
     signal,
     sync::Notify,
+    task::JoinHandle,
     time::{sleep, timeout},
 };
-use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing::warn;
+use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
 const DEFAULT_HTTP_ADDR: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
 // Must exceed the time a load balancer takes to drop a node that fails its health check.
@@ -71,11 +73,88 @@ async fn main() -> anyhow::Result<()> {
 }
 // ANCHOR_END: main
 
+fn init_tracing() {
+    tracing_subscriber::registry()
+        .with(EnvFilter::from_default_env())
+        .with(
+            fmt::layer()
+                .json()
+                .flatten_event(true)
+                .with_writer(io::stderr),
+        )
+        .init();
+}
+
+fn start_endpoint() -> anyhow::Result<Duration> {
+    let transport = QuicTransport::dev(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
+        .context("dev QUIC transport")?;
+    let addr = transport.local_addr().context("local transport address")?;
+    let config = EndpointConfig::new(addr);
+    let leave_timeout = config.leave_timeout;
+    cluster::start_endpoint(config, transport).context("remoting endpoint")?;
+    Ok(leave_timeout)
+}
+
+fn http_addr() -> anyhow::Result<SocketAddr> {
+    env::args().nth(1).map_or(Ok(DEFAULT_HTTP_ADDR), |addr| {
+        addr.parse().context("HTTP address argument")
+    })
+}
+
+// ANCHOR: app
+struct App {
+    healthy: AtomicBool,
+    counter: ActorRef<Count>,
+}
+
+fn router(app: Arc<App>) -> Router {
+    Router::new()
+        .route("/health", get(health))
+        .route("/count", get(count))
+        .with_state(app)
+}
+
+async fn health(State(app): State<Arc<App>>) -> StatusCode {
+    if app.healthy.load(Ordering::Relaxed) {
+        StatusCode::OK
+    } else {
+        StatusCode::SERVICE_UNAVAILABLE
+    }
+}
+
+async fn count(State(app): State<Arc<App>>) -> Result<String, StatusCode> {
+    app.counter
+        .ask(ASK_TIMEOUT, Count)
+        .await
+        .map(|count| format!("{count}\n"))
+        .map_err(|error| {
+            warn!(%error, "cannot ask the counter");
+            StatusCode::SERVICE_UNAVAILABLE
+        })
+}
+// ANCHOR_END: app
+
+// ANCHOR: shutdown-signal
+#[cfg(unix)]
+async fn shutdown_signal() -> anyhow::Result<()> {
+    let mut terminate = unix::signal(SignalKind::terminate()).context("SIGTERM handler")?;
+    tokio::select! {
+        _ = terminate.recv() => Ok(()),
+        interrupt = signal::ctrl_c() => interrupt.context("Ctrl-C handler"),
+    }
+}
+
+#[cfg(not(unix))]
+async fn shutdown_signal() -> anyhow::Result<()> {
+    signal::ctrl_c().await.context("Ctrl-C handler")
+}
+// ANCHOR_END: shutdown-signal
+
 // ANCHOR: shut-down
 async fn shut_down(
     app: &App,
     drain: &Notify,
-    server: tokio::task::JoinHandle<io::Result<()>>,
+    server: JoinHandle<io::Result<()>>,
     system: ActorSystem<Count>,
     leave_timeout: Duration,
 ) -> anyhow::Result<()> {
@@ -115,80 +194,6 @@ async fn shut_down(
     Ok(())
 }
 // ANCHOR_END: shut-down
-
-// ANCHOR: app
-struct App {
-    healthy: AtomicBool,
-    counter: ActorRef<Count>,
-}
-
-fn router(app: Arc<App>) -> Router {
-    Router::new()
-        .route("/health", get(health))
-        .route("/count", get(count))
-        .with_state(app)
-}
-
-async fn health(State(app): State<Arc<App>>) -> StatusCode {
-    if app.healthy.load(Ordering::Relaxed) {
-        StatusCode::OK
-    } else {
-        StatusCode::SERVICE_UNAVAILABLE
-    }
-}
-
-async fn count(State(app): State<Arc<App>>) -> Result<String, StatusCode> {
-    app.counter
-        .ask(ASK_TIMEOUT, Count)
-        .await
-        .map(|count| format!("{count}\n"))
-        .map_err(|_| StatusCode::SERVICE_UNAVAILABLE)
-}
-// ANCHOR_END: app
-
-// ANCHOR: shutdown-signal
-#[cfg(unix)]
-async fn shutdown_signal() -> anyhow::Result<()> {
-    let mut terminate = unix::signal(SignalKind::terminate()).context("SIGTERM handler")?;
-    tokio::select! {
-        _ = terminate.recv() => Ok(()),
-        interrupt = signal::ctrl_c() => interrupt.context("Ctrl-C handler"),
-    }
-}
-
-#[cfg(not(unix))]
-async fn shutdown_signal() -> anyhow::Result<()> {
-    signal::ctrl_c().await.context("Ctrl-C handler")
-}
-// ANCHOR_END: shutdown-signal
-
-fn init_tracing() {
-    tracing_subscriber::registry()
-        .with(EnvFilter::from_default_env())
-        .with(
-            tracing_subscriber::fmt::layer()
-                .json()
-                .flatten_event(true)
-                .with_writer(io::stderr),
-        )
-        .init();
-}
-
-fn start_endpoint() -> anyhow::Result<Duration> {
-    let transport = QuicTransport::dev(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
-        .context("dev QUIC transport")?;
-    let addr = transport.local_addr().context("local transport address")?;
-    let config = EndpointConfig::new(addr);
-    let leave_timeout = config.leave_timeout;
-    cluster::start_endpoint(config, transport).context("remoting endpoint")?;
-    Ok(leave_timeout)
-}
-
-fn http_addr() -> anyhow::Result<SocketAddr> {
-    env::args().nth(1).map_or(Ok(DEFAULT_HTTP_ADDR), |addr| {
-        addr.parse().context("HTTP address argument")
-    })
-}
 
 struct Counter;
 

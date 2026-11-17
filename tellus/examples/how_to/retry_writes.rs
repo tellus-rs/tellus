@@ -24,7 +24,7 @@ const TOTAL: u64 = 2_000;
 const WINDOW: usize = 256;
 const MAX_BATCH: usize = 100;
 const MAX_ATTEMPTS: u32 = 3;
-const MAX_RESTARTS: NonZeroU32 = NonZeroU32::new(2).unwrap();
+const MAX_RESTARTS: NonZeroU32 = NonZeroU32::new(2).expect("2 is not zero");
 const BACKOFF_MIN: Duration = Duration::from_millis(10);
 const BACKOFF_MAX: Duration = Duration::from_millis(80);
 // Longer than every batch ahead in the window retried MAX_ATTEMPTS times, plus one restart!
@@ -75,7 +75,7 @@ impl Actor for Producer {
 
     fn init(
         &self,
-        context: &ActorContext<Self::Message, Timed>,
+        context: &ActorContext<Self::Message, Self::Timers>,
     ) -> Result<Self::State, Self::Error> {
         let policy = RestartPolicy::new(MAX_RESTARTS).with_backoff(self.backoff);
         let config =
@@ -100,7 +100,7 @@ impl Actor for Producer {
 
     fn receive(
         &self,
-        context: &ActorContext<Self::Message, Timed>,
+        context: &ActorContext<Self::Message, Self::Timers>,
         incoming: Incoming<Self::Message>,
         mut sending: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
@@ -221,7 +221,10 @@ impl Actor for Journal {
     type State = Buffer;
     type Error = WriteFailed;
 
-    fn init(&self, _: &ActorContext<Self::Message, Timed>) -> Result<Self::State, Self::Error> {
+    fn init(
+        &self,
+        _: &ActorContext<Self::Message, Self::Timers>,
+    ) -> Result<Self::State, Self::Error> {
         println!("Journal started");
         Ok(Buffer {
             pending: Vec::new(),
@@ -232,7 +235,7 @@ impl Actor for Journal {
 
     fn receive(
         &self,
-        context: &ActorContext<Self::Message, Timed>,
+        context: &ActorContext<Self::Message, Self::Timers>,
         incoming: Incoming<Self::Message>,
         mut buffer: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
