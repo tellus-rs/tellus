@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794900121787,
+  "lastUpdate": 1794904399402,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -20459,6 +20459,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 29252094,
             "range": "± 1113624",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b092424829270b396f8b71f4fbff5e46db92f8fc",
+          "message": "Merge pull request #459 from tellus-rs/fix/k8s-chaos-heal\n\nfix(demo): bound the k8s heal outside kubectl so it keeps its config",
+          "timestamp": "2026-11-17T09:25:27+01:00",
+          "tree_id": "9885ccec6d9615ad32695995f2bd3977164716cd",
+          "url": "https://github.com/tellus-rs/tellus/commit/b092424829270b396f8b71f4fbff5e46db92f8fc"
+        },
+        "date": 1794904398134,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 20828737,
+            "range": "± 2366551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 18297051,
+            "range": "± 1858846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 1078470,
+            "range": "± 21258",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 1036921,
+            "range": "± 14253",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 10420522,
+            "range": "± 872366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 7309588,
+            "range": "± 228972",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 25420693,
+            "range": "± 342602",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 27074563,
+            "range": "± 304775",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 25516070,
+            "range": "± 684727",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 27121691,
+            "range": "± 326564",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 26602809,
+            "range": "± 302051",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 30659573,
+            "range": "± 943229",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 36459818,
+            "range": "± 1000698",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 26630199,
+            "range": "± 342196",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 30371448,
+            "range": "± 688209",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 36504975,
+            "range": "± 874347",
             "unit": "ns/iter"
           }
         ]
