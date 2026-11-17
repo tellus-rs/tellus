@@ -38,84 +38,6 @@ pub(crate) const MAX_REGISTRATIONS: usize = 1 << 20;
 // Counted as if every registration were a group of its own, which bounds any grouping.
 pub(crate) const MAX_SNAPSHOT_BYTES: usize = 64 << 20;
 
-/// Every actor registered under the key on every Up member, this node included, as far as
-/// their registrations have reached this node. Answered locally, from the replicated sets: no
-/// frame is sent, and a member's registrations are visible once its snapshot has arrived here,
-/// never before and never after that member is Left or Down. An empty answer means that no
-/// registration under the key has reached this node yet, which [settled] tells apart from a
-/// complete answer. Once this node's own entry is Left or Down there is no answer: the lookup
-/// fails rather than answer without this node's own registrations. A node which is leaving
-/// answers as usual until its entry is Left.
-///
-/// # Errors
-/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if no Up
-/// member has the name registered for `M` but one has it registered for another message type.
-pub fn lookup<M>(key: &Key<M>) -> Result<Vec<ActorRef<M>>, ReceptionistError>
-where
-    M: Manifest + Send + 'static,
-{
-    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    resolve_key(endpoint, key)
-}
-
-/// Every actor registered under the key on the Up member advertising the given address, as far
-/// as its registrations have reached this node. Answered locally like [lookup], so an address no
-/// Up member advertises and a member whose snapshot has not arrived here both answer an empty
-/// set. [settled] only says that a snapshot from every Up member has arrived, not that it is
-/// current. A registration or termination after that snapshot shows up with the next
-/// replication, so a caller waiting for a specific actor polls this or uses [subscribe]. This
-/// node's own address answers its own registrations. Like [lookup], it fails once this node's own
-/// entry is Left or Down, whichever address it asks for.
-///
-/// # Errors
-/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if the name
-/// is registered at that address only for other message types.
-pub fn lookup_at<M>(key: &Key<M>, addr: SocketAddr) -> Result<Vec<ActorRef<M>>, ReceptionistError>
-where
-    M: Manifest + Send + 'static,
-{
-    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    resolve_key_at(endpoint, key, addr)
-}
-
-/// Subscribe to the set [lookup] answers for the key, updated as registrations, terminations,
-/// joins and node deaths come in.
-///
-/// # Errors
-/// Fails if the endpoint is not started.
-pub fn subscribe<M>(key: &Key<M>) -> Result<Subscription<M>, ReceptionistError>
-where
-    M: Manifest + 'static,
-{
-    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    Ok(subscribe_at(endpoint, key))
-}
-
-/// Whether every member Up at the given [cluster state](crate::cluster::cluster_state) version
-/// has delivered its registrations to this node. It is `true` iff `version` is the current one
-/// and lookups answer from a snapshot of every member Up in it, other than this node. A later
-/// version is judged on its own: a member's snapshot is evicted with its node death, and a member
-/// Up in a later version has to deliver one first.
-///
-/// # Errors
-/// Fails if the endpoint is not started.
-pub fn settled(version: u64) -> Result<bool, ReceptionistError> {
-    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    Ok(settled_at(endpoint, version))
-}
-
-/// The current verdict: whether the receptionist is [settled] at the current cluster state
-/// version, together with that version. The same judgment rides
-/// [changes](crate::cluster::changes) as [Change::Settled](crate::cluster::Change::Settled)
-/// whenever the verdict or the version it judges changes.
-///
-/// # Errors
-/// Fails if the endpoint is not started.
-pub fn settlement() -> Result<Settlement, ReceptionistError> {
-    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    Ok(endpoint.receptionist().settlement())
-}
-
 /// The receptionist's verdict for one cluster state version, see [settled] and [settlement].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -201,6 +123,102 @@ pub enum ReceptionistError {
     /// answer without this node's own.
     #[error("this node has left the cluster or been downed")]
     NoLongerMember,
+}
+
+/// Every actor registered under the key on every Up member, this node included, as far as
+/// their registrations have reached this node. Answered locally, from the replicated sets: no
+/// frame is sent, and a member's registrations are visible once its snapshot has arrived here,
+/// never before and never after that member is Left or Down. An empty answer means that no
+/// registration under the key has reached this node yet, which [settled] tells apart from a
+/// complete answer. Once this node's own entry is Left or Down there is no answer: the lookup
+/// fails rather than answer without this node's own registrations. A node which is leaving
+/// answers as usual until its entry is Left.
+///
+/// # Errors
+/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if no Up
+/// member has the name registered for `M` but one has it registered for another message type.
+pub fn lookup<M>(key: &Key<M>) -> Result<Vec<ActorRef<M>>, ReceptionistError>
+where
+    M: Manifest + Send + 'static,
+{
+    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
+    resolve_key(endpoint, key)
+}
+
+/// Every actor registered under the key on the Up member advertising the given address, as far
+/// as its registrations have reached this node. Answered locally like [lookup], so an address no
+/// Up member advertises and a member whose snapshot has not arrived here both answer an empty
+/// set. [settled] only says that a snapshot from every Up member has arrived, not that it is
+/// current. A registration or termination after that snapshot shows up with the next
+/// replication, so a caller waiting for a specific actor polls this or uses [subscribe]. This
+/// node's own address answers its own registrations. Like [lookup], it fails once this node's own
+/// entry is Left or Down, whichever address it asks for.
+///
+/// # Errors
+/// Fails if the endpoint is not started, if this node's own entry is Left or Down, or if the name
+/// is registered at that address only for other message types.
+pub fn lookup_at<M>(key: &Key<M>, addr: SocketAddr) -> Result<Vec<ActorRef<M>>, ReceptionistError>
+where
+    M: Manifest + Send + 'static,
+{
+    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
+    resolve_key_at(endpoint, key, addr)
+}
+
+/// Subscribe to the set [lookup] answers for the key, updated as registrations, terminations,
+/// joins and node deaths come in.
+///
+/// # Errors
+/// Fails if the endpoint is not started.
+pub fn subscribe<M>(key: &Key<M>) -> Result<Subscription<M>, ReceptionistError>
+where
+    M: Manifest + 'static,
+{
+    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
+    Ok(subscribe_at(endpoint, key))
+}
+
+/// Whether every member Up at the given [cluster state](crate::cluster::cluster_state) version
+/// has delivered its registrations to this node. It is `true` iff `version` is the current one
+/// and lookups answer from a snapshot of every member Up in it, other than this node. A later
+/// version is judged on its own: a member's snapshot is evicted with its node death, and a member
+/// Up in a later version has to deliver one first.
+///
+/// # Errors
+/// Fails if the endpoint is not started.
+pub fn settled(version: u64) -> Result<bool, ReceptionistError> {
+    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
+    Ok(settled_at(endpoint, version))
+}
+
+/// The current verdict: whether the receptionist is [settled] at the current cluster state
+/// version, together with that version. The same judgment rides
+/// [changes](crate::cluster::changes) as [Change::Settled](crate::cluster::Change::Settled)
+/// whenever the verdict or the version it judges changes.
+///
+/// # Errors
+/// Fails if the endpoint is not started.
+pub fn settlement() -> Result<Settlement, ReceptionistError> {
+    let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
+    Ok(endpoint.receptionist().settlement())
+}
+
+/// What one change of the cluster publishes on the channel behind
+/// [changes](crate::cluster::changes); the verdict's sequence orders verdicts for a subscriber
+/// which took a snapshot.
+#[derive(Debug, Clone)]
+pub(crate) enum PublishedChange {
+    State(ClusterState),
+    Settled { settlement: Settlement, seq: u64 },
+}
+
+/// The coordinated snapshot a subscriber starts from and recovers to: the current state, the
+/// verdict for it and that verdict's sequence, all under one lock.
+pub(crate) trait SnapshotSource
+where
+    Self: Send + Sync,
+{
+    fn snapshot(&self) -> (ClusterState, Settlement, u64);
 }
 
 /// The replicas lock is never held across an update, a registry lock or the cluster state watch.
@@ -381,10 +399,6 @@ impl Receptionist {
         self.resettle(&mut replicas);
     }
 
-    pub(crate) fn listing(&self, key: &WireKey) -> Listing {
-        compute_listing(&lock(&self.replicas).map, key)
-    }
-
     pub(crate) fn subscribe(&self, key: WireKey) -> watch::Receiver<Arc<Listing>> {
         let mut replicas = lock(&self.replicas);
         let listing = compute_listing(&replicas.map, &key);
@@ -395,24 +409,31 @@ impl Receptionist {
             .subscribe()
     }
 
-    pub(crate) fn applied_version(&self, origin: NodeId) -> Option<u64> {
-        lock(&self.replicas)
-            .map
-            .get(&origin)
-            .map(|replica| replica.version)
-    }
-
     #[cfg(test)]
     pub(crate) fn republished(&self) -> Vec<Vec<ActorId>> {
         lock(&self.replicas).republished.clone()
     }
 
     #[cfg(test)]
-    pub(crate) fn has_replicas(&self, origins: impl IntoIterator<Item = NodeId>) -> bool {
+    pub(crate) fn has_replicas<I>(&self, origins: I) -> bool
+    where
+        I: IntoIterator<Item = NodeId>,
+    {
         let replicas = lock(&self.replicas);
         origins
             .into_iter()
             .all(|origin| replicas.map.contains_key(&origin))
+    }
+
+    fn listing(&self, key: &WireKey) -> Listing {
+        compute_listing(&lock(&self.replicas).map, key)
+    }
+
+    fn applied_version(&self, origin: NodeId) -> Option<u64> {
+        lock(&self.replicas)
+            .map
+            .get(&origin)
+            .map(|replica| replica.version)
     }
 
     fn resettle(&self, replicas: &mut Replicas) {
@@ -432,6 +453,14 @@ impl Receptionist {
     }
 }
 
+impl SnapshotSource for Receptionist {
+    fn snapshot(&self) -> (ClusterState, Settlement, u64) {
+        let mut replicas = lock(&self.replicas);
+        self.resettle(&mut replicas);
+        (replicas.state.clone(), replicas.settlement, replicas.seq)
+    }
+}
+
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(crate) struct Listing {
     entries: Vec<Entry>,
@@ -444,12 +473,6 @@ impl Listing {
         self.other_types.retain(|origin| origin.addr() == addr);
         self
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct Entry {
-    origin: NodeId,
-    id: ActorId,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -562,15 +585,6 @@ impl Assembler {
         }
         partial.take().map(|open| merge(open.received))
     }
-}
-
-#[derive(Debug)]
-struct Partial {
-    version: u64,
-    chunks: u32,
-    received: BTreeMap<u32, Vec<WireGroup>>,
-    entries: usize,
-    bytes: usize,
 }
 
 pub(crate) fn snapshot(version: u64, groups: Vec<WireGroup>, max_frame_size: usize) -> Snapshot {
@@ -831,27 +845,19 @@ where
     postcard::experimental::serialized_size(value).expect("a registration is serializable")
 }
 
-/// What one change of the cluster publishes on the channel behind
-/// [changes](crate::cluster::changes); the verdict's sequence orders verdicts for a subscriber
-/// which took a snapshot.
-#[derive(Debug, Clone)]
-pub(crate) enum PublishedChange {
-    State(ClusterState),
-    Settled { settlement: Settlement, seq: u64 },
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct Entry {
+    origin: NodeId,
+    id: ActorId,
 }
 
-/// The coordinated snapshot a subscriber starts from and recovers to: the current state, the
-/// verdict for it and that verdict's sequence, all under one lock.
-pub(crate) trait SnapshotSource: Send + Sync {
-    fn snapshot(&self) -> (ClusterState, Settlement, u64);
-}
-
-impl SnapshotSource for Receptionist {
-    fn snapshot(&self) -> (ClusterState, Settlement, u64) {
-        let mut replicas = lock(&self.replicas);
-        self.resettle(&mut replicas);
-        (replicas.state.clone(), replicas.settlement, replicas.seq)
-    }
+#[derive(Debug)]
+struct Partial {
+    version: u64,
+    chunks: u32,
+    received: BTreeMap<u32, Vec<WireGroup>>,
+    entries: usize,
+    bytes: usize,
 }
 
 struct Replicas {
@@ -1631,7 +1637,7 @@ mod tests {
         };
 
         assert_eq!(ids(&Key::new("pool")), [discovered]);
-        assert_eq!(ids(&Key::topic("pool")), [subscribed]);
+        assert_eq!(ids(&Key::make_topic("pool")), [subscribed]);
 
         assert!(apply(
             endpoint,

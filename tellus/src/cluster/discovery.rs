@@ -7,13 +7,11 @@ use crate::{
         registry::LimitExceeded,
     },
 };
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use std::{
     any,
     fmt::{self, Debug, Formatter},
     marker::PhantomData,
-    sync::atomic::{AtomicU64, Ordering},
 };
 use thiserror::Error;
 
@@ -35,19 +33,28 @@ where
     /// # Panics
     /// Panics in debug builds if another type of this process has claimed the same
     /// [Manifest::MANIFEST] as `M`.
-    pub fn new(name: impl Into<String>) -> Self {
-        Self::of_kind(KeyKind::Discovery, name)
+    pub fn new<N>(name: N) -> Self
+    where
+        N: Into<String>,
+    {
+        Self::make_key(KeyKind::Discovery, name)
     }
 
-    pub(crate) fn topic(name: impl Into<String>) -> Self {
-        Self::of_kind(KeyKind::Topic, name)
+    pub(crate) fn make_topic<N>(name: N) -> Self
+    where
+        N: Into<String>,
+    {
+        Self::make_key(KeyKind::Topic, name)
     }
 
     pub(crate) fn wire(&self) -> WireKey {
         WireKey::new::<M>(self.kind, self.name.clone())
     }
 
-    fn of_kind(kind: KeyKind, name: impl Into<String>) -> Self {
+    fn make_key<N>(kind: KeyKind, name: N) -> Self
+    where
+        N: Into<String>,
+    {
         manifest::claim::<M>();
         Self {
             kind,
@@ -206,23 +213,4 @@ pub(crate) struct KeyName {
 pub(crate) enum KeyKind {
     Discovery,
     Topic,
-}
-
-/// Answers match by nonce, so two requests from one asker cannot resolve each other.
-#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub(crate) struct Nonce(u64);
-
-impl Nonce {
-    pub(crate) fn mint(next: &AtomicU64) -> Self {
-        Self(next.fetch_add(1, Ordering::Relaxed))
-    }
-
-    pub(crate) fn as_u64(self) -> u64 {
-        self.0
-    }
-
-    #[cfg(test)]
-    pub(crate) fn first() -> Self {
-        Self(0)
-    }
 }

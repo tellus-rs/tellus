@@ -177,7 +177,6 @@ pub(crate) fn admit_frame(
             max: max_frame_size,
         });
     }
-
     Ok(frame)
 }
 

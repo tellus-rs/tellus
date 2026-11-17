@@ -309,10 +309,10 @@ pub(crate) fn on_watch(
         .and_then(|watcher_registry| {
             let wire_watcher_id = ActorId::new();
             let handler = Arc::new(WireTerminatedHandler { endpoint, peer });
-            watcher_registry
-                .add(Watcher::new(wire_watcher_id, handler))
-                .ok()
-                .map(|()| (watcher_registry, wire_watcher_id))
+            match watcher_registry.add(Watcher::new(wire_watcher_id, handler)) {
+                Ok(()) => Some((watcher_registry, wire_watcher_id)),
+                Err(ActorTerminated) => None,
+            }
         });
 
     match registered {

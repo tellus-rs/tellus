@@ -57,12 +57,11 @@ mod payload_bytes {
 use crate::{
     ActorId, SchemaVersion,
     cluster::{
-        discovery::Nonce,
         membership::{self, Member},
         node::{ClusterId, NodeId},
         reachability::{self, WireReachability},
         receptionist::WireGroup,
-        reply::ReplyTag,
+        reply::{Nonce, ReplyTag},
     },
 };
 use derive_more::Display;
@@ -511,7 +510,7 @@ mod tests {
     use crate::{
         ActorId, SchemaVersion,
         cluster::{
-            discovery::{KeyKind, Nonce, WireKey},
+            discovery::{KeyKind, WireKey},
             frame::{
                 Frame, Handshake, HandshakeEnvelope, HandshakeError, HandshakeIntent, HandshakeV2,
                 MIN_FRAME_SIZE, PROTOCOL_MAGIC, RefusalReason, StreamKey,
@@ -521,7 +520,7 @@ mod tests {
             node::{ClusterId, NodeId},
             reachability::WireReachability,
             receptionist::WireGroup,
-            reply::ReplyTag,
+            reply::{Nonce, ReplyTag},
         },
     };
     use std::borrow::Cow;
