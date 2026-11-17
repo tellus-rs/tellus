@@ -73,7 +73,6 @@ impl K8sSeeds {
             Some(namespace) => Api::namespaced(client, namespace),
             None => Api::default_namespaced(client),
         };
-
         Ok(Self { api, pods })
     }
 }
@@ -253,7 +252,6 @@ fn validate(pods: &Pods) -> Result<(), InvalidPods> {
     if pods.list_timeout.is_zero() {
         return Err(InvalidPods::ZeroListTimeout);
     }
-
     Ok(())
 }
 
