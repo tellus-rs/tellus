@@ -74,7 +74,7 @@
 
 pub use sqlx;
 
-use sqlx::{PgPool, Row, postgres::PgRow};
+use sqlx::{PgPool, Row, migrate::MigrateError, postgres::PgRow};
 use std::num::NonZeroUsize;
 use tellus::{
     AppendError, EncodedEvent, EncodedSnapshot, EventStore, PersistenceId, SchemaVersion, SeqNo,
@@ -130,7 +130,7 @@ impl EventStore for PostgresStore {
             return Err(AppendError::Conflict);
         };
 
-        // An empty append inserts no rows, so the row count cannot reveal a conflict.
+        // The row count cannot reveal the conflict of an empty append!
         if events.is_empty() {
             let query = "SELECT COALESCE(MAX(seq_no) + 1, 0) \
                          FROM tellus_events \
@@ -281,7 +281,7 @@ pub enum Error {
 
     /// The schema migration failed.
     #[error(transparent)]
-    Migrate(#[from] sqlx::migrate::MigrateError),
+    Migrate(#[from] MigrateError),
 
     /// A sequence number outside the BIGINT range of the schema.
     #[error("sequence number outside BIGINT range")]
@@ -294,6 +294,10 @@ pub enum Error {
 
 fn into_bigint(seq_no: SeqNo) -> Result<i64, Error> {
     i64::try_from(seq_no.as_u64()).map_err(|_| Error::SeqNoOutOfRange)
+}
+
+fn is_unique_violation(error: &sqlx::Error) -> bool {
+    matches!(error, sqlx::Error::Database(error) if error.code().as_deref() == Some("23505"))
 }
 
 fn stored_event(row: PgRow) -> Result<StoredEvent, Error> {
@@ -332,8 +336,4 @@ fn schema_version(row: &PgRow) -> Result<SchemaVersion, Error> {
     u16::try_from(schema_version)
         .map(SchemaVersion::new)
         .map_err(|_| Error::SchemaVersionOutOfRange)
-}
-
-fn is_unique_violation(error: &sqlx::Error) -> bool {
-    matches!(error, sqlx::Error::Database(error) if error.code().as_deref() == Some("23505"))
 }

@@ -152,74 +152,6 @@ where
     }
 }
 
-struct Recovered<S> {
-    id: PersistenceId,
-    state: S,
-    next_seq_no: SeqNo,
-}
-
-enum Settlement<S> {
-    Settled(Settled<S>),
-    FailedBeforeDurable,
-    FailedOnceDurable,
-}
-
-struct Settled<S> {
-    state: S,
-    next_seq_no: SeqNo,
-    stop: bool,
-}
-
-#[derive(Debug, Error)]
-enum ReplayError {
-    #[error(transparent)]
-    Decode(#[from] DecodeError),
-
-    #[error("event stream gap: sequence number {seq_no}, expected {expected}")]
-    Gap { seq_no: SeqNo, expected: SeqNo },
-
-    #[error(transparent)]
-    Overflow(#[from] SeqNoOverflow),
-}
-
-#[derive(Debug, Error)]
-enum StoreCallError<E>
-where
-    E: Error,
-{
-    #[error(transparent)]
-    Store(E),
-
-    #[error("store call timed out after {0:?}")]
-    TimedOut(Duration),
-}
-
-#[derive(Debug, Error)]
-enum AppendFailure<E>
-where
-    E: Error,
-{
-    #[error(transparent)]
-    Append(AppendError<E>),
-
-    #[error("append timed out after {0:?}, whether its events were stored is unknown")]
-    TimedOut(Duration),
-}
-
-#[derive(Debug, Error)]
-enum SnapshotError<E>
-where
-    E: Error,
-{
-    #[error(transparent)]
-    Actor(E),
-
-    #[error(transparent)]
-    Encode(#[from] EncodeError),
-}
-
-/// The task future of the event-sourced run loop, expanded once per [TimerMode] and [StashMode]
-/// with its wait macro and the stash arm of that macro.
 macro_rules! run_event_sourced {
     (
         $next_incoming:ident,
@@ -365,31 +297,6 @@ macro_rules! run_event_sourced {
 
         actor_ref
     }};
-}
-
-fn spawn_event_sourced<A, E, S, C>(
-    stopped_by_parent_rx: watch::Receiver<()>,
-    actor: A,
-    persistence: Persistence<E, S, C>,
-    config: ActorConfig,
-) -> ActorRef<A::Command>
-where
-    A: EventSourced + Send + Sync + 'static,
-    A::Command: Send + 'static,
-    A::State: Send + 'static,
-    A::Event: Send + 'static,
-    A::Snapshot: Send + 'static,
-    E: EventStore,
-    S: SnapshotStore,
-    C: Codec + Send + Sync + 'static,
-{
-    <A::Timers as timers::Sealed>::spawn_event_sourced(
-        timers::Token(()),
-        stopped_by_parent_rx,
-        actor,
-        persistence,
-        config,
-    )
 }
 
 pub(crate) fn spawn_event_sourced_untimed<A, E, S, C>(
@@ -543,6 +450,107 @@ where
         actor,
         persistence,
         config
+    )
+}
+
+#[cfg_attr(feature = "hotpath", hotpath::measure)]
+pub(crate) fn apply_events<A>(actor: &A, state: A::State, events: Vec<A::Event>) -> A::State
+where
+    A: EventSourced,
+{
+    events
+        .into_iter()
+        .fold(state, |state, event| actor.apply(state, event))
+}
+
+struct Recovered<S> {
+    id: PersistenceId,
+    state: S,
+    next_seq_no: SeqNo,
+}
+
+enum Settlement<S> {
+    Settled(Settled<S>),
+    FailedBeforeDurable,
+    FailedOnceDurable,
+}
+
+struct Settled<S> {
+    state: S,
+    next_seq_no: SeqNo,
+    stop: bool,
+}
+
+#[derive(Debug, Error)]
+enum ReplayError {
+    #[error(transparent)]
+    Decode(#[from] DecodeError),
+
+    #[error("event stream gap: sequence number {seq_no}, expected {expected}")]
+    Gap { seq_no: SeqNo, expected: SeqNo },
+
+    #[error(transparent)]
+    Overflow(#[from] SeqNoOverflow),
+}
+
+#[derive(Debug, Error)]
+enum StoreCallError<E>
+where
+    E: Error,
+{
+    #[error(transparent)]
+    Store(E),
+
+    #[error("store call timed out after {0:?}")]
+    TimedOut(Duration),
+}
+
+#[derive(Debug, Error)]
+enum AppendFailure<E>
+where
+    E: Error,
+{
+    #[error(transparent)]
+    Append(AppendError<E>),
+
+    #[error("append timed out after {0:?}, whether its events were stored is unknown")]
+    TimedOut(Duration),
+}
+
+#[derive(Debug, Error)]
+enum SnapshotError<E>
+where
+    E: Error,
+{
+    #[error(transparent)]
+    Actor(E),
+
+    #[error(transparent)]
+    Encode(#[from] EncodeError),
+}
+
+fn spawn_event_sourced<A, E, S, C>(
+    stopped_by_parent_rx: watch::Receiver<()>,
+    actor: A,
+    persistence: Persistence<E, S, C>,
+    config: ActorConfig,
+) -> ActorRef<A::Command>
+where
+    A: EventSourced + Send + Sync + 'static,
+    A::Command: Send + 'static,
+    A::State: Send + 'static,
+    A::Event: Send + 'static,
+    A::Snapshot: Send + 'static,
+    E: EventStore,
+    S: SnapshotStore,
+    C: Codec + Send + Sync + 'static,
+{
+    <A::Timers as timers::Sealed>::spawn_event_sourced(
+        timers::Token(()),
+        stopped_by_parent_rx,
+        actor,
+        persistence,
+        config,
     )
 }
 
@@ -858,8 +866,7 @@ where
     A: EventSourced,
     C: Codec,
 {
-    // Not collect(): collecting into a Result cannot reserve events.len(), see
-    // https://github.com/rust-lang/rust/blob/1.99.0/library/core/src/iter/adapters/mod.rs#L180
+    // Not collect(): collecting into a Result cannot reserve events.len()!
     let mut encoded = Vec::with_capacity(events.len());
     for event in events {
         encoded.push(EncodedEvent {
@@ -886,16 +893,6 @@ where
         .await
         .map_err(|_| AppendFailure::TimedOut(timeout))?
         .map_err(AppendFailure::Append)
-}
-
-#[cfg_attr(feature = "hotpath", hotpath::measure)]
-pub(crate) fn apply_events<A>(actor: &A, state: A::State, events: Vec<A::Event>) -> A::State
-where
-    A: EventSourced,
-{
-    events
-        .into_iter()
-        .fold(state, |state, event| actor.apply(state, event))
 }
 
 #[cfg_attr(feature = "hotpath", hotpath::measure)]

@@ -18,7 +18,7 @@ use std::{
 use tellus::{
     ActorContext, ActorSystem, AppendError, Effect, EncodedEvent, EncodedSnapshot, EventSourced,
     EventStore, Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, SeqNo,
-    SnapshotStore, StoredEvent, StoredSnapshot, Unstashed, Untimed, Versioned,
+    SnapshotStore, StoredEvent, StoredSnapshot, Unstashed, Untimed, Versioned, persistence_tests,
 };
 use tellus_persistence_postgres::{Error, PostgresStore};
 use testcontainers_modules::{
@@ -50,19 +50,19 @@ static COMPOSE: LazyLock<Compose> = LazyLock::new(|| compose!("../compose.yaml")
 #[tokio::test]
 async fn event_store_contract() {
     let (store, _container) = store().await;
-    tellus::persistence_tests::event_store_contract(store).await;
+    persistence_tests::event_store_contract(store).await;
 }
 
 #[tokio::test]
 async fn snapshot_store_contract() {
     let (store, _container) = store().await;
-    tellus::persistence_tests::snapshot_store_contract(store).await;
+    persistence_tests::snapshot_store_contract(store).await;
 }
 
 #[tokio::test]
 async fn snapshot_with_event_tail() {
     let (store, _container) = store().await;
-    tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
+    persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
 }
 
 /// A position which no stream can reach is a mismatch like any other: a conflict for an append,
@@ -354,8 +354,8 @@ async fn an_applications_own_events_and_snapshots_tables_are_left_alone() {
         .migrate()
         .await
         .expect("the store's migrations run next to the application's tables");
-    tellus::persistence_tests::event_store_contract(store.clone()).await;
-    tellus::persistence_tests::snapshot_store_contract(store).await;
+    persistence_tests::event_store_contract(store.clone()).await;
+    persistence_tests::snapshot_store_contract(store).await;
 
     let names = sqlx::query_scalar::<_, String>(
         "SELECT name FROM events UNION ALL SELECT name FROM snapshots ORDER BY name",
@@ -432,9 +432,9 @@ async fn the_store_passes_its_contract_on_the_schema_of_the_readme() {
         .expect("the definition of the README runs");
 
     let store = PostgresStore::new(pool.clone());
-    tellus::persistence_tests::event_store_contract(store.clone()).await;
-    tellus::persistence_tests::snapshot_store_contract(store.clone()).await;
-    tellus::persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
+    persistence_tests::event_store_contract(store.clone()).await;
+    persistence_tests::snapshot_store_contract(store.clone()).await;
+    persistence_tests::snapshot_with_event_tail(store.clone(), store).await;
 
     assert_eq!(
         table_names(&pool).await,

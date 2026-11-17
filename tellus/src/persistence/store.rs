@@ -127,6 +127,16 @@ impl SnapshotStore for NoSnapshots {
     }
 }
 
+/// A stored event as returned by [EventStore::read].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StoredEvent {
+    /// The position in the stream, gapless and starting at 0.
+    pub seq_no: SeqNo,
+
+    /// The encoded event.
+    pub event: EncodedEvent,
+}
+
 /// An encoded event as handed to [EventStore::append].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EncodedEvent {
@@ -141,14 +151,14 @@ pub struct EncodedEvent {
     pub payload: Vec<u8>,
 }
 
-/// A stored event as returned by [EventStore::read].
+/// A stored snapshot as returned by [SnapshotStore::load].
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredEvent {
-    /// The position in the stream, gapless and starting at 0.
-    pub seq_no: SeqNo,
+pub struct StoredSnapshot {
+    /// The sequence number at which replay resumes: the snapshot covers every event before it.
+    pub next_seq_no: SeqNo,
 
-    /// The encoded event.
-    pub event: EncodedEvent,
+    /// The encoded snapshot.
+    pub snapshot: EncodedSnapshot,
 }
 
 /// An encoded snapshot as handed to [SnapshotStore::save].
@@ -164,16 +174,6 @@ pub struct EncodedSnapshot {
 
     /// The encoded snapshot itself.
     pub payload: Vec<u8>,
-}
-
-/// A stored snapshot as returned by [SnapshotStore::load].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct StoredSnapshot {
-    /// The sequence number at which replay resumes: the snapshot covers every event before it.
-    pub next_seq_no: SeqNo,
-
-    /// The encoded snapshot.
-    pub snapshot: EncodedSnapshot,
 }
 
 /// Errors possibly returned by [EventStore::append].

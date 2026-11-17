@@ -22,9 +22,9 @@ use thiserror::Error;
 /// stored format: it cannot be changed once events have been written.
 #[derive(Debug, Clone)]
 pub struct Persistence<E, S = NoSnapshots, C = Cbor> {
-    pub(crate) event_store: E,
-    pub(crate) snapshot_store: S,
-    pub(crate) codec: C,
+    event_store: E,
+    snapshot_store: S,
+    codec: C,
     pub(crate) timeout: Duration,
 }
 
@@ -89,7 +89,6 @@ impl<E, S, C> Persistence<E, S, C> {
         if timeout.is_zero() {
             return Err(InvalidPersistence::ZeroTimeout);
         }
-
         Ok(Self { timeout, ..self })
     }
 }
