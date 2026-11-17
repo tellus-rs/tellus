@@ -124,7 +124,6 @@ impl EventSourced for Loader {
     }
 
     fn init(&self) -> Result<Self::State, Self::Error> {
-        println!("## Loader seeded with count 0");
         Ok(0)
     }
 

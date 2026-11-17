@@ -1,8 +1,9 @@
 # Timer cost of #174
 
-PR #174 adds timers to actors. Measured against its parent, it makes actors slower that never start
-a timer. This page is the starting point for finding and fixing that cost: what the PR changes,
-what is measured, what is established and what is not, and how to measure the next step. It
+PR #174 added timers to actors. Measured against its parent, it made actors slower that never start
+a timer. This page was the starting point for finding and fixing that cost: what the PR changed,
+what was measured, what was established and what was not, and how to measure the next step. The
+investigation is closed; see Status. It
 assumes [AGENTS.md](../../../AGENTS.md) and the
 [actor ID alignment investigation](../actor-id-alignment/README.md), whose protocol and tools it
 reuses.
@@ -1054,11 +1055,12 @@ throughput rows: the plain cursor, the single select, the combined future and #1
 The decision of 2026-10-27 implemented: #185, swept as `077c74a`, one commit on `main` at `ac59a98`;
 the later commits of the branch add this record, the protocol extension below and the review fix
 described at the end of this section. `Actor` and `EventSourced` gain `type Timers: TimerMode;` with
-the two sealed modes `Untimed` and `Timed`; the context is `ActorContext<M, T = Untimed>`, and
-`start_timer` and `cancel_timer` exist only on `ActorContext<M, Timed>`. `spawn` dispatches on
+the two sealed modes `Untimed` and `Timed`; the context was then `ActorContext<M, T = Untimed>`, and
+`start_timer` and `cancel_timer` existed only on `ActorContext<M, Timed>`. `spawn` dispatched on
 `A::Timers` through the sealed trait to one of two functions, each with its own task future: the
-untimed one expands `main`'s wait macro, the timed one the cursor's, from one macro over `main`'s
-loop body. Neither loop checks the mode, and the timer table of a timed actor lives in its context
+untimed one expanded `main`'s wait macro, the timed one the cursor's, from one macro over `main`'s
+loop body. Since stashing became opt-in (#201), the context is `ActorContext<M, T, S>` and there
+are four such functions. Neither loop checks the mode, and the timer table of a timed actor lives in its context
 from the start (`RefCell<TimerTable<M>>`, no `Option`, no box). An untimed actor cannot call
 `start_timer`, and no code outside tellus can call the dispatch: both are pinned by `compile_fail`
 doctests and were checked from a separate crate (E0599 and E0277; a diverging expression such as

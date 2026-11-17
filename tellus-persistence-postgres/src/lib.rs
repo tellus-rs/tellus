@@ -283,8 +283,9 @@ pub enum Error {
     #[error(transparent)]
     Migrate(#[from] MigrateError),
 
-    /// A sequence number outside the BIGINT range of the schema.
-    #[error("sequence number outside BIGINT range")]
+    /// A sequence number outside the range both BIGINT and [SeqNo] cover: above BIGINT when
+    /// written, negative when read.
+    #[error("sequence number outside the range of BIGINT and SeqNo")]
     SeqNoOutOfRange,
 
     /// A schema version outside the range of [Versioned::VERSION](tellus::Versioned::VERSION).

@@ -150,8 +150,8 @@ The store uses these two tables only. A database whose tables an application cre
 needs no `_tellus_persistence_migrations`. Every change to the schema is listed in the
 [changelog](CHANGELOG.md).
 
-Appends are a single atomic, conditional statement: a stale expected next sequence number, below
-or above the actual one, fails with `AppendError::Conflict` and leaves the stream untouched, which
+Appends are a single atomic, conditional statement: an expected next sequence number other than the
+actual one fails with `AppendError::Conflict` and leaves the stream untouched, which
 is tellus's fencing guarantee. An empty append inserts nothing but is still fenced.
 
 ## Examples

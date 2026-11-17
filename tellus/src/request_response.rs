@@ -38,6 +38,10 @@ impl<M> ActorRef<M> {
     /// request is sent, it fails if no reply can arrive anymore, or if `within` elapses without
     /// one.
     ///
+    /// # Panics
+    /// Panics if polled outside of a Tokio runtime or on one without a time driver, after the
+    /// request was sent. `#[tokio::main]` enables the driver.
+    ///
     /// [ActorSystem::terminated]: crate::ActorSystem::terminated
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub async fn ask<R, F>(&self, within: Duration, make_message: F) -> Result<R, AskError>

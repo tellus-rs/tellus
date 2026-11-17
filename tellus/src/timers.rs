@@ -131,7 +131,8 @@ where
 }
 
 /// The mode of an actor without timers: its [ActorContext](crate::ActorContext) has no
-/// `start_timer`, and its run loop waits for the stop signal and the mailbox alone.
+/// `start_timer`, and its run loop polls no sleep, only the stop signal, the mailbox and, for a
+/// stashed actor, the unstashed items.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Untimed;
 
