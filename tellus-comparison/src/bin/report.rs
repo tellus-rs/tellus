@@ -13,7 +13,7 @@ use std::{
 
 const PACKAGES: [&str; 3] = ["kameo", "ractor", "tellus"];
 const LATEST: &str = "latest";
-/// Must match the bench's `RUN_MARKER`!
+// Must match the bench's `RUN_MARKER`!
 const RUN_MARKER: &str = "run-started";
 const COMPARISON_URL: &str = "https://tellus.rs/tellus/comparison/";
 const HEADER: &str = r#"<header class="top"><div class="wrap">
@@ -315,8 +315,6 @@ fn modified(path: &Path) -> anyhow::Result<SystemTime> {
         .with_context(|| format!("modification time of {}", path.display()))
 }
 
-/// Splits sample directories, paired with their modification times, into those written since
-/// `run_start` and those written before.
 fn partition_by_run(
     directories: Vec<(PathBuf, SystemTime)>,
     run_start: SystemTime,
@@ -399,7 +397,7 @@ fn parameter_order(measurement: &Measurement) -> ParameterOrder<'_> {
     }
 }
 
-/// Derived `Ord` compares by variant first, hence the declaration order is the sort order.
+// The derived `Ord` makes the declaration order the sort order!
 #[derive(PartialEq, Eq, PartialOrd, Ord)]
 enum ParameterOrder<'a> {
     Missing,
@@ -476,7 +474,7 @@ fn read_versions() -> anyhow::Result<BTreeMap<String, String>> {
     Ok(versions)
 }
 
-/// Keep the caveats below in sync with the ones in the README.
+// Keep the caveats below in sync with the ones in the README!
 fn render_html(report: &Report) -> String {
     let sections = report
         .measurements

@@ -26,17 +26,14 @@ const FAN_OUT_MESSAGES: usize = 100_000;
 const PAIRS: [usize; 2] = [1, 8];
 const WORKERS: [usize; 2] = [8, 32];
 
-/// Must match the report's `RUN_MARKER`, whose modification time starts the latest run!
+// Must match the report's `RUN_MARKER`, whose modification time starts the latest run!
 const RUN_MARKER: &str = "run-started";
 
-/// A benchmark future erased to one common type, so the frameworks fit into a table: the boxing
-/// happens once per criterion sample, far outside the measured loop.
+// Boxed once per criterion sample, far outside the measured loop!
 type BoxedBench = Pin<Box<dyn Future<Output = Duration> + Send>>;
 
-/// A named benchmark taking only the iteration count, one per framework.
 type PlainBench = (&'static str, fn(u64) -> BoxedBench);
 
-/// A named benchmark taking the iteration count and the group's parameter, one per framework.
 type ParameterizedBench = (&'static str, fn(u64, usize) -> BoxedBench);
 
 const FLOOD_BENCHES: [PlainBench; 3] = [
@@ -79,7 +76,7 @@ fn main() {
     Criterion::default().configure_from_args().final_summary();
 }
 
-/// Must agree with `Criterion::configure_from_args` on which arguments measure!
+// Must agree with `Criterion::configure_from_args` on which arguments measure!
 fn is_benchmark_run() -> bool {
     let args = env::args().skip(1).collect::<Vec<_>>();
     args.iter().any(|arg| arg == "--bench")
@@ -154,9 +151,7 @@ fn fan_out(c: &mut Criterion) {
     group.finish();
 }
 
-/// Time `iters` iterations of `run`, with the state built by `setup` outside the measured region.
-///
-/// Every framework goes through this same helper, so the timing boundaries are identical.
+// Every framework is timed through this helper, so the timing boundaries are identical!
 async fn measure<S, SFut, T, R, RFut>(iters: u64, setup: S, run: R) -> Duration
 where
     S: Fn() -> SFut,
@@ -184,15 +179,12 @@ fn runtime() -> Runtime {
         .expect("tokio runtime can be created")
 }
 
-/// How many messages each fan out worker receives; the reported throughput and the per actor
-/// countdown are the same number, so they must be derived in one place.
+// The reported throughput and the per actor countdown must both derive from here!
 const fn fan_out_share(workers: usize) -> usize {
     FAN_OUT_MESSAGES / workers
 }
 
-/// One message consumed: `Some` carries what is left to receive, `None` means this was the last
-/// one and the actor stops. Every framework stops after the same number of messages, so all of
-/// them count down through this one function.
+// Every framework counts down through this function, so all stop after the same count!
 const fn count_down(remaining: usize) -> Option<usize> {
     match remaining.checked_sub(1) {
         Some(remaining) if remaining > 0 => Some(remaining),
@@ -567,7 +559,7 @@ mod kameo_bench {
             })
         }
 
-        /// Must complete before wait_for_shutdown resolves, like tellus's child barrier does!
+        // Must complete before wait_for_shutdown resolves, like tellus's child barrier does!
         async fn on_stop(
             &mut self,
             _: WeakActorRef<Self>,
@@ -779,7 +771,7 @@ mod ractor_bench {
             })
         }
 
-        /// Must complete before the pinger's own join handle resolves, like tellus's child barrier!
+        // Must complete before the pinger's own join handle resolves, like tellus's child barrier!
         async fn post_stop(
             &self,
             _: ActorRef<Self::Msg>,

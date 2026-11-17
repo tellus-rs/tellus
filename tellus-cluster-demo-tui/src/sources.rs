@@ -233,6 +233,7 @@ async fn poll<T, W>(
     W: Fn(T) -> Input,
 {
     loop {
+        // The UI owns the terminal: a failed poll shows as stale data, not a log line!
         if let Ok(response) = client.get(&url).timeout(request_timeout).send().await
             && let Ok(value) = response.json::<T>().await
             && tx.send(wrap(value)).await.is_err()
