@@ -848,7 +848,7 @@ where
 
 #[cfg(feature = "persistence-in-memory")]
 mod event_sourced {
-    use crate::Failed;
+    use crate::{Failed, next_event, restart_config, stop};
     use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
     use tellus::{
         ActorContext, ActorSystem, Effect, EventSourced, InMemoryStore, Incoming, Nothing,
@@ -868,9 +868,9 @@ mod event_sourced {
         system.root().tell(Command::Release);
 
         for expected in [Event::Recovered, Event::Stashed(5), Event::Kept(5)] {
-            assert_eq!(super::next_event(&mut events).await, expected);
+            assert_eq!(next_event(&mut events).await, expected);
         }
-        super::stop(system).await;
+        stop(system).await;
     }
 
     /// A restart hands the stash of an event-sourced actor back once it has recovered: the command
@@ -881,7 +881,7 @@ mod event_sourced {
         let system = ActorSystem::event_sourced_with_config(
             journal,
             Persistence::new(InMemoryStore::default()),
-            super::restart_config(),
+            restart_config(),
         );
 
         system.root().tell(Command::Keep(6));
@@ -895,9 +895,9 @@ mod event_sourced {
             Event::Stashed(6),
             Event::Kept(6),
         ] {
-            assert_eq!(super::next_event(&mut events).await, expected);
+            assert_eq!(next_event(&mut events).await, expected);
         }
-        super::stop(system).await;
+        stop(system).await;
     }
 
     /// Stash `Keep` while holding; `Release` stops holding and unstashes, `Fail` fails.

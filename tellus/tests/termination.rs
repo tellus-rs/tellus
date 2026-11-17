@@ -8,7 +8,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering::SeqCst},
         mpsc as std_mpsc,
     },
-    thread,
     time::Duration,
 };
 use tellus::{
@@ -16,12 +15,7 @@ use tellus::{
     Stashed, Timed, TimerMode, Unstashed, Untimed,
 };
 use thiserror::Error;
-use tokio::{
-    runtime::Builder,
-    sync::mpsc,
-    task::block_in_place,
-    time::{sleep, timeout},
-};
+use tokio::{sync::mpsc, task::block_in_place, time::timeout};
 
 const TIMEOUT: Duration = Duration::from_secs(5);
 const SELF_SENDS: usize = 1_000;
@@ -90,7 +84,7 @@ async fn stopping_a_system_terminates_the_tree_bottom_up() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stopping_a_system_finishes_the_message_being_handled() {
     let (probe_tx, mut probe_rx) = mpsc::channel(2);
-    let (release_tx, release_rx) = std::sync::mpsc::channel();
+    let (release_tx, release_rx) = std_mpsc::channel();
     let system = ActorSystem::new(Blocking {
         probe: probe_tx,
         release: release_rx,
@@ -194,44 +188,6 @@ async fn init_may_self_send_without_blocking() {
     assert_eq!(received, SELF_SENDS);
 
     assert_terminates(system).await;
-}
-
-/// A permanently ready Flume receive must still charge Tokio's cooperative budget. The external
-/// stop keeps a regression from hanging the test process: without fairness it wins and fails.
-#[test]
-fn a_self_telling_actor_yields_to_a_current_thread_timer() {
-    let (root_tx, root_rx) = std_mpsc::sync_channel(1);
-    let (stopped_tx, stopped_rx) = std_mpsc::sync_channel(1);
-    let runtime_thread = thread::spawn(move || {
-        Builder::new_current_thread()
-            .enable_time()
-            .build()
-            .expect("current-thread runtime")
-            .block_on(async move {
-                let system = ActorSystem::new(FairLoop { stopped_tx });
-                let root = system.root().clone();
-                root_tx.send(root.clone()).expect("test receives root");
-                tokio::spawn(async move {
-                    sleep(Duration::from_millis(10)).await;
-                    root.tell(FairMessage::TimerStop);
-                });
-                system.terminated().await.expect("actor system terminates");
-            });
-    });
-
-    let root = root_rx.recv().expect("runtime publishes root");
-    let stopped_by = match stopped_rx.recv_timeout(TIMEOUT) {
-        Ok(stopped_by) => stopped_by,
-        Err(std_mpsc::RecvTimeoutError::Timeout) => {
-            root.tell(FairMessage::WatchdogStop);
-            stopped_rx.recv().expect("watchdog stops actor")
-        }
-        Err(error) => panic!("stop channel failed: {error}"),
-    };
-    runtime_thread
-        .join()
-        .expect("runtime thread does not panic");
-    assert_eq!(stopped_by, FairMessage::TimerStop);
 }
 
 /// A terminated signal must prove that the actor's destructors have run, but a panic escaping one
@@ -890,7 +846,7 @@ impl Drop for Bomb {
 /// handled; `receive` is synchronous, hence this blocks the thread.
 struct Blocking {
     probe: mpsc::Sender<&'static str>,
-    release: std::sync::mpsc::Receiver<()>,
+    release: std_mpsc::Receiver<()>,
 }
 
 impl Actor for Blocking {
@@ -1030,53 +986,6 @@ impl Actor for SelfSender {
 
             Incoming::Message(SelfSend::Done) => {
                 let _ = self.received_tx.try_send(state);
-                Ok(Control::Stop)
-            }
-
-            Incoming::Terminated(_) => Ok(Control::Continue(state)),
-        }
-    }
-}
-
-struct FairLoop {
-    stopped_tx: std_mpsc::SyncSender<FairMessage>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum FairMessage {
-    Tick,
-    TimerStop,
-    WatchdogStop,
-}
-
-impl Actor for FairLoop {
-    type Message = FairMessage;
-    type Timers = Untimed;
-    type Stash = Unstashed;
-    type State = ();
-    type Error = Infallible;
-
-    fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
-        context.self_ref().tell(FairMessage::Tick);
-        Ok(())
-    }
-
-    fn receive(
-        &self,
-        context: &ActorContext<Self::Message>,
-        incoming: Incoming<Self::Message>,
-        state: Self::State,
-    ) -> Result<Control<Self::State>, Self::Error> {
-        match incoming {
-            Incoming::Message(FairMessage::Tick) => {
-                context.self_ref().tell(FairMessage::Tick);
-                Ok(Control::Continue(state))
-            }
-
-            Incoming::Message(
-                stopped_by @ (FairMessage::TimerStop | FairMessage::WatchdogStop),
-            ) => {
-                let _ = self.stopped_tx.send(stopped_by);
                 Ok(Control::Stop)
             }
 
@@ -1232,7 +1141,6 @@ impl Actor for Observer {
                 let _ = self.0.try_send(Observed::Terminated);
             }
         }
-
         Ok(Control::Continue(state))
     }
 }

@@ -3,6 +3,7 @@ use std::{
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering::SeqCst},
+        mpsc as std_mpsc,
     },
     time::Duration,
 };
@@ -40,13 +41,13 @@ async fn err_from_receive_restarts_like_panic() {
 /// `Stop` stops the failed actor, which terminates the actor system if it is the root actor.
 #[tokio::test]
 async fn panic_under_stop_terminates_system() {
-    terminates_after_failure(FailureTrigger::Panic).await;
+    assert_terminates_after_failure(FailureTrigger::Panic).await;
 }
 
 /// The `Err` counterpart: no panic, same supervision.
 #[tokio::test]
 async fn err_under_stop_terminates_system() {
-    terminates_after_failure(FailureTrigger::Err).await;
+    assert_terminates_after_failure(FailureTrigger::Err).await;
 }
 
 /// A panic in `init` on the restart path counts like any other failure; once the limit is
@@ -54,13 +55,13 @@ async fn err_under_stop_terminates_system() {
 /// instead of waiting forever.
 #[tokio::test]
 async fn panic_in_init_under_restart_terminates_system() {
-    terminates_after_failing_reinitialization(FailureTrigger::Panic).await;
+    assert_terminates_after_failing_reinitialization(FailureTrigger::Panic).await;
 }
 
 /// The `Err` counterpart of the above.
 #[tokio::test]
 async fn err_in_init_under_restart_terminates_system() {
-    terminates_after_failing_reinitialization(FailureTrigger::Err).await;
+    assert_terminates_after_failing_reinitialization(FailureTrigger::Err).await;
 }
 
 /// An `Err` from the very first `init` terminates the actor and signals its watchers.
@@ -235,8 +236,8 @@ async fn running_for_reset_after_resets_the_restart_count() {
     assert_eq!(count, 0);
 }
 
-/// Restart delays grow exponentially from `min_backoff` and are capped at `max_backoff`: three
-/// retries of a failing first `init` must advance the paused clock by exactly 1s + 2s + 2s.
+/// Restart delays grow exponentially from the backoff's minimum and are capped at its maximum:
+/// three retries of a failing first `init` must advance the paused clock by exactly 1s + 2s + 2s.
 #[tokio::test(start_paused = true)]
 async fn restarts_back_off_exponentially() {
     let inits = Arc::new(AtomicUsize::new(0));
@@ -297,7 +298,7 @@ async fn parent_stop_during_restart_stop_children_skips_reinit() {
     let (failed_tx, mut failed_rx) = mpsc::channel(1);
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
     let (stopping_tx, mut stopping_rx) = mpsc::channel(1);
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
+    let (unblock_tx, unblock_rx) = std_mpsc::channel();
 
     let middle = RestartingMiddle {
         inits: inits.clone(),
@@ -364,7 +365,7 @@ async fn count_after_failure(
         .expect("reported channel closed")
 }
 
-async fn terminates_after_failure(fail: FailureTrigger) {
+async fn assert_terminates_after_failure(fail: FailureTrigger) {
     let (counter, _reported_rx) = counter(fail);
     let system = ActorSystem::with_config(counter, config(SupervisionStrategy::Stop));
 
@@ -376,7 +377,7 @@ async fn terminates_after_failure(fail: FailureTrigger) {
         .expect("watching the root actor failed");
 }
 
-async fn terminates_after_failing_reinitialization(fail: FailureTrigger) {
+async fn assert_terminates_after_failing_reinitialization(fail: FailureTrigger) {
     let inits = Arc::new(AtomicUsize::new(0));
     let actor = FailOnReinitialization {
         inits: inits.clone(),
@@ -645,7 +646,6 @@ impl Actor for StoppingRoot {
         {
             context.spawn(sibling);
         }
-
         Ok(())
     }
 
@@ -696,7 +696,7 @@ struct RestartingMiddle {
     inits: Arc<AtomicUsize>,
     failed_tx: mpsc::Sender<()>,
     blocked_tx: mpsc::Sender<()>,
-    unblock_rx: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+    unblock_rx: Mutex<Option<std_mpsc::Receiver<()>>>,
 }
 
 impl Actor for RestartingMiddle {
@@ -719,7 +719,6 @@ impl Actor for RestartingMiddle {
                 unblock_rx,
             });
         }
-
         Ok(())
     }
 
@@ -738,7 +737,7 @@ impl Actor for RestartingMiddle {
 /// the test releases it; requires a multi thread runtime.
 struct BlockedInInit {
     blocked_tx: mpsc::Sender<()>,
-    unblock_rx: std::sync::mpsc::Receiver<()>,
+    unblock_rx: std_mpsc::Receiver<()>,
 }
 
 impl Actor for BlockedInInit {
@@ -857,7 +856,6 @@ impl Actor for WatchingParent {
             let child = context.spawn(Idle);
             context.watch(&child);
         }
-
         Ok(())
     }
 

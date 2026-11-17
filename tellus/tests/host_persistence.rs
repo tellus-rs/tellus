@@ -117,7 +117,6 @@ impl EventSourced for Counter {
 
             Incoming::Terminated(_) => Effect::none(),
         };
-
         Ok(effect)
     }
 

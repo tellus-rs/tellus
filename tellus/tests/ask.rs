@@ -6,6 +6,7 @@ use std::{
     future::Future,
     num::{NonZeroU32, NonZeroUsize},
     pin::pin,
+    sync::mpsc as std_mpsc,
     task::{Context, Waker},
     time::Duration,
 };
@@ -66,7 +67,7 @@ async fn ask_a_terminated_actor_fails_as_terminated() {
 /// slot provably holds the stop message when the ask is sent.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn ask_a_full_mailbox_fails_as_full() {
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
+    let (unblock_tx, unblock_rx) = std_mpsc::channel();
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
     let root = BlockedResponder {
         unblock_rx,
@@ -169,7 +170,7 @@ async fn a_late_reply_is_a_dead_letter() {
 /// request and its reply channel.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn stopping_with_the_ask_still_queued_fails_as_no_reply() {
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
+    let (unblock_tx, unblock_rx) = std_mpsc::channel();
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
     let root = BlockedResponder {
         unblock_rx,
@@ -322,7 +323,7 @@ async fn a_failing_ask_message_fails_as_no_reply() {
 /// and then the probe proves the delivery.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_reply_to_a_full_asker_mailbox_is_received_and_counted() {
-    let (unblock_tx, unblock_rx) = std::sync::mpsc::channel();
+    let (unblock_tx, unblock_rx) = std_mpsc::channel();
     let (blocked_tx, mut blocked_rx) = mpsc::channel(1);
     let (reply_to_tx, mut reply_to_rx) = mpsc::channel(1);
     let (observed_tx, mut observed_rx) = mpsc::channel(3);
@@ -451,7 +452,7 @@ enum Request {
 /// messages are processed. `block_in_place`, else it strands whatever task sits in this worker's
 /// LIFO slot.
 struct BlockedResponder {
-    unblock_rx: std::sync::mpsc::Receiver<()>,
+    unblock_rx: std_mpsc::Receiver<()>,
     blocked_tx: mpsc::Sender<()>,
 }
 
@@ -754,7 +755,7 @@ enum FragileRequest {
 /// test can prove where the reply was delivered. `block_in_place`, else it strands whatever task
 /// sits in this worker's LIFO slot.
 struct BlockedAsker {
-    unblock_rx: std::sync::mpsc::Receiver<()>,
+    unblock_rx: std_mpsc::Receiver<()>,
     blocked_tx: mpsc::Sender<()>,
     reply_to_tx: mpsc::Sender<ReplyTo<u64>>,
     observed_tx: mpsc::Sender<Observed>,

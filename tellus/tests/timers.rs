@@ -7,8 +7,9 @@ use std::{
     fmt::Debug,
     num::{NonZeroU32, NonZeroUsize},
     sync::{
-        self, Arc,
+        Arc,
         atomic::{AtomicBool, AtomicU32, Ordering::SeqCst},
+        mpsc as std_mpsc,
     },
     thread,
     time::Duration,
@@ -22,7 +23,7 @@ use tokio::{
     runtime::Builder,
     select,
     sync::mpsc,
-    task::block_in_place,
+    task::{self, block_in_place},
     time::{Instant, advance, sleep, timeout},
 };
 
@@ -220,7 +221,7 @@ async fn a_zero_delay_timer_lands_behind_queued_messages() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_deadline_passing_during_receive_lands_behind_messages_arriving_meanwhile() {
     let (system, mut events) = probe_system(ActorConfig::default(), None);
-    let (release_tx, release_rx) = sync::mpsc::channel();
+    let (release_tx, release_rx) = std_mpsc::channel();
 
     system.root().tell(Message::Block {
         delay: Duration::from_millis(20),
@@ -344,7 +345,7 @@ async fn a_reply_to_in_a_pending_timer_resolves_as_no_reply_at_termination() {
     let system = ActorSystem::new(Holder(armed_tx));
     let root = system.root().clone();
 
-    let asking = tokio::spawn(async move { root.ask(TIMEOUT, |reply_to| reply_to).await });
+    let asking = task::spawn(async move { root.ask(TIMEOUT, |reply_to| reply_to).await });
     next_event(&mut armed).await;
     stop(system).await;
     let reply = timeout(TIMEOUT, asking)
@@ -435,7 +436,7 @@ fn an_actor_without_timers_needs_no_time_driver() {
 /// `receive`, so the actor still terminates as usual.
 #[test]
 fn starting_a_timer_without_a_time_driver_fails_the_actor() {
-    let (terminated_tx, terminated_rx) = sync::mpsc::channel();
+    let (terminated_tx, terminated_rx) = std_mpsc::channel();
 
     // Its own thread: a regression would leave the termination pending forever.
     thread::spawn(move || {
@@ -796,7 +797,7 @@ enum Message {
     /// Starts the timer "t" with the delay, then blocks `receive` until released.
     Block {
         delay: Duration,
-        release: sync::mpsc::Receiver<()>,
+        release: std_mpsc::Receiver<()>,
     },
 }
 
