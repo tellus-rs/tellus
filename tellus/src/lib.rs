@@ -1,7 +1,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
-//! An actor framework for Rust, built on Tokio: typed messages, supervision trees, death watch
-//! and event sourcing.
+//! An actor framework for Rust, built on Tokio: typed messages, supervision trees, death watch,
+//! event sourcing and clustered remoting.
 //!
 //! An actor is created by implementing [Actor]: [Actor::init] creates its initial state and
 //! [Actor::receive] applies received messages and signals to that state until it returns
@@ -16,12 +16,15 @@
 //! When [Actor::init] or [Actor::receive] fails with an error or a panic, the actor's
 //! [SupervisionStrategy] decides what happens: [SupervisionStrategy::Stop] terminates the actor,
 //! [SupervisionStrategy::Restart] rebuilds its state via [Actor::init], limited and paced by a
-//! [RestartPolicy].
+//! [RestartPolicy]. [ActorContext::spawn_with_config] takes an [ActorConfig] with the strategy and
+//! the mailbox capacity, unbounded by default.
 //!
 //! Actors are addressed by [ActorRef], which is used to [ActorRef::tell] them messages and to
 //! [ActorRef::ask] them requests from outside the actor tree, awaiting the reply; between actors,
 //! [ActorContext::reply_to] creates a [ReplyTo] which delivers the reply as an ordinary message
-//! instead. Actors can observe each other via [ActorContext::watch], which delivers an
+//! instead. [ActorContext::pipe_to_self] turns the output of a future into a message for the actor
+//! itself, and [ActorContext::queued] tells how many items wait in its mailbox. Actors can observe
+//! each other via [ActorContext::watch], which delivers an
 //! [Incoming::Terminated] signal, and [ActorContext::unwatch], which reverts that. The signal is
 //! ordered behind all messages the terminated actor has delivered to the watcher. Receiving it
 //! hence proves that the watcher has seen every message from that actor it will ever see: each
@@ -49,7 +52,7 @@
 //! `persistence-in-memory` feature adds [InMemoryStore], which keeps events and snapshots in
 //! memory, for testing event-sourced actors without a database.
 //!
-//! The `test-util` feature adds [testing], which unit tests an actor's logic without a running
+//! The `test-util` feature adds [testing], for unit testing an actor's logic without a running
 //! actor system: [testing::TestContext] provides the [ActorContext] to call [Actor::receive],
 //! `EventSourced::handle` and the like directly, and collects what the actor sends to itself.
 //!
@@ -63,7 +66,8 @@
 //! well as the cluster's [EndpointConfig](cluster::EndpointConfig),
 //! [BootstrapConfig](cluster::BootstrapConfig) and [QuicConfig](cluster::transport::QuicConfig), so
 //! a deployment can read it from a config file with human readable durations. tellus pulls in no
-//! parser of its own, see the README.
+//! parser of its own, see the README. It also makes `PersistenceId` and the cluster's observation
+//! types, such as `ClusterState`, `Change` and `Settlement`, serializable and deserializable.
 //!
 //! The `hotpath` features (`hotpath`, `hotpath-alloc`, `hotpath-callgrind` and `hotpath-cloud`)
 //! instrument the hot paths of messaging and persistence for profiling with the `hotpath` crate.

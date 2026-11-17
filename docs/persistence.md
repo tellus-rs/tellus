@@ -50,17 +50,19 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
   [`Effect`](../tellus/src/persistence/effect.rs): `persist`/`persist_all` name the caused events,
   `stop`/`and_stop` stop the actor, and `then` attaches a continuation running once the events are
   durable and applied, the only safe place for outward-facing actions.
-- `apply` folds one event into the state. `snapshot` optionally offers a snapshot after an
-  effect with events, once its events have been applied and its continuations have run.
+- `apply` folds one event into the state. `snapshot` optionally offers a snapshot after an effect
+  with events, once its events have been applied and its continuations have run. It sees only the
+  state, so a policy such as every 100 events counts in the state. An error from it, or a failed save,
+  is logged and never fails the actor.
 
 Spawning uses dedicated entry points carrying the [`Persistence`](../tellus/src/persistence.rs)
-wiring, an event store plus optional snapshot store, codec and store timeout (see
-[Store timeout](#store-timeout)): `ActorSystem::event_sourced` for the root and
-`ActorContext::spawn_event_sourced` for children, each with a `_with_config` variant
-taking the ordinary `ActorConfig`. Unlike a plain actor value, which only needs `Send`, an
-event-sourced one must also be `Sync`: it is borrowed across the store awaits during recovery and
-settlement. Everything else, mailboxes, supervision, death watch and termination, works exactly as
-for plain actors.
+wiring, an event store plus optional snapshot store, codec and store timeout (see [Store
+timeout](#store-timeout)), built as `Persistence::new(store).with_snapshot_store(store)`:
+`ActorSystem::event_sourced` for the root and `ActorContext::spawn_event_sourced` for children, each
+with a `_with_config` variant taking the ordinary `ActorConfig`. Unlike a plain actor value, which
+only needs `Send`, an event-sourced one must also be `Sync`: it is borrowed across the store awaits
+during recovery and settlement. Everything else, mailboxes, supervision, death watch and
+termination, works exactly as for plain actors.
 
 ## Identity
 
@@ -86,9 +88,10 @@ On every spawn and every restart, before the first command:
 3. `recovered` runs exactly once on the resulting state. This is the place to touch the world:
    spawn children, re-arm timers, register with other actors.
 
-`init` is skipped entirely when a snapshot exists, so it must be nothing but the pure seed of the
-fold; world-touching work in `init` would silently disappear the moment snapshots are enabled.
-`recovered` runs unless the actor is stopped first, and never during replay.
+`init` is skipped whenever a snapshot is loaded and used, and runs only when there is none or it is
+discarded. So it must be nothing but the pure seed of the fold; world-touching work in `init` would
+silently disappear the moment snapshots are enabled. `recovered` runs unless the actor is stopped
+first, and never during replay.
 
 An actor stopped by its parent before it ran skips recovery altogether, as a plain actor skips
 `init` (see [actors.md](actors.md#the-actor-tree)). The store sees no load and no read, and neither
@@ -97,12 +100,12 @@ An actor stopped by its parent before it ran skips recovery altogether, as a pla
 
 With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as a plain actor does
 through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,
-e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are requests, gated on
-durability like the other effects. They take effect once the command's events are durable, or once
-`recovered` has returned, and a failed append discards them with the events. A failure once the
-events are durable, in `apply` or in a continuation, keeps them. The stash is runtime state like a
-timer, neither persisted nor recreated by replay, but unlike a timer it survives a restart: the
-recovered state receives the stashed commands first, after `recovered`.
+e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are
+requests, gated on durability like the other effects. They take effect once the command's events are
+durable, or once `recovered` has returned, and a failed append discards them with the events. A
+failure once the events are durable, in `apply` or in a continuation, keeps them. The stash is
+runtime state like a timer, neither persisted nor recreated by replay, but unlike a timer it
+survives a restart: the recovered state receives the stashed commands first, after `recovered`.
 
 A `Timed` event-sourced actor starts its timers (see [actors.md](actors.md#timers)) in `recovered`
 and `handle`; `init` has no context. A timer is runtime state, neither persisted nor recreated by
@@ -163,9 +166,9 @@ restart fails identically, and so it escalates through the restart limit to a st
 snapshot is the one exception, discarded in favor of full replay (see schema evolution below). A
 failure of `recovered`, or a failure or panic of a store itself while loading the snapshot or
 reading events, the store timeout included, is an ordinary startup failure, e.g. a struggling
-dependency, which a restart with backoff may well fix. A failed snapshot load is deliberately not traded for full replay, so a
-snapshot store failure surfaces through supervision instead of silently turning every recovery into
-a full replay.
+dependency, which a restart with backoff may well fix. A failed snapshot load is deliberately not
+traded for full replay, so a snapshot store failure surfaces through supervision instead of silently
+turning every recovery into a full replay.
 
 A failure to save a snapshot, the store timeout included, is logged and never fails the actor:
 losing a snapshot only makes the next recovery replay more events. `NoSnapshots`, the snapshot store
@@ -255,10 +258,12 @@ full replay, so snapshots never need migration code.
 
 Both provided codecs write two kinds of value which they do not read back:
 
-- **Nesting:** an event or snapshot can nest at most 127 levels with `Json` and 255 with `Cbor`. A
-  deeper event is stored, but every recovery fails on it, and a deeper snapshot is discarded at
-  every recovery. Input taken from outside, such as a JSON document a client sent, should therefore
-  have its depth limited before it goes into an event.
+- **Nesting:** an event or snapshot can nest at most 127 sequences, maps, structs or newtype
+  variants with `Json`. With `Cbor` it is 256, or 255 when the nesting is in newtype variants. A
+  struct variant counts twice, so 63 and 127 of them nest. A deeper event is stored, but every
+  recovery fails on it, and a deeper snapshot is discarded at every recovery. Input taken from
+  outside, such as a JSON document a client sent, should therefore have its depth limited before it
+  goes into an event.
 - **`Some(None)`:** neither codec preserves it. `Some(None)`, `Some(())` and `Some(Value::Null)` are
   written as null and read back as `None`, so a recovered state differs from the live one without
   any error. A value with three states should be an enum, like
@@ -390,8 +395,10 @@ entity, sends a command with `tell` and then reads the store has to wait for the
 
 - An appended event is never modified or deleted: the stream is append-only and is the single
   source of truth.
-- The recovered state is exactly the live state: the same fold over the same events, with effects
-  suppressed and `recovered` as the only world-touching step.
+- The recovered state is the live state if every event survives its codec's round trip: the same
+  fold over the same events, with effects suppressed and `recovered` as the only world-touching
+  step. Live execution applies the original events and replay the decoded ones, so a lossy round
+  trip, such as `Some(None)` or a `#[serde(skip)]` field, makes them differ without any error.
 - Events of one effect are atomic and durable before they are applied; sequence numbers are
   gapless per `PersistenceId`.
 - Conditional appends fence concurrent incarnations per append: of two appends from the same

@@ -148,23 +148,23 @@ opens a `reply_to` per request to a slow backend can hence hold far more than it
 it bounds its open requests itself, e.g. with a window. An actor which stashes (see stashing below)
 holds up to its capacity again in the stash.
 
-The `serde` feature makes the whole configuration deserializable, so it can come from a config
-file. The invariants it carries, `0 < min` and `min <= max` on the backoff bounds, live in
+The `serde` feature makes the whole configuration deserializable, so it can come from a config file.
+It also derives serde for `PersistenceId` and the cluster's observation types. The invariants it
+carries, `0 < min` and `min <= max` on the backoff bounds, live in
 [`Backoff`](../tellus/src/backoff.rs): its fields are private and its constructor is fallible, and
-deserialization is routed through that constructor via `#[serde(try_from = "...")]`. Every
-container can therefore be plain public data, since no reachable `Backoff` value is invalid. A
-zero minimum is rejected because it would make every step zero. The restart loop awaits the delay,
-so a zero delay would let a failing `init` spin through its whole restart limit without ever
-yielding.
+deserialization is routed through that constructor via `#[serde(try_from = "...")]`. Every container
+can therefore be plain public data, since no reachable `Backoff` value is invalid. A zero minimum is
+rejected because it would make every step zero. The restart loop awaits the delay, so a zero delay
+would let a failing `init` spin through its whole restart limit without ever yielding.
 
 ## References and identity
 
-An [`ActorRef`](../tellus/src/actor_ref.rs) pairs an [`ActorId`](../tellus/src/actor_id.rs) (a UUID
-v7, so IDs are unique and time-ordered) with a sender, and is cheap to clone and share. Equality and
-hashing go by the `ActorId` alone, so two references to the same actor compare equal however they
-were obtained. `tell` never blocks: if the actor has terminated or a bounded mailbox is full, the
-message is dropped and logged as a dead letter with the actor ID and message type. Even a delivered
-message may go unprocessed if the actor stops first: delivery is at-most-once, end to end.
+An [`ActorRef`](../tellus/src/actor_ref.rs) pairs an [`ActorId`](../tellus/src/actor_id.rs) (a
+UUIDv7, so IDs are unique and time-ordered) with a sender, and is cheap to clone and share. Equality
+and hashing go by the `ActorId` alone, so two references to the same actor compare equal however
+they were obtained. `tell` never blocks: if the actor has terminated or a bounded mailbox is full,
+the message is dropped and logged as a dead letter with the actor ID and message type. Even a
+delivered message may go unprocessed if the actor stops first: delivery is at-most-once, end to end.
 
 Internally the sender is the mailbox's sending half; with the `cluster` feature it can instead be a
 remote sink forwarding to an actor on another node (see the `tellus::cluster` module docs), which
@@ -227,8 +227,8 @@ carry over the wire and where the `NoReply` detection weakens further.
 [`ActorContext::pipe_to_self`](../tellus/src/actor_context.rs) is how an actor uses async code
 without awaiting: it spawns the given future on a new Tokio task. Once the future is ready, it
 delivers the output to the actor itself, converted into its message type by the given function, just
-like `reply_to`. The actor keeps handling messages meanwhile. Blocking work fits the same mold: the
-`JoinHandle` of `tokio::task::spawn_blocking` is itself a future to pipe.
+like `reply_to`. The actor keeps handling messages meanwhile. Blocking work is piped the same way,
+since the `JoinHandle` of `tokio::task::spawn_blocking` is itself a future.
 
 The output is enqueued like a tell to this actor, except that a full bounded mailbox does not refuse
 it. Why not drop it like a tell? Because the actor waits for it. An actor which tracks the piped
@@ -393,12 +393,11 @@ into a `MailboxHandle` (the sending half, cloned into every `ActorRef`) and a `M
 receiving half, owned by the actor's run loop). Messages from one sender are received in the order
 they were sent.
 
-The underlying channel is always unbounded; a bounded mailbox is enforced by a lock-free
-reservation counter ([`quota.rs`](../tellus/src/quota.rs)) in front of it: a message reserves
-capacity before it is enqueued and releases it when it is received. This split is deliberate:
-terminated signals and capacity answer different needs, so a terminated signal enqueues into the
-same FIFO channel (preserving order behind queued messages) but bypasses the capacity check, since
-a terminated signal must never be dropped.
+The underlying channel is always unbounded; a bounded mailbox is enforced by a lock-free reservation
+counter ([`quota.rs`](../tellus/src/quota.rs)) in front of it: a message reserves capacity before it
+is enqueued and releases it when it is received. A terminated signal enqueues into the same FIFO
+channel, which keeps it behind the queued messages. It bypasses the capacity check, since a
+terminated signal must never be dropped.
 
 An actor reads its own mailbox depth through `ActorContext::queued`: the number of items not
 received yet, terminated signals included. Due timers are not items, so they are not counted (see
@@ -439,11 +438,11 @@ above):
    `SupervisionStrategy` (`Restart` or `Stop`), `Control::Stop` stops.
 4. On stop, run the termination sequence below.
 
-An event-sourced actor runs a task future of its own, in
+An event-sourced actor runs one of four task futures of its own, chosen the same way, in
 [`persistence/spawn.rs`](../tellus/src/persistence/spawn.rs) and described in
 [persistence.md](persistence.md). Recovery takes the place of step 1, and `handle` plus the
 settlement of its effect take the place of `receive`. It shares the wait of step 2 (the
-`next_incoming` macros), the restart decision (`should_restart`) and `terminate` with the two loops
+`next_incoming` macros), the restart decision (`should_restart`) and `terminate` with the four loops
 above.
 
 Both `init` and `receive` run under `catch_unwind`, so a panic is handled exactly like a returned
@@ -668,18 +667,18 @@ root stops on its own terms.
 
 Every drop path the framework controls runs under `catch_unwind` (`drop_containing_panic` in
 [`actor_context.rs`](../tellus/src/actor_context.rs)). These are the state dropped when the parent
-stops the actor, the message of a replaced or canceled timer and the timer messages dropped at a
-restart. At termination they are the actor value, the mailbox and the timer messages. A destructor
-panic is hence logged, and what the framework was doing carries on: a replace, cancel or restart
-completes, and so does termination, including the signals to the watchers. A destructor panic on a
-normal return of `receive` is equally contained: when `receive` returns an error and the state's
-destructor panics while the frame returns, that panic is caught like any other and fed to
-supervision. The locks the framework holds itself recover from poisoning
-([`sync.rs`](../tellus/src/sync.rs)), so a panic contained by supervision cannot disable the watcher
-registry. A failure the framework logs, an actor's error as well as a store error under persistence,
-is formatted and then dropped in two separate unwind boundaries (`dispose_error`). A panic in its
-`Display`, `source` or `Drop` is hence logged and contained too, even when both formatting and
-destructor panic.
+stops the actor, the message of a replaced or canceled timer, and the timer messages and discarded
+stash requests dropped at a restart. At termination they are the actor value, the mailbox, the timer
+messages and the stashed items. A destructor panic is hence logged, and what the framework was doing
+carries on: a replace, cancel or restart completes, and so does termination, including the signals
+to the watchers. A destructor panic on a normal return of `receive` is equally contained: when
+`receive` returns an error and the state's destructor panics while the frame returns, that panic is
+caught like any other and fed to supervision. The locks the framework holds itself recover from
+poisoning ([`sync.rs`](../tellus/src/sync.rs)), so a panic contained by supervision cannot disable
+the watcher registry. A failure the framework logs, an actor's error as well as a store error under
+persistence, is formatted and then dropped in two separate unwind boundaries (`dispose_error`). A
+panic in its `Display`, `source` or `Drop` is hence logged and contained too, even when both
+formatting and destructor panic.
 
 The one case out of reach is a panic during a panic: `init` or `receive` panics, and while that
 panic unwinds, the destructor of a value still alive in the frame (the state, the message, a
@@ -802,12 +801,12 @@ has to wait for the actor, since `tell` returns before the message is handled.
   hands the stash back to the new state, and termination drops it like the mailbox.
 - A host has at most one incarnation of an entity at any time: a replacement is spawned only once
   the previous one's terminated signal has arrived.
-- A message for an entity which is stopping is enqueued to its next incarnation, in order, up to
-  the configured buffer, whatever that entity's mailbox capacity; beyond the buffer the newest is
-  refused and logged as a dead letter. Enqueued is the whole promise: whether the incarnation
+- A message for an entity which is stopping is enqueued to its next incarnation, in order, up to the
+  configured buffer, whatever that entity's mailbox capacity; beyond the buffer the newest is
+  refused and logged as a dead letter. The host promises only the enqueue. Whether the incarnation
   processes the message depends on it initializing, or recovering, and on it not stopping first,
-  exactly as for any `tell`. A message routed to an entity which stopped on its own is a dead
-  letter until the host has received that entity's terminated signal.
+  exactly as for any `tell`. A message routed to an entity which stopped on its own is a dead letter
+  until the host has received that entity's terminated signal.
 - An entity is asked to passivate only once no message has been routed to it through the host for
   at least the configured timeout, and a host checks that about once per timeout. There is no upper
   bound on when the entity has stopped: the host's own mailbox, scheduling, the entity finishing

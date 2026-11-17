@@ -116,7 +116,7 @@ where
     /// source of truth, so a failure to build or save one is logged and never fails the actor.
     ///
     /// # Errors
-    /// Implementations fail if they choose to.
+    /// Implementations fail if they choose to, e.g. through `?` on a domain error.
     fn snapshot(&self, _state: &Self::State) -> Result<Option<Self::Snapshot>, Self::Error> {
         Ok(None)
     }

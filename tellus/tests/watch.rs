@@ -206,9 +206,9 @@ async fn rewatching_after_unwatch_signals() {
 }
 
 /// Watching an actor which is terminating right now must still deliver the terminated signal. The
-/// late watcher registers at a delay swept across rounds, so that some rounds hit the moment
-/// between the terminating actor taking its watchers and its mailbox being disconnected;
-/// `PRE_WATCHERS` widens that moment, as their signals are sent within it.
+/// late watcher registers at a delay swept across rounds, so that some rounds hit the moment the
+/// terminating actor closes its watcher registry: a watch registered before the close is signaled
+/// with the `PRE_WATCHERS`, one registered after it is signaled at once.
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn watch_racing_termination_still_signals() {
     for round in 0..ROUNDS {
