@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794904402173,
+  "lastUpdate": 1794904403947,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -34485,6 +34485,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5186229,
             "range": "± 354897",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b092424829270b396f8b71f4fbff5e46db92f8fc",
+          "message": "Merge pull request #459 from tellus-rs/fix/k8s-chaos-heal\n\nfix(demo): bound the k8s heal outside kubectl so it keeps its config",
+          "timestamp": "2026-11-17T09:25:27+01:00",
+          "tree_id": "9885ccec6d9615ad32695995f2bd3977164716cd",
+          "url": "https://github.com/tellus-rs/tellus/commit/b092424829270b396f8b71f4fbff5e46db92f8fc"
+        },
+        "date": 1794904403575,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 35550455,
+            "range": "± 1998141",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 34264573,
+            "range": "± 2185897",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5615397,
+            "range": "± 474551",
             "unit": "ns/iter"
           }
         ]
