@@ -302,8 +302,9 @@ every format into one value tree before deserializing, which makes the YAML abov
 and it reports the key path along with any error. Note that `serde_yaml` deserializes the
 same types differently, expecting a YAML tag (`supervision_strategy: !restart`) instead.
 
-The `serde` feature also makes `PersistenceId` serializable, and with `cluster` the observed cluster
-state: `ClusterState`, `BrokenLink`, `ForeignCluster`, `Transition`, `Change` and `Settlement`.
+The `serde` feature also makes `PersistenceId` serializable and deserializable, and with `cluster`
+what a node observes of the cluster: `ClusterState`, `BrokenLink`, `ForeignCluster`, `Transition`,
+`Change`, `Settlement` and `Lifecycle`.
 
 Anything omitted falls back to its default, except `max_restarts`, which a `restart` section must
 name, and the bounds of a `backoff` table, which needs both `min` and `max`. Invalid backoff bounds
@@ -320,9 +321,11 @@ min backoff is zero for key `supervision_strategy.backoff`
 The cluster configuration works the same way, with the `cluster` and `serde` features. The
 `endpoint` section requires only the advertised address, and the `bootstrap` section requires
 nothing. Every other field falls back to its default, except that a `reconnect_backoff` needs both
-`min` and `max`. Every field of the `transport` section is required. Each pluggable family is chosen
-by the name of one of the provided implementations. The three top-level keys below belong to no
-tellus type: the application defines the struct holding them.
+`min` and `max`. The `deadline` failure detector, the `down_after_deadline` downing provider and the
+`majority_with_fallback` formation provider have no default duration, so choosing one of them needs
+its duration as well. Every field of the `transport` section is required. Each pluggable family is
+chosen by the name of one of the provided implementations. The three top-level keys below belong to
+no tellus type: the application defines the struct holding them.
 
 ```yaml
 endpoint:
@@ -375,7 +378,7 @@ replaying the events, optionally shortcut by snapshots. The stores are pluggable
 and the `persistence-tests` feature adds the contract test suite any store implementation must
 pass, meant for a backend crate's integration tests. The `persistence-in-memory` feature adds
 `InMemoryStore`, which keeps events and snapshots in memory, so event-sourced actors can be tested
-without a database. For the guarantees, from replay equals live execution to fencing and schema
+without a database. For the guarantees, from replay and live execution to fencing and schema
 evolution, see [docs/persistence.md](../docs/persistence.md).
 
 ## Testing
@@ -454,7 +457,7 @@ Beyond the tutorials:
   RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev --example remote_scatter_gather
   ```
 
-- [`cluster`](examples/cluster.rs): a four node cluster where three member nodes join through one
+- [`cluster`](examples/cluster.rs): a four-node cluster where three member nodes join through one
   seed address and learn the rest from gossip, each node asked what it sees rather than trusted.
   Then one node is killed, the survivors down it, and a death watch on an actor of that node fires
   a synthesized terminated signal. Stopping the survivors at the end shows the other way out, an

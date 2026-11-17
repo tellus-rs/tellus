@@ -157,7 +157,7 @@ where
 /// live path at all, from its own failure detection, exactly as it would from a crash. A peer which
 /// leaves at the same time can still acknowledge after this node has seen its departure. Otherwise
 /// the drain towards it is reported as [departed](Departure::departed), never as acknowledged, and
-/// the drain gives up as soon as no member is Up at its address.
+/// while its lane dials or backs off, the drain gives up as soon as no member is Up at its address.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if

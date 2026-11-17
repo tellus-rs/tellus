@@ -4189,8 +4189,8 @@ fn quick_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
 }
 
 /// Two nodes leaving at the same time both leave, and the staying node acknowledges each drain.
-/// What a leaver reports about the other is not checked, since it may not learn the other's
-/// departure and then waits out its `leave_timeout`.
+/// What a leaver reports about the other is not checked, since either leaver may wait out its
+/// `leave_timeout` for the other, also after it learned the other's departure.
 fn concurrent_leave_scenario(runtime: &Runtime) -> anyhow::Result<()> {
     let mut subscription = cluster::cluster_state()?;
     let mut observed = vec![subscription.current()];

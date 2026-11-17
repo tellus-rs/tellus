@@ -2,7 +2,8 @@
 //! round found none. [FormationProvider] is what
 //! [BootstrapConfig::formation_provider](crate::cluster::BootstrapConfig::formation_provider)
 //! takes, and the default is [Majority]. Its majority rule stops a downed minority from re-forming
-//! inside a partition, and its lowest-address rule makes the forming node unique.
+//! inside a partition, as long as the universe holds every node. Its lowest-address rule makes the
+//! forming node unique among nodes deciding on the same universe.
 
 use std::{
     borrow::Cow,
@@ -120,8 +121,9 @@ impl Display for Declined {
 #[derive(Debug, Clone)]
 pub struct FormationView {
     /// Every address discovery resolved, this node's own included: the denominator of any
-    /// counting rule and the set the lowest address is taken from. Deciding on the universe
-    /// rather than on who answered is what keeps a partitioned node from forming.
+    /// counting rule and the set the lowest address is taken from. Deciding on the universe rather
+    /// than on who answered is what keeps a partitioned node from forming, as long as the universe
+    /// holds every node.
     pub universe: BTreeSet<SocketAddr>,
 
     /// This node's own address.
@@ -192,11 +194,12 @@ pub enum JoinOutcome {
 /// included, is known to be no cluster, and only at the lowest address of the universe.
 ///
 /// The lowest address makes the forming node unique, so nodes deciding on the same universe cannot
-/// form two clusters. The majority is what keeps a partitioned minority from forming one at all,
-/// which is the failure this exists for: its nodes are downed, restart, and would otherwise come
-/// back as a cluster of their own. Both conditions are on the universe rather than on who answered,
-/// so a node which cannot reach the lowest address forms nothing; formation liveness is hence a
-/// requirement on discovery, to stop resolving nodes which are gone.
+/// form two clusters. The majority is what keeps a partitioned minority from forming one, as long
+/// as the universe holds every node. A partitioned minority forming one is the failure this exists
+/// for: its nodes are downed, restart, and would otherwise come back as a cluster of their own.
+/// Both conditions are on the universe rather than on who answered, so a node which cannot reach
+/// the lowest address forms nothing; formation liveness is hence a requirement on discovery, to
+/// stop resolving nodes which are gone.
 #[derive(Debug, Default)]
 pub struct Majority;
 

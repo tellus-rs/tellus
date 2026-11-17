@@ -198,15 +198,16 @@ An attempt can also fail after its `Join` handshake was sent but before a
 validated answer pins anything. That covers a timeout while exchanging handshakes, a closed
 connection, an undecodable or unexpected first frame and a transport error. It also covers a reply
 which fails the dialer's own checks: an advertised address other than the dialed one, an identity
-which does not cover it, a dead incarnation, another codec or a reply naming no cluster. A member
-snapshot larger than the joiner accepts counts, and so does a join task which panics once it has
-started to send the handshake. The seed may have admitted this node in each of these cases, so the
-endpoint records the address as *ambiguous* and logs a warning. While any address is ambiguous,
-`cluster::form` fails with `FormError::JoinAmbiguous`, and bootstrap reports that as a declined
-formation. Joins continue through any seed, unlike under a pin, since nothing proves which cluster,
-if any, admitted this node. The record ends once that address answers a join definitively
-(`NoCluster`, `Joining`, `UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster`, `CodecMismatch` or
-a reply naming another cluster), once bootstrap sees it leave a settled discovery view, or once
+which does not cover it, a dead incarnation, another codec or a reply naming no cluster. A join task
+which panics once it has started to send the handshake counts too. The seed may have admitted this
+node in each of these cases, so the endpoint records the address as *ambiguous* and logs a warning.
+A failure after the pin, such as a panic or a member snapshot larger than the joiner accepts, leaves
+the address pinned rather than ambiguous. While any address is ambiguous, `cluster::form` fails with
+`FormError::JoinAmbiguous`, and bootstrap reports that as a declined formation. Joins continue
+through any seed, unlike under a pin, since nothing proves which cluster, if any, admitted this
+node. The record ends once that address answers a join definitively (`NoCluster`, `Joining`,
+`UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster`, `CodecMismatch` or a reply naming another
+cluster), once bootstrap sees it leave a settled discovery view, or once
 `EndpointConfig::ambiguous_join_bound` (see [Configuration](#configuration)) has passed. A
 definitive refusal proves that the seed did not admit this node, so initial formation proceeds
 normally after one.
@@ -417,43 +418,43 @@ lane towards a Down node or towards no member is neither waited for nor reported
 death already turned what was queued for it into dead letters or failed asks. A lane waiting out a
 reconnect backoff when the departure begins dials again at once, and a lane keeps dialing until the
 departure has ended, so a peer is reached whatever state its lane was in. Only once no member is Up
-at its address any more does a lane give up, at once, a connect still pending included. A connection
-closed before the `DrainAck`, a read error and a writer which failed or could not finish its stream
-never count as acknowledged; the marker is not even sent after a failed writer. A member which is
-gone already costs that timeout and then learns the departure from another member's gossip, or, with
-no live path at all, from its own failure detection. Two nodes may leave at the same time. Each then
-usually learns the other's departure and runs its death while its own drain towards the other may
-still be waiting; one which does not learn it waits out `leave_timeout` for the other. The other's
-`DrainAck` is still taken then, while every other frame from that incarnation is dropped, so nothing
-arrives behind its synthesized signals. The call returns a `Departure`, which lists the peers which
-acknowledged the drain, those which did not since the connection ended first or a stream failed
-(each logged as a warning), and those which had not answered when `leave_timeout` passed. A fourth
-list holds the peers which left the cluster themselves before they acknowledged: the incarnation the
-lane's latest connection reached is Left, or the one it was opened for if it never connected, and
-whether it got what was queued for it is unknown. An acknowledgment takes precedence over a Left,
-while a Down, a suspicion or a closed connection never makes a peer departed.
-`Departure::is_acknowledged` holds only if every peer acknowledged, and `Departure::is_complete`
-also accepts the departed ones, which is what a node leaving together with others can expect at
-best. Concurrent calls share the one departure and its report, which runs in a task of its own. So
-none severs the connections another is still waiting on, and a caller which is canceled only stops
-waiting. Leaving again after the departure has ended returns its report as well. A node downed
-before it began to leave fails with `LeaveError::Downed`. An endpoint which has neither formed nor
-joined a cluster has nothing to leave. It fails with `LeaveError::NotAMember` and stays as it was,
-so it can still form or join one. A join in progress does not count as a membership: it may still
-make this node a member after the refused leave. A departure which ends without a report, e.g. since
-its task panicked, fails safe. A supervisor awaiting that task then latches this node Downed and
-severs every connection. Only after that does it publish the failure, so every caller, concurrent or
-later, gets `LeaveError::Incomplete` and never a report claiming an acknowledgment. Leaving is
-terminal per incarnation exactly as being downed is, so the process is expected to exit, and only a
-restart rejoins.
+at its address any more does a lane which dials or backs off give up, at once, a connect still
+pending included. A connection closed before the `DrainAck`, a read error and a writer which failed
+or could not finish its stream never count as acknowledged; the marker is not even sent after a
+failed writer. A member which is gone already costs that timeout and then learns the departure from
+another member's gossip, or, with no live path at all, from its own failure detection. Two nodes may
+leave at the same time. Each then usually learns the other's departure and runs its death while its
+own drain towards the other may still be waiting. Either leaver may wait out `leave_timeout` for the
+other, also after it learned the other's departure. The other's `DrainAck` is still taken then,
+while every other frame from that incarnation is dropped, so nothing arrives behind its synthesized
+signals. The call returns a `Departure`, which lists the peers which acknowledged the drain, those
+which did not since the connection ended first or a stream failed (each logged as a warning), and
+those which had not answered when `leave_timeout` passed. A fourth list holds the peers which left
+the cluster themselves before they acknowledged: the incarnation the lane's latest connection
+reached is Left, or the one it was opened for if it never connected, and whether it got what was
+queued for it is unknown. An acknowledgment takes precedence over a Left, while a Down, a suspicion
+or a closed connection never makes a peer departed. `Departure::is_acknowledged` holds only if every
+peer acknowledged, and `Departure::is_complete` also accepts the departed ones, which is what a node
+leaving together with others can expect at best. Concurrent calls share the one departure and its
+report, which runs in a task of its own. So none severs the connections another is still waiting on,
+and a caller which is canceled only stops waiting. Leaving again after the departure has ended
+returns its report as well. A node downed before it began to leave fails with `LeaveError::Downed`.
+An endpoint which has neither formed nor joined a cluster has nothing to leave. It fails with
+`LeaveError::NotAMember` and stays as it was, so it can still form or join one. A join in progress
+does not count as a membership: it may still make this node a member after the refused leave. A
+departure which ends without a report, e.g. since its task panicked, fails safe. A supervisor
+awaiting that task then latches this node Downed and severs every connection. Only after that does
+it publish the failure, so every caller, concurrent or later, gets `LeaveError::Incomplete` and
+never a report claiming an acknowledgment. Leaving is terminal per incarnation exactly as being
+downed is, so the process is expected to exit, and only a restart rejoins.
 
 A leaving node admits no new member. From the moment its own entry is Left, this node answers a join
-from a new address, and one which would supersede a member, with `JoinsHeld`. The announcement of
-its departure is the last thing it enqueues, so no other member would learn of a later admission,
-and the joiner would be a member in this node's list alone. The joiner retries as after any held
-join. Such a join ends the joiner's round, so the seeds behind this node are asked only once it is
-gone, at the latest after `leave_timeout`. A member joining again is still admitted, since that adds
-nothing to announce.
+from a new address, and one which would supersede a member, with `JoinsHeld`. Sends are refused
+right after its departure is announced, so no other member would learn of a later admission, and the
+joiner would be a member in this node's list alone. The joiner retries as after any held join. Such
+a join ends the joiner's round, so the seeds behind this node are asked only once it is gone, at the
+latest after `leave_timeout`. A member joining again is still admitted, since that adds nothing to
+announce.
 
 The departure is part of the gossiped state, so a member recognizes it however it arrives: from the
 leaver itself, or relayed by a third member, which can reach it before the leaver's own announcement
@@ -591,7 +592,8 @@ speaks of a frame beyond `max_frame_size` on the sending side, it means that sma
 the first handshake with a peer has completed, a send is measured against this node's own value. A
 frame queued then which turns out too large for the peer is dropped by the lane's writer as a dead
 letter, never sent. Each side still refuses a received frame beyond its own value. A handshake
-advertising a value below the floor of 205 bytes is refused like one carrying an over-long string.
+advertising a value below the floor of 205 bytes fails like one carrying an over-long string, see
+Rolling upgrades.
 
 All frames from one node toward another ride one lane: a set of outbound queues drained by one
 connection. Sending enqueues synchronously at `tell` time; the receiving endpoint injects into local
@@ -687,12 +689,12 @@ refusal expires after 10 s. Every further refusal doubles that backoff, up to 10
 expired for longer than 10 min is forgotten, so the next one starts at 10 s again. An inbound
 handshake from the address, an admitted join from it or a gossiped Up member at it lifts the refusal
 at once and resets the backoff. Any other transport failure, a TLS handshake failure included, is
-not refused: it is retried up to `max_connect_attempts` times per lane like any other retryable
-failure. A refusal as Down refuses no address either: it tells this node that it is dead itself, so
-this node downs itself (see *Self-down* above). A leaving node leaves that to its leave, and its
-departure counts that peer as unacknowledged. A connection's reader is aborted before the next one
-is dialed, so two readers for one peer can never interleave a frame buffered on the dead connection
-behind a frame from the new one.
+not refused: it is retried like any other retryable failure, up to `max_connect_attempts` times per
+lane towards an address no Up member advertises. A refusal as Down refuses no address either: it
+tells this node that it is dead itself, so this node downs itself (see *Self-down* above). A leaving
+node leaves that to its leave, and its departure counts that peer as unacknowledged. A connection's
+reader is aborted before the next one is dialed, so two readers for one peer can never interleave a
+frame buffered on the dead connection behind a frame from the new one.
 
 A lane belongs to an address but serves one incarnation: the handshake names the peer it is
 connected to. From then on a frame addressed to any other incarnation at that address is a local
@@ -708,10 +710,10 @@ way.
 - **The tell contract extends verbatim.** Fire-and-forget, at-most-once; an unreachable node, a
   full outbound queue, a message encoding beyond `max_frame_size` and an undecodable payload all
   become logged dead letters. Undecodable includes a payload whose embedded reference names an
-  actor of the receiving node which has already terminated: the whole message is the dead letter
-  then, unlike a local tell to a terminated actor, which costs only itself. Undecodable also
-  includes a payload, of a message or of a reply, whose `Schema::decode` panics. The panic is
-  logged at error level, and the stream reader goes on with the next frame.
+  actor of the receiving node which has already terminated or takes another message type: the whole
+  message is the dead letter then, unlike a local tell to a terminated actor, which costs only
+  itself. Undecodable also includes a payload, of a message or of a reply, whose `Schema::decode`
+  panics. The panic is logged at error level, and the stream reader goes on with the next frame.
 - **Per-sender FIFO holds** for messages from one sender to one target, "with gaps" across
   reconnects as above.
 - **Remote death watch has two tiers**, indistinguishable in the API:
@@ -852,8 +854,10 @@ A `Key<M>` carries the message type next to the name, and the type travels as it
 implements `cluster::Manifest`, whose `MANIFEST` is a stable name chosen by the application, e.g.
 `"worker-job"`. A key naming another manifest is refused as `TypeMismatch` rather than resolved into
 a reference which drops every message told to it. The bytes of `serialize_ref` carry the manifest
-the same way. A reference inside a message carries only its node and actor ID, so nothing refuses
-one decoded as the wrong type.
+the same way. A reference inside a message carries only its node and actor ID. On the node of the
+actor it names, decoding a reference as another message type fails, since that node checks the type
+the actor was bound with. The whole message is then dead-lettered as undecodable. On any other node
+nothing checks its type.
 
 tellus compares manifests, but it cannot check that a manifest names the same type on every node. A
 manifest must be unique per type across the cluster, and every node must use a compatible payload
@@ -944,10 +948,13 @@ one is refused as `CodecMismatch`, terminal like `ForeignCluster`, so switching 
 rolling upgrade. The codec is one of the variants of `cluster::codec::Codec`, so there is no custom
 codec. Persistence has a `Codec` of its own, a trait an application may implement, see
 [persistence.md](persistence.md). The rendered application version is bounded to 64 bytes, refused
-by `start_endpoint`. A peer's handshake whose codec name or application version exceeds 64 bytes, or
-whose application version is not a semantic version, does not decode: the acceptor drops the
-connection without a refusal, and the dialer retries. The widest handshake, 205 bytes, is the floor
-of `max_frame_size`.
+by `start_endpoint`. A dialer's handshake whose codec name or application version exceeds 64 bytes,
+or whose application version is not a semantic version, fails the acceptor's checks. The acceptor
+drops the connection without a refusal, and the dialer retries as after any failed connection
+attempt: towards an address no Up member advertises up to `max_connect_attempts` times, towards a
+member until the downing provider settles its fate. A reply handshake failing the same checks fails
+the dial like an answer which does not speak this protocol, see The wire model. The widest
+handshake, 205 bytes, is the floor of `max_frame_size`.
 
 ## Receptionist
 

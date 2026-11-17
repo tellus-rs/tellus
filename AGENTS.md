@@ -400,9 +400,10 @@ Item order within a file:
   the run loop, with links into the implementation. Read it before changing `tellus/src`; keep it
   consistent with implementation changes.
 - `docs/persistence.md`: the equally authoritative contract of event-sourced persistence (feature
-  `persistence`, `tellus/src/persistence/`): replay equals live execution, effects gated on
-  durability, strict per-command settlement, fencing via conditional append, schema evolution via
-  manifest plus schema version. `tellus/tests/persistence.rs` encodes these guarantees.
+  `persistence`, `tellus/src/persistence/`): replay equals live execution if every event and
+  snapshot survives its codec's round trip, effects gated on durability, strict per-command
+  settlement, fencing via conditional append, schema evolution via manifest plus schema version.
+  `tellus/tests/persistence.rs` encodes these guarantees.
 - `docs/cluster.md`: the same for the feature-gated `cluster` module, in particular which core
   guarantees carry over the network and which weaken; keep it consistent with `tellus/src/cluster`.
 - `mentor/`: generated code-review artifacts, not source code.
@@ -490,13 +491,14 @@ cross-file invariants:
   refuses joins (`RefusalReason::NoCluster`), `form` (`endpoint.rs`) makes it a cluster of one and
   `join` makes it a member through a seed's member snapshot, applied as one snapshot once its last
   chunk arrived; joins are exclusive per endpoint and pin the cluster which answered, a join failing
-  after its `Join` handshake short of a definitive answer is recorded as ambiguous and refuses
-  `form` (`FormError::JoinAmbiguous`) until that address answers, leaves the universe or
-  `ambiguous_join_bound` passes, and `bootstrap` asks a `FormationProvider` (`formation.rs`, default
-  `Majority`: the lowest address of the discovered universe, once a majority of it is known to be no
-  cluster; the opt-in `MajorityWithFallback` skips a lowest address unavailable for its `after`; a
-  provider answers a `Decision` with a `Declined` reason) when no address of a settled view is a
-  member of anything, which is what stops a downed minority from re-forming inside a partition,
+  after its `Join` handshake and before the pin, short of a definitive answer, is recorded as
+  ambiguous and refuses `form` (`FormError::JoinAmbiguous`) until that address answers, leaves the
+  universe or `ambiguous_join_bound` passes, and `bootstrap` asks a `FormationProvider`
+  (`formation.rs`, default `Majority`: the lowest address of the discovered universe, once a
+  majority of it is known to be no cluster; the opt-in `MajorityWithFallback` skips a lowest
+  address unavailable for its `after`; a provider answers a `Decision` with a `Declined` reason)
+  when no address of a settled view is a member of anything, which is what stops a downed minority
+  from re-forming inside a partition as long as the discovery yields every node,
   `leave` (`leave.rs`) announces a departure by moving this node's own entry to Left, pushing it to
   every Up member, draining every lane within one `leave_timeout` deadline (the lane finishes its
   data streams, sends a `Drained` frame naming their number as its last control frame and counts as
@@ -529,7 +531,7 @@ cross-file invariants:
   contract true by construction. No provider downs either end of a broken link, a direct edge
   reported unreachable between two members inside the component (`reachability.rs`);
   `ClusterState::broken_links` lists it and the `member directly unreachable` warning repeats every
-  minute, naming `cluster::down`. Remote watch is two tier: a real termination keeps the local
+  minute, naming `cluster::down`. Remote watch is two-tier: a real termination keeps the local
   guarantees, a synthesized signal only promises that nothing from that node is delivered again.
   Under mutual TLS the admission (`peer.rs`) binds a peer's advertised address to its certificate's
   `tellus://<ip:port>` URI SANs, or without one its advertised IP to the IP SANs, both directions.
@@ -559,8 +561,9 @@ negotiated version. Every wire change updates the pinned-byte tests in `frame.rs
 crossing nodes implements `cluster::Schema` (`cluster/schema.rs`, required by `Manifest`):
 `VERSION`, `encode`, which sees the `Peer` with the application version its handshake announced
 (kept per node in `EndpointInner::peers`, a leaf lock evicted in `flush_fenced`), and `decode`,
-which upcasts; tellus implements it only for types with one shape forever, so a container of an
-application type needs a wrapper. `docs/cluster.md`, "Rolling upgrades", is the contract.
+which upcasts only where overridden; tellus implements it only for types with one shape forever, so
+a container of an application type needs a wrapper. `docs/cluster.md`, "Rolling upgrades", is the
+contract.
 
 Changes to the run loop, mailbox or termination sequence almost always affect the ordering and
 watch guarantees spelled out in `docs/actors.md`; the integration tests in `tellus/tests/` encode
