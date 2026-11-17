@@ -1,3 +1,6 @@
+//! Renders the criterion results of the latest comparison run as an HTML report and a
+//! `results.json`, rerenders a report from such a JSON file, or writes the index over all reports.
+
 use anyhow::{Context, bail};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

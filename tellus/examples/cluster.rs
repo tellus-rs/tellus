@@ -24,8 +24,8 @@
 //! single command runs the whole cluster.
 //!
 //! The results are printed to stdout and tellus logs to stderr; the log level is configured via
-//! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet --features cluster-dev --example
-//! cluster`.
+//! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev
+//! --example cluster`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

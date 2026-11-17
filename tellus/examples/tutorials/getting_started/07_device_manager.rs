@@ -99,11 +99,11 @@ impl Actor for DeviceManager {
         incoming: Incoming<Self::Message>,
         mut groups: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        let Incoming::Message(command) = incoming else {
+        let Incoming::Message(message) = incoming else {
             unreachable!("the manager watches no actor, hence never gets a terminated signal")
         };
 
-        match command {
+        match message {
             DeviceManagerMessage::Record {
                 group_name,
                 device_name,

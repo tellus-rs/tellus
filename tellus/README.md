@@ -137,7 +137,7 @@ build which does not ask for it.
 
 ## Core concepts
 
-This is a short tour. For the full picture, top-down with links into the implementation, see
+This is a short tour. For the details, top-down with links into the implementation, see
 [docs/actors.md](../docs/actors.md), and [docs/cluster.md](../docs/cluster.md) for remoting.
 
 ### Actors and state
@@ -152,7 +152,7 @@ The `Error` associated type makes a failure an ordinary return value (`Infallibl
 that cannot fail). Inside `receive`, use `?` to escalate a failure to supervision and an explicit
 `match` to handle it as part of the domain.
 
-`receive` is synchronous and runs on a Tokio worker: an actor cannot be stopped while `receive` is
+`receive` is synchronous and runs on a Tokio worker. An actor cannot be stopped while `receive` is
 running, so a `receive` which never completes keeps all its ancestors from terminating. For
 long-running or blocking work, use `ActorContext::pipe_to_self`: it runs a future on its own task
 and delivers the output to the actor as an ordinary message, which a full bounded mailbox does not
@@ -271,6 +271,9 @@ every format into one value tree before deserializing, which makes the YAML abov
 and it reports the key path along with any error. Note that `serde_yaml` deserializes the
 same types differently, expecting a YAML tag (`supervision_strategy: !restart`) instead.
 
+The `serde` feature also makes `PersistenceId` serializable, and with `cluster` the observed cluster
+state: `ClusterState`, `BrokenLink`, `ForeignCluster`, `Transition`, `Change` and `Settlement`.
+
 Anything omitted falls back to its default, except `max_restarts`, which a `restart` section must
 name, and the bounds of a `backoff` table, which needs both `min` and `max`. Invalid backoff bounds
 are rejected rather than silently repaired: `Backoff::new` is fallible and deserialization goes
@@ -283,11 +286,11 @@ max backoff 1s below min backoff 10s for key `supervision_strategy.backoff`
 min backoff is zero for key `supervision_strategy.backoff`
 ```
 
-The cluster configuration works the same way, with the `cluster` and `serde` features. In the
-`endpoint` and `bootstrap` sections only the advertised address is required; everything else falls
-back to the `DEFAULT_*` constant of its field, except that a `reconnect_backoff` needs both `min`
-and `max`. Every field of the `transport` section is required. Each pluggable family is chosen by
-the name of one of the provided implementations. The three top-level keys below belong to no
+The cluster configuration works the same way, with the `cluster` and `serde` features. The
+`endpoint` section requires only the advertised address, and the `bootstrap` section requires
+nothing. Every other field falls back to its default, except that a `reconnect_backoff` needs both
+`min` and `max`. Every field of the `transport` section is required. Each pluggable family is chosen
+by the name of one of the provided implementations. The three top-level keys below belong to no
 tellus type: the application defines the struct holding them.
 
 ```yaml
@@ -318,16 +321,16 @@ transport:
   server_name: tellus
 ```
 
-A custom failure detector, downing provider or formation provider is not something a config file
-can name, so those stay code: the fields are public and take the implementation after the config
-was loaded. Validation holds across the boundary here too: deserialization refuses exactly
-what `start_endpoint` and `bootstrap` refuse. Examples are an advertised address with an unspecified
-IP or a zero port, a zero heartbeat interval, a frame size too small for one member or one
-reachability record and a zero resolve interval. `InvalidEndpointConfig` and
-`InvalidBootstrapConfig` list every case. The seed addresses are configuration as well: a plain list
-for `FixedSeeds`, which refuses an empty one, the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod
-selector of [tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by
-path, which `QuicTransport::from_config` reads.
+A custom failure detector, downing provider or formation provider is not something a config file can
+name, so those stay code: the fields are public and take the implementation after the config was
+loaded. Validation holds across the boundary here too: deserialization refuses exactly what
+`start_endpoint` and `bootstrap` refuse. Examples are an advertised address with an unspecified IP
+or a zero port, a zero heartbeat interval, a frame size too small for the widest handshake and a
+zero resolve interval. `InvalidEndpointConfig` and `InvalidBootstrapConfig` list every case. The
+seed addresses are configuration as well: a plain list for `FixedSeeds`, which refuses an empty one,
+the DNS query of [tellus-bootstrap-dns](../tellus-bootstrap-dns) or the pod selector of
+[tellus-bootstrap-k8s](../tellus-bootstrap-k8s). `QuicConfig` names its PEM files by path, which
+`QuicTransport::from_config` reads.
 
 ### Event-sourced persistence
 
@@ -430,7 +433,6 @@ Beyond the tutorials:
   ```shell
   RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev --example cluster
   ```
-
 
 - [`work_pulling`](examples/work_pulling.rs): workers request jobs from a manager whenever they
   are ready, so a bounded mailbox of capacity one suffices, which gives backpressure without

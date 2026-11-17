@@ -65,7 +65,8 @@ kill_node() {
 }
 
 # The same command with its grace period intact: the kubelet sends SIGTERM, the node announces
-# its departure and the cluster downs it within a gossip round instead of detecting its silence.
+# its departure and the cluster lists it as Left within a gossip round instead of detecting its
+# silence.
 leave_node() {
     state "leave $(pod "$1")"
     kubectl delete pod "$(pod "$1")" || echo "kubectl delete failed"

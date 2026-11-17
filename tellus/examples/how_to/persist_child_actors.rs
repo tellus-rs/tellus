@@ -3,6 +3,9 @@
 //! with `Effect::persist_all` and forgets them once `EXPIRE_AFTER` has passed without a new batch.
 //! The expiry is a timer, which replay does not recreate, so the device starts it again in
 //! `EventSourced::recovered`.
+//!
+//! Run it with `cargo run --quiet -p tellus --features persistence-in-memory --example
+//! how_to_persist_child_actors`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

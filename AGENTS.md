@@ -70,7 +70,7 @@ Tasks are defined in the [justfile](justfile):
   features its target requires, or cargo refuses it and names them (`--features persistence-in-memory` for
   `persistence.rs`, `host_persistence.rs` and `persistence_tests.rs`, which also needs
   `persistence-tests`). Integration tests live in `tellus/tests/`: `ask.rs`, `persistence.rs`,
-  `fairness.rs`, `how_to_unit_test.rs`, `how_to_unit_test_event_sourced.rs`,
+  `fairness.rs`, `host.rs`, `host_persistence.rs`, `how_to_unit_test.rs`, `how_to_unit_test_event_sourced.rs`,
   `persistence_tests.rs`, `pipe_to_self.rs`, `queued.rs`, `stash.rs`, `supervision.rs`, `termination.rs`,
   `test_context.rs`, `test_context_persistence.rs`, `timers.rs`, `watch.rs`, plus `cluster.rs`,
   which needs `--features cluster-dev,__internal`, has no test harness and runs its scenarios from `main`,
@@ -140,12 +140,12 @@ Benchmarks:
   counts of `spawn_event_sourced_untimed::<Counter>` and `replay_page`. `just bench-save
   <baseline>` / `just bench-compare <baseline>` and the `bench-persistence-*` and `bench-stash-*`
   pairs for local before/after comparisons.
-  CI benchmarks every PR against its merge base, all three benches, and posts the comparison as an
+  CI benchmarks every PR, as its merge result, against the tip of `main`, all three benches, and posts the comparison as an
   informational PR comment; it does not fail the build. The report flags a benchmark whose 95%
   confidence lower bound exceeds `bench_regression_threshold`, but that verdict is not gate-grade
   on a shared CI runner: `flood/bounded` measured +19.9%, +13.3%, -9.5%, -35.7% and +8.1% across
   five runs of identical code, each with a tight criterion confidence interval, because criterion
-  sees within-run variance only. Pushes to `main` additionally publish the three benches to the
+  sees within-run variance only. Pushes to `main` and manual runs on `main` additionally publish the three benches to the
   gh-pages dashboard (`dev/bench`) via `bench-bencher`, `bench-persistence-bencher` and
   `bench-stash-bencher`, one section per store-result step name: "Core" (messaging), "Persistence"
   and "Stash". Adding a section means
@@ -171,8 +171,8 @@ Benchmarks:
 - `just bench-cluster`: the remoting throughput and latency numbers (pipelined and serial tells and
   asks, a bulk transfer), run by the `cluster.rs` test in its bench role across spawned processes;
   not part of CI, for comparing before and after a change to `tellus/src/cluster`.
-- `just bench-gossip <size>`: the gossip bytes per second of an idle cluster of `size` spawned
-  processes (default 5), after a warm-up, from the `__internal` counter `cluster::gossip_bytes`;
+- `just bench-gossip <size>`: the gossip bytes per second of an idle cluster of `size` nodes
+  (default 5), this process and `size - 1` spawned ones, after a warm-up, from the `__internal` counter `cluster::gossip_bytes`;
   not part of CI.
 - `just bench-streams <streams>`: bulk throughput from one node to one actor and ask latency p50,
   p99 and p99.9 towards echo actors on the target's node and on a third node during the transfer,

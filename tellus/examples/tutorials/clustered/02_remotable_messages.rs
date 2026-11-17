@@ -1,9 +1,9 @@
 //! Step 2 of the clustered actors tutorial: the device manager of the getting started tutorial
 //! moves to a node of its own, and the first node sends it readings and asks it for averages.
 //!
-//! Only the messages crossing the wire need serde derives, and only the ones looked up under a key
-//! need a manifest: `Command` needs both, while the messages of the groups, devices and queries
-//! never leave the device manager's node.
+//! Only the messages crossing the wire need serde derives and `Schema`, and only the ones looked
+//! up under a key need a manifest: `Command` needs all three, while the messages of the groups,
+//! devices and queries never leave the device manager's node.
 //!
 //! The averages are printed to stdout by the first node; tellus logs to stderr, configured via
 //! `RUST_LOG`, e.g. `RUST_LOG=tellus=debug cargo run --quiet -p tellus --features cluster-dev

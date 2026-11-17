@@ -4,7 +4,7 @@
 implemented by `Postcard`. The trait had to be object safe, so every payload was serialized
 through `erased_serde`, one dynamic call per field and per element. A message carrying a
 `Vec<u8>` of 64 KiB decoded at 21 MiB/s on Linux. Without the trait, encoding and decoding are
-static calls into postcard. On a 10-core arm64 machine, bulk transfer went from 97 to 713 MiB/s
+static calls into postcard. On a 10 core arm64 machine, bulk transfer went from 97 to 713 MiB/s
 and pipelined round trips from 534,000 to 1,462,000 per second. The bytes on the wire are
 unchanged.
 

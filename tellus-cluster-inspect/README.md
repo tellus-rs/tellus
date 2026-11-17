@@ -61,7 +61,7 @@ with that id in `Last-Event-ID` continues right after it, provided the log (`eve
 messages, 1024 by default) still retains that position; the hello then says `resumed: true`.
 
 Otherwise the hello says `resumed: false` and the client is handed a recovery: the retained
-history oldest first, without ids, then the current state and the current verdict, of which only
+history oldest first, without IDs, then the current state and the current verdict, of which only
 the last carries an id. So a client that drops in the middle of the recovery holds no position and
 recovers again, and one that got through resumes from a position at which everything newer than
 the pair follows. A changed `started_at` between two hellos means the node restarted.
@@ -87,3 +87,8 @@ refused.
 The bounded log behind `GET /events` is public as `tellus_cluster_inspect::events` (`EventLog`,
 `Replay`, `Stamped`, `Cursor`, `InvalidCursor`, `sse`, `last_event_id` and `now_millis`), so an
 application can serve a resumable stream of its own events the same way.
+
+## License
+
+This code is open source software licensed under the
+[Apache 2.0 License](http://www.apache.org/licenses/LICENSE-2.0.html).

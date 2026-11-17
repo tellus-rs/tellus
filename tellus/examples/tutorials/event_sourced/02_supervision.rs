@@ -1,6 +1,9 @@
 //! Step 2 of the event-sourced actors tutorial: an invalid reading fails the device, which restarts
 //! under the `Restart` supervision strategy and recovers its last reading by replay, unlike the
 //! plain device of the getting started tutorial, which loses it.
+//!
+//! Run it with `cargo run --quiet -p tellus --features persistence-in-memory --example
+//! event_sourced_02_supervision`.
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};

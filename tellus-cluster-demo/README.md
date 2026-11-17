@@ -92,30 +92,31 @@ Under Docker Compose:
   application. The cluster handles the departure through `leave` rather than through failure
   detection. A container signaled through the Docker API counts as manually stopped, so no restart
   policy brings it back and the agent starts it again itself. The roll writes the target version to
-  a file on the shared volume, which every container start reads into
-  `CFG__ENDPOINT__APP_VERSION`, then stops and restarts the nodes one at a time, a quiet window
-  after each, so the verifier checks every mixed cluster; the next roll goes back. It names the
-  fault it is running in a state file, which lets the verifier tell a legitimate disagreement from a
-  violation. It names `startup` there before doing anything else, so a `quiet` left behind by its
-  predecessor is never taken for a quiet window. On every exit, and again at startup, it stops the
-  pumba containers, which removes their rules, and starts every node, so no fault outlives it.
+  a file on the shared volume, which every container start reads into `CFG__ENDPOINT__APP_VERSION`.
+  Then it stops and restarts the nodes one at a time, a quiet window after each, so the verifier
+  checks every mixed cluster. The next roll goes back. It names the fault it is running in a state
+  file, which lets the verifier tell a legitimate disagreement from a violation. It names `startup`
+  there before doing anything else, so a `quiet` left behind by its predecessor is never taken for a
+  quiet window. On every exit, and again at startup, it stops the pumba containers, which removes
+  their rules, and starts every node, so no fault outlives it.
 - **The verifier** (`src/bin/verifier.rs`), polling the load balancer twice a second. Once per quiet
   window it checks that every node is a member, that every node sees all five as Up, none of them as
   unreachable and no broken link between them. It also checks that every node's receptionist
   resolves all five workers and is settled at the version it shows. A node whose verdict judges an
   older version than its state is asked again, up to five times, since a node reads the verdict
-  before the state and the receptionist judges a version only once it is published. Every node must resolve all five
-  subscribers of the event topic and have received an event from every node within the last three
-  seconds, and every node must have probed and messaged every other one. An address listed as Up or
-  heard from on the topic which no node advertises is a violation as well. Before those it checks for a
-  split brain, two members whose Up sets do not overlap, and checks nothing further if it finds one.
-  A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation too, at any time. Every
-  node also reports the version of the application it runs. A verification seeing more than one is
-  mixed, and its messaging check is what proves that the versions talk to each other. A uniform
-  version replacing another is a violation unless every mixed cluster in between, one to four
-  nodes on the new version, was verified: a roll which outruns the verifier is reported, not
-  missed. It serves its own `/events` stream as well: the chaos transitions it reads from the state
-  file, each verdict, each violation and each change of the load balancer's availability.
+  before the state and the receptionist judges a version only once it is published. Every node must
+  resolve all five subscribers of the event topic and have received an event from every node within
+  the last three seconds, and every node must have probed and messaged every other one. An address
+  listed as Up or heard from on the topic which no node advertises is a violation as well. Before
+  those it checks for a split brain, two members whose Up sets do not overlap, and checks nothing
+  further if it finds one. A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation
+  too, at any time. Every node also reports the version of the application it runs. A verification
+  seeing more than one is mixed, and its messaging check is what proves that the versions talk to
+  each other. A uniform version replacing another is a violation unless every mixed cluster in
+  between, one to four nodes on the new version, was verified: a roll which outruns the verifier is
+  reported, not missed. It serves its own `/events` stream as well: the chaos transitions it reads
+  from the state file, each verdict, each violation and each change of the load balancer's
+  availability.
 
 On Kubernetes the nodes are a StatefulSet of five behind a headless service, and the load balancer
 is a service rather than Caddy. A partition is a pair of NetworkPolicies the agent switches on by

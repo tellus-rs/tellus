@@ -1,13 +1,13 @@
 # tellus-bootstrap-dns
 
-DNS seed discovery for [tellus](../tellus) cluster bootstrap: `DnsSeeds` implements
-`SeedDiscovery`, resolving seed addresses from SRV records, which carry address and port (e.g. a
-Kubernetes headless service), or from A/AAAA records paired with a configured port.
-SRV targets are resolved concurrently and independently: a failing target is logged at warn level
-and skipped while any other target resolves, and a view resolving no address at all remains an error for bootstrap to
-retry. A stale target and a transient failure are indistinguishable to the resolver and are hence
-skipped alike. A partial view does settle, so a target failing throughout the settle window shrinks
-the universe the formation provider counts its majority against.
+DNS seed discovery for [tellus](../tellus) cluster bootstrap: `DnsSeeds` implements `SeedDiscovery`,
+resolving seed addresses from SRV records, which carry address and port (e.g. a Kubernetes headless
+service), or from A/AAAA records paired with a configured port. SRV targets are resolved
+concurrently and independently: a failing target is logged at warn level and skipped while any other
+target resolves, and a view resolving no address at all remains an error for bootstrap to retry. A
+stale target and a transient failure are indistinguishable to the resolver and are hence skipped
+alike. A partial view does settle, so a target failing throughout the settle window shrinks the
+universe the formation provider counts its majority against.
 
 The default resolver keeps no response cache. Bootstrap queries DNS before every join round, and
 again after a round it would decide formation on, to see nodes come and go; the rounds are
@@ -62,7 +62,7 @@ That is the normalized map form a loader like [config](https://crates.io/crates/
 which is the one tellus's own configuration assumes; `serde_yaml` expects a YAML tag (`seeds:
 !srv ...`) instead, see the configuration section of the [tellus README](../tellus/README.md).
 
-## Kubernetes
+## Deploying on Kubernetes
 
 A headless service over the node pods is all this crate needs, so nothing but the service name is
 configured:

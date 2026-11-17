@@ -41,9 +41,9 @@ Three workloads, modeled on [`tellus/benches/messaging.rs`](../tellus/benches/me
 
 - `flood`: the bench thread floods a single counting actor with 100,000 messages.
 - `ping_pong`: pairs of actors play ping-pong for 1,000 rounds, with one pair and eight pairs.
-- `fan_out`: the bench thread sends 100,000 messages round-robin to eight and to 32 workers.
+- `fan_out`: the bench thread sends 100,000 messages round robin to eight and to 32 workers.
 
-Actor counts are fixed, so benchmark ids stay stable across machines and published results remain
+Actor counts are fixed, so benchmark IDs stay stable across machines and published results remain
 comparable. Unlike the tellus bench, `fan_out` has the bench thread rather than a root actor
 distribute the messages.
 
@@ -68,12 +68,13 @@ The point of these benchmarks is that all three frameworks perform the *same wor
 3. **Non-blocking fire-and-forget sends only.** tellus `ActorRef::tell`, kameo
    `tell(..).try_send()`, ractor `ActorRef::send_message`. No awaited sends (that is backpressure,
    a different guarantee) and no request-response calls.
-4. **Identical timing boundaries.** Every framework goes through the same `measure` helper:
-   spawning happens outside the measured region, up to the end of every actor's startup hook
-   (tellus `init`, kameo `on_start`, ractor `pre_start`), and the timer covers sending plus
-   awaiting termination. In `ping_pong` that includes both actors of a pair: tellus tears the ponger down
-   as a child of the pinger, kameo and ractor stop and await it in the pinger's stop hook.
-5. **Identical runtime**: one multi-threaded Tokio runtime, same configuration for all.
+4. **Identical timing boundaries.** Every framework goes through the same `measure` helper: spawning
+   happens outside the measured region, up to the end of every actor's startup hook (tellus `init`,
+   kameo `on_start`, ractor `pre_start`), and the timer covers sending plus awaiting termination. In
+   `ping_pong` that includes both actors of a pair: tellus tears the ponger down as a child of the
+   pinger, kameo and ractor stop and await it in the pinger's stop hook.
+5. **Identical runtime**: one multi-threaded Tokio runtime per benchmark group, same configuration
+   for all.
 6. **Competitors get their fastest configuration** (see below).
 
 Termination is also the correctness check: each actor only stops once it has processed exactly its
