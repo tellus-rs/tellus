@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794914678149,
+  "lastUpdate": 1794914679581,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35745,6 +35745,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5492056,
             "range": "± 736241",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6e88e7f2c3d68ca21545561761da04935469a8eb",
+          "message": "Merge pull request #468 from tellus-rs/style/cluster-endpoint-membership\n\nstyle(cluster): order, scope and name the endpoint and membership code",
+          "timestamp": "2026-11-17T12:16:03+01:00",
+          "tree_id": "d1f9034425b71971e911d4333a205a0c21adb042",
+          "url": "https://github.com/tellus-rs/tellus/commit/6e88e7f2c3d68ca21545561761da04935469a8eb"
+        },
+        "date": 1794914679308,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 25077829,
+            "range": "± 1138734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24524856,
+            "range": "± 1234823",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5109289,
+            "range": "± 310132",
             "unit": "ns/iter"
           }
         ]
