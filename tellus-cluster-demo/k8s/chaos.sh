@@ -51,7 +51,7 @@ pause() {
 # The partition policies are static and label driven, so an agent which died mid partition would
 # leave the cluster split for good; this runs at startup and on every exit.
 heal() {
-    kubectl label pod -l "$SELECTOR" side- --request-timeout="${REQUEST_TIMEOUT_SECS}s" \
+    timeout "$REQUEST_TIMEOUT_SECS" kubectl label pod -l "$SELECTOR" side- \
         > /dev/null || echo "chaos: cannot clear the side labels" >&2
 }
 
