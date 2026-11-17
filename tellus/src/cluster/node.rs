@@ -3,6 +3,35 @@ use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use uuid::Uuid;
 
+/// The identity of one process at an address, opaque: it can be compared, ordered, hashed,
+/// printed and serialized, nothing else. Ordered, since UUIDv7 is time based: the younger
+/// incarnation on a host compares greater, which is what resolves two incarnations at one address
+/// toward the restart.
+#[derive(
+    Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct Incarnation(Uuid);
+
+impl Incarnation {
+    fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
+/// The identity of one cluster, minted when a node forms it and adopted by every node joining
+/// it, opaque: it can be compared, ordered, hashed, printed and serialized, nothing else.
+/// Ordered, since UUIDv7 is time based: a cluster formed later compares greater.
+#[derive(
+    Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
+)]
+pub struct ClusterId(Uuid);
+
+impl ClusterId {
+    pub(crate) fn new() -> Self {
+        Self(Uuid::now_v7())
+    }
+}
+
 /// Address plus per-process incarnation, so a restart is distinguishable from its predecessor.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[display("{addr}#{incarnation}")]
@@ -33,35 +62,6 @@ impl NodeId {
 
     pub(crate) fn covers(&self, other: NodeId) -> bool {
         self.addr == other.addr && other.incarnation <= self.incarnation
-    }
-}
-
-/// The identity of one process at an address, opaque: it can be compared, ordered, hashed,
-/// printed and serialized, nothing else. Ordered, since UUIDv7 is time based: the younger
-/// incarnation on a host compares greater, which is what resolves two incarnations at one address
-/// toward the restart.
-#[derive(
-    Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub struct Incarnation(Uuid);
-
-impl Incarnation {
-    fn new() -> Self {
-        Self(Uuid::now_v7())
-    }
-}
-
-/// The identity of one cluster, minted when a node forms it and adopted by every node joining
-/// it, opaque: it can be compared, ordered, hashed, printed and serialized, nothing else.
-/// Ordered, since UUIDv7 is time based: a cluster formed later compares greater.
-#[derive(
-    Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
-pub struct ClusterId(Uuid);
-
-impl ClusterId {
-    pub(crate) fn new() -> Self {
-        Self(Uuid::now_v7())
     }
 }
 

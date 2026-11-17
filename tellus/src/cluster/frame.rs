@@ -1,3 +1,59 @@
+mod payload_bytes {
+    use serde::{
+        Deserializer, Serializer,
+        de::{Error, Visitor},
+    };
+    use std::{
+        borrow::Cow,
+        fmt::{self, Formatter},
+    };
+
+    pub(super) fn serialize<S>(payload: &[u8], serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_bytes(payload)
+    }
+
+    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Cow<'de, [u8]>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        deserializer.deserialize_bytes(BytesVisitor)
+    }
+
+    struct BytesVisitor;
+
+    impl<'de> Visitor<'de> for BytesVisitor {
+        type Value = Cow<'de, [u8]>;
+
+        fn expecting(&self, formatter: &mut Formatter<'_>) -> fmt::Result {
+            formatter.write_str("a byte payload")
+        }
+
+        fn visit_borrowed_bytes<E>(self, value: &'de [u8]) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(Cow::Borrowed(value))
+        }
+
+        fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(Cow::Owned(value.to_vec()))
+        }
+
+        fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Self::Value, E>
+        where
+            E: Error,
+        {
+            Ok(Cow::Owned(value))
+        }
+    }
+}
+
 use crate::{
     ActorId, SchemaVersion,
     cluster::{
@@ -122,59 +178,6 @@ pub(crate) enum Frame<'a> {
 
     // The acceptor's answer to `Drained`, on the reply direction of the control stream.
     DrainAck,
-}
-
-mod payload_bytes {
-    use serde::{
-        Deserializer, Serializer,
-        de::{Error, Visitor},
-    };
-    use std::{borrow::Cow, fmt::Formatter};
-
-    pub(super) fn serialize<S>(payload: &[u8], serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_bytes(payload)
-    }
-
-    pub(super) fn deserialize<'de, D>(deserializer: D) -> Result<Cow<'de, [u8]>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        deserializer.deserialize_bytes(BytesVisitor)
-    }
-
-    struct BytesVisitor;
-
-    impl<'de> Visitor<'de> for BytesVisitor {
-        type Value = Cow<'de, [u8]>;
-
-        fn expecting(&self, formatter: &mut Formatter<'_>) -> std::fmt::Result {
-            formatter.write_str("a byte payload")
-        }
-
-        fn visit_borrowed_bytes<E>(self, value: &'de [u8]) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(Cow::Borrowed(value))
-        }
-
-        fn visit_bytes<E>(self, value: &[u8]) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(Cow::Owned(value.to_vec()))
-        }
-
-        fn visit_byte_buf<E>(self, value: Vec<u8>) -> Result<Self::Value, E>
-        where
-            E: Error,
-        {
-            Ok(Cow::Owned(value))
-        }
-    }
 }
 
 impl<'a> Frame<'a> {
