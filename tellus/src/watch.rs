@@ -5,9 +5,8 @@ use std::{
 };
 use thiserror::Error;
 
-/// Shared by the watched actor's [MailboxHandle](crate::mailbox::MailboxHandle) and by every
-/// watcher's [ActorContext](crate::ActorContext): a watcher keeps a clone to deregister itself at
-/// termination, with no [ActorRef](crate::ActorRef) to the watched actor left.
+/// Shared by the watched actor and by every watcher, which keeps a clone to deregister itself at
+/// termination, with no reference to the watched actor left.
 #[derive(Clone)]
 pub(crate) struct WatcherRegistry(Arc<Mutex<Option<HashMap<ActorId, Watcher>>>>);
 

@@ -32,7 +32,6 @@ impl Backoff {
         if max < min {
             return Err(InvalidBackoff::MaxBelowMin { min, max });
         }
-
         Ok(Self { min, max })
     }
 

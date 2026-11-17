@@ -71,10 +71,11 @@ where
         self.stop_root_tx.send_replace(());
     }
 
-    /// Wait until the root actor and all its descendants have terminated.
+    /// Wait until the root actor and all its descendants have terminated. No ordinary termination
+    /// makes this fail.
     ///
     /// # Errors
-    /// Fails if the root's termination cannot be observed, which no ordinary termination causes.
+    /// Fails if the root's termination cannot be observed.
     pub async fn terminated(self) -> Result<(), TerminatedError> {
         self.terminated_rx.await?;
         Ok(())
@@ -124,9 +125,7 @@ pub(crate) fn watch_root<M>(
     terminated_rx
 }
 
-/// `_stop_root_tx` keeps the root actor running: living in the root's own watcher registry, it is
-/// dropped only once termination has signaled the watchers. [ActorSystem] holds the other
-/// reference, hence dropping a system stops nothing while [ActorSystem::stop] can still send.
+/// `_stop_root_tx` keeps the root running until its termination has signaled the watchers.
 struct RootTerminatedHandler {
     terminated_tx: Mutex<Option<oneshot::Sender<()>>>,
     _stop_root_tx: Arc<watch::Sender<()>>,

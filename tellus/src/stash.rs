@@ -97,7 +97,7 @@ use crate::{Codec, EventSourced, EventStore, Persistence, SnapshotStore, persist
 use std::{cell::RefCell, cmp, collections::VecDeque, mem, num::NonZeroUsize};
 use tokio::sync::watch;
 
-pub(crate) const STASHED_FAILED_TO_DROP: &str = "stashed message failed to drop";
+const STASHED_FAILED_TO_DROP: &str = "stashed message failed to drop";
 
 /// Whether an actor stashes, chosen per actor type via [Actor::Stash] and [EventSourced::Stash]:
 /// [Unstashed] or [Stashed]. Sealed: these two are the only modes.
@@ -405,26 +405,6 @@ pub struct Stash<M> {
 }
 
 impl<M> Stash<M> {
-    pub(crate) fn new(capacity: MailboxCapacity) -> Self {
-        let capacity = match capacity {
-            MailboxCapacity::Unbounded => None,
-            MailboxCapacity::Bounded(capacity) => Some(capacity),
-        };
-
-        Self {
-            capacity,
-            items: VecDeque::new(),
-            unstashed: 0,
-            messages: 0,
-            requested: Vec::new(),
-            release: None,
-            held: 0,
-            drain_len: 0,
-            source: Source::Mailbox,
-            pending: false,
-        }
-    }
-
     pub(crate) fn request_stash(&mut self, incoming: Incoming<M>) -> Result<(), Incoming<M>> {
         if matches!(incoming, Incoming::Message(_)) {
             if self
@@ -468,18 +448,46 @@ impl<M> Stash<M> {
         Some(incoming)
     }
 
-    pub(crate) fn settle(&mut self) {
-        if self.pending {
-            self.apply_requests();
-        }
-    }
-
     pub(crate) fn settle_at_start(&mut self) {
         self.source = Source::Start;
         self.apply_requests();
     }
 
-    pub(crate) fn note_timer_item(&mut self) {
+    #[cfg(any(test, feature = "test-util"))]
+    pub(crate) fn take_stashed(&mut self) -> Vec<Incoming<M>> {
+        let stashed = self.items.drain(self.unstashed..).collect::<Vec<_>>();
+        self.messages -= message_count(&stashed);
+        self.held = 0;
+        stashed
+    }
+
+    fn new(capacity: MailboxCapacity) -> Self {
+        let capacity = match capacity {
+            MailboxCapacity::Unbounded => None,
+            MailboxCapacity::Bounded(capacity) => Some(capacity),
+        };
+
+        Self {
+            capacity,
+            items: VecDeque::new(),
+            unstashed: 0,
+            messages: 0,
+            requested: Vec::new(),
+            release: None,
+            held: 0,
+            drain_len: 0,
+            source: Source::Mailbox,
+            pending: false,
+        }
+    }
+
+    fn settle(&mut self) {
+        if self.pending {
+            self.apply_requests();
+        }
+    }
+
+    fn note_timer_item(&mut self) {
         self.source = Source::Timer;
         self.pending = true;
     }
@@ -519,7 +527,7 @@ impl<M> Stash<M> {
         self.pending = self.held > 0;
     }
 
-    pub(crate) fn drop_signals_of(&mut self, actor_id: ActorId) {
+    fn drop_signals_of(&mut self, actor_id: ActorId) {
         if self.items.len() + self.requested.len() == self.messages {
             return;
         }
@@ -566,7 +574,7 @@ impl<M> Stash<M> {
         }
     }
 
-    pub(crate) fn hand_back_all(&mut self) -> Vec<Incoming<M>> {
+    fn hand_back_all(&mut self) -> Vec<Incoming<M>> {
         let discarded = mem::take(&mut self.requested);
         self.messages -= message_count(&discarded);
         self.release = None;
@@ -578,15 +586,7 @@ impl<M> Stash<M> {
         discarded
     }
 
-    #[cfg(any(test, feature = "test-util"))]
-    pub(crate) fn take_stashed(&mut self) -> Vec<Incoming<M>> {
-        let stashed = self.items.drain(self.unstashed..).collect::<Vec<_>>();
-        self.messages -= message_count(&stashed);
-        self.held = 0;
-        stashed
-    }
-
-    pub(crate) fn take_all(&mut self) -> Vec<Incoming<M>> {
+    fn take_all(&mut self) -> Vec<Incoming<M>> {
         self.unstashed = 0;
         self.messages = 0;
         self.release = None;
@@ -610,8 +610,8 @@ impl<M> Stash<M> {
     }
 }
 
-/// Where the item an actor has just handled came from, `Start` standing for `init` and
-/// `recovered`.
+/// Where the item an actor has just handled came from. `Start` is the actor's start, before its
+/// first item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Source {
     Stash,

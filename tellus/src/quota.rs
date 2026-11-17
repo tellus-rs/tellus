@@ -1,3 +1,7 @@
+use crate::{
+    ActorId, Incoming,
+    watch::{ActorTerminated, TerminatedHandler},
+};
 use flume::Sender;
 use std::{
     num::NonZeroUsize,
@@ -61,6 +65,16 @@ impl<T> Clone for CountedSender<T> {
     }
 }
 
+impl<M> TerminatedHandler for CountedSender<Incoming<M>>
+where
+    M: Send + 'static,
+{
+    fn handle_terminated(&self, actor_id: ActorId) -> Result<(), ActorTerminated> {
+        self.try_send_uncounted(Incoming::Terminated(actor_id))
+            .map_err(|_| ActorTerminated)
+    }
+}
+
 #[derive(Debug, Error)]
 pub(crate) enum CountedSendError {
     #[error(transparent)]
@@ -90,8 +104,15 @@ impl Quota {
         })
     }
 
+    pub(crate) fn unreserve(&self) {
+        if let Repr::Bounded { count, .. } = &self.0 {
+            let previous = count.fetch_sub(1, Ordering::Relaxed);
+            debug_assert!(previous > 0, "quota count underflow");
+        }
+    }
+
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
-    pub(crate) fn reserve(&self) -> Result<Reservation<'_>, Full> {
+    fn reserve(&self) -> Result<Reservation<'_>, Full> {
         let Repr::Bounded { capacity, count } = &self.0 else {
             return Ok(Reservation(Some(self)));
         };
@@ -104,27 +125,24 @@ impl Quota {
             .map_err(|_| Full)
     }
 
-    pub(crate) fn reserve_forced(&self) -> Reservation<'_> {
+    fn reserve_forced(&self) -> Reservation<'_> {
         if let Repr::Bounded { count, .. } = &self.0 {
             count.fetch_add(1, Ordering::Relaxed);
         }
 
         Reservation(Some(self))
     }
-
-    pub(crate) fn unreserve(&self) {
-        if let Repr::Bounded { count, .. } = &self.0 {
-            let previous = count.fetch_sub(1, Ordering::Relaxed);
-            debug_assert!(previous > 0, "quota count underflow");
-        }
-    }
 }
 
+#[derive(Debug, Error)]
+#[error("no capacity left")]
+pub(crate) struct Full;
+
 /// Unreserves on drop unless committed.
-pub(crate) struct Reservation<'a>(Option<&'a Quota>);
+struct Reservation<'a>(Option<&'a Quota>);
 
 impl Reservation<'_> {
-    pub(crate) fn commit(mut self) {
+    fn commit(mut self) {
         self.0 = None;
     }
 }
@@ -136,10 +154,6 @@ impl Drop for Reservation<'_> {
         }
     }
 }
-
-#[derive(Debug, Error)]
-#[error("no capacity left")]
-pub(crate) struct Full;
 
 #[derive(Clone)]
 enum Repr {
@@ -203,7 +217,7 @@ mod tests {
     }
 
     /// A quota is shared by cloning it, so a reservation taken through one handle is visible
-    /// through the other; this is what makes both mailbox halves count the same items.
+    /// through the other.
     #[test]
     fn clones_share_the_count() {
         let quota = Quota::bounded(NonZeroUsize::MIN);
@@ -250,8 +264,7 @@ mod tests {
     }
 
     /// A forced item passes a full quota but is counted, so the receiver releases it like any
-    /// other: that is what lets a host drain what it buffered into a mailbox too small for it
-    /// without the count drifting.
+    /// other, without the count drifting.
     #[test]
     fn forced_reserves_past_a_full_quota() {
         let (item_tx, item_rx) = flume::unbounded();
@@ -294,9 +307,7 @@ mod tests {
         assert!(quota.reserve().is_ok());
     }
 
-    /// An uncounted item passes a full quota and keeps its place behind the counted ones: that is
-    /// what lets a terminated signal through a saturated mailbox without overtaking its messages.
-
+    /// An uncounted item passes a full quota and keeps its place behind the counted ones.
     #[test]
     fn uncounted_bypasses_a_full_quota() {
         let (item_tx, item_rx) = flume::unbounded();

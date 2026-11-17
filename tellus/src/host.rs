@@ -10,7 +10,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{
-    task::JoinHandle,
+    task::{self, JoinHandle},
     time::{Instant, sleep},
 };
 use tracing::{debug, warn};
@@ -221,7 +221,6 @@ where
 
             Incoming::Terminated(actor_id) => self.terminated(context, &mut state, actor_id),
         }
-
         Ok(Control::Continue(state))
     }
 }
@@ -370,11 +369,10 @@ impl Actor for Ticker {
         let ticker = context.self_ref().clone();
         let idle_timeout = self.idle_timeout;
 
-        let sleeping = tokio::spawn(async move {
+        let sleeping = task::spawn(async move {
             sleep(idle_timeout).await;
             ticker.tell(Tick);
         });
-
         Ok(AbortSleeping(sleeping))
     }
 
