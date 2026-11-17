@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794938715589,
+  "lastUpdate": 1794938717389,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33469,6 +33469,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 136686,
             "range": "± 4047",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "41e15f5f3aea45dad11c3a4cf641a3d8432fc519",
+          "message": "Merge pull request #482 from tellus-rs/test/cbor-nesting-limit\n\ntest(persistence): pin the cbor nesting limit at 256 from both sides",
+          "timestamp": "2026-11-17T18:57:36+01:00",
+          "tree_id": "4317279242350803f8e33023cb6008db50c6645f",
+          "url": "https://github.com/tellus-rs/tellus/commit/41e15f5f3aea45dad11c3a4cf641a3d8432fc519"
+        },
+        "date": 1794938716982,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3485181,
+            "range": "± 131200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3478968,
+            "range": "± 95217",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 867592,
+            "range": "± 9359",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 106978,
+            "range": "± 2671",
             "unit": "ns/iter"
           }
         ]
