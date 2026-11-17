@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794928445160,
+  "lastUpdate": 1794928446967,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37215,6 +37215,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5744510,
             "range": "± 414379",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "75d7f19f468c5376c472d90575dc869ab6c94add",
+          "message": "Merge pull request #418 from tellus-rs/dependabot/github_actions/ci-patch-805d6368a6\n\nci(deps): Bump the ci-patch group across 2 directories with 1 update",
+          "timestamp": "2026-11-17T16:05:45+01:00",
+          "tree_id": "4db95f4b27628058aabeb6562785d1880a012a0d",
+          "url": "https://github.com/tellus-rs/tellus/commit/75d7f19f468c5376c472d90575dc869ab6c94add"
+        },
+        "date": 1794928446627,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 31680963,
+            "range": "± 1231938",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31567301,
+            "range": "± 1501555",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 6041613,
+            "range": "± 354780",
             "unit": "ns/iter"
           }
         ]
