@@ -402,61 +402,6 @@ pub enum InvalidEndpointConfig {
 }
 
 #[cfg(feature = "serde")]
-#[derive(serde::Deserialize)]
-#[serde(deny_unknown_fields)]
-struct UncheckedEndpointConfig {
-    advertised_addr: SocketAddr,
-
-    #[serde(default)]
-    outbound_capacity: Option<NonZeroUsize>,
-
-    #[serde(default)]
-    max_streams_per_peer: Option<NonZeroUsize>,
-
-    #[serde(default)]
-    max_frame_size: Option<NonZeroUsize>,
-
-    #[serde(default)]
-    codec: Option<Codec>,
-
-    #[serde(default)]
-    app_version: Option<AppVersion>,
-
-    #[serde(default, with = "humantime_serde")]
-    heartbeat_interval: Option<Duration>,
-
-    #[serde(default, with = "humantime_serde")]
-    watch_refresh_interval: Option<Duration>,
-
-    #[serde(default)]
-    failure_detector: Option<FailureDetectorConfig>,
-
-    #[serde(default)]
-    downing_provider: Option<DowningProviderConfig>,
-
-    #[serde(default, with = "humantime_serde")]
-    down_retention: Option<Duration>,
-
-    #[serde(default)]
-    down_watermarks: Option<NonZeroUsize>,
-
-    #[serde(default, with = "humantime_serde")]
-    leave_timeout: Option<Duration>,
-
-    #[serde(default)]
-    reconnect_backoff: Option<Backoff>,
-
-    #[serde(default)]
-    max_connect_attempts: Option<NonZeroU32>,
-
-    #[serde(default, with = "humantime_serde")]
-    ambiguous_join_bound: Option<Duration>,
-
-    #[serde(default)]
-    change_capacity: Option<NonZeroUsize>,
-}
-
-#[cfg(feature = "serde")]
 impl TryFrom<UncheckedEndpointConfig> for EndpointConfig {
     type Error = InvalidEndpointConfig;
 
@@ -556,6 +501,45 @@ pub enum FormError {
     JoinAmbiguous(SocketAddr),
 }
 
+/// Where the endpoint stands between being started and being done, see
+/// [lifecycle](crate::cluster::lifecycle).
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(
+    feature = "serde",
+    derive(serde::Serialize, serde::Deserialize),
+    serde(rename_all = "snake_case")
+)]
+pub enum Lifecycle {
+    /// Started, but a member of no cluster yet: joins are refused until this node forms one or
+    /// joins one.
+    #[default]
+    Unformed,
+
+    /// A member of a cluster, of one or of many.
+    Formed,
+
+    /// Downed or left, for good: only a restarted process rejoins.
+    Downed,
+}
+
+impl Lifecycle {
+    fn code(self) -> u8 {
+        match self {
+            Lifecycle::Unformed => 0,
+            Lifecycle::Formed => 1,
+            Lifecycle::Downed => 2,
+        }
+    }
+
+    fn from_code(code: u8) -> Self {
+        match code {
+            0 => Lifecycle::Unformed,
+            1 => Lifecycle::Formed,
+            _ => Lifecycle::Downed,
+        }
+    }
+}
+
 /// Start the process wide remoting endpoint: accept connections from the given transport and
 /// dial peers on demand. The started endpoint is not a cluster yet, so nothing can join it:
 /// [form] makes it a cluster of one and [join](crate::cluster::join) makes it a member of
@@ -613,45 +597,6 @@ where
 /// cluster right now or may have made it one.
 pub fn form() -> Result<(), FormError> {
     get().ok_or(FormError::EndpointNotStarted)?.form_cluster()
-}
-
-/// Where the endpoint stands between being started and being done, see
-/// [lifecycle](crate::cluster::lifecycle).
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-#[cfg_attr(
-    feature = "serde",
-    derive(serde::Serialize, serde::Deserialize),
-    serde(rename_all = "snake_case")
-)]
-pub enum Lifecycle {
-    /// Started, but a member of no cluster yet: joins are refused until this node forms one or
-    /// joins one.
-    #[default]
-    Unformed,
-
-    /// A member of a cluster, of one or of many.
-    Formed,
-
-    /// Downed or left, for good: only a restarted process rejoins.
-    Downed,
-}
-
-impl Lifecycle {
-    fn code(self) -> u8 {
-        match self {
-            Lifecycle::Unformed => 0,
-            Lifecycle::Formed => 1,
-            Lifecycle::Downed => 2,
-        }
-    }
-
-    fn from_code(code: u8) -> Self {
-        match code {
-            0 => Lifecycle::Unformed,
-            1 => Lifecycle::Formed,
-            _ => Lifecycle::Downed,
-        }
-    }
 }
 
 pub(crate) struct EndpointInner {
@@ -788,10 +733,10 @@ impl EndpointInner {
     /// `foreign_clusters`, then the watch write, then, with all of those but `update_lock`
     /// released, the receptionist's replicas for the channel send. The closure must not call back
     /// into `update`, and a caller must not hold a borrow of the watch.
-    pub(crate) fn update<R>(
-        &self,
-        mutate: impl FnOnce(&Membership, &Reachability) -> R,
-    ) -> Updated<R> {
+    pub(crate) fn update<F, R>(&self, mutate: F) -> Updated<R>
+    where
+        F: FnOnce(&Membership, &Reachability) -> R,
+    {
         let _reentrancy = UpdateGuard::enter();
         let _guard = lock(&self.update_lock);
         let result = mutate(&self.membership, &self.reachability);
@@ -825,9 +770,9 @@ impl EndpointInner {
                 return false;
             }
             *state = Arc::new(ClusterState::new(
+                state.version() + 1,
                 self.node(),
                 cluster,
-                state.version() + 1,
                 members.clone(),
                 unreachable,
                 broken_links,
@@ -897,10 +842,6 @@ impl EndpointInner {
         ))
     }
 
-    pub(crate) fn offer_snapshot(&self, peer: NodeId, snapshot: &Arc<Snapshot>) {
-        self.lanes.offer_snapshot(peer.addr(), snapshot);
-    }
-
     pub(crate) fn merge_reachability(&self, observations: &[WireReachability]) {
         self.update(|membership, reachability| {
             reachability.merge(observations, &membership.up_nodes());
@@ -937,8 +878,7 @@ impl EndpointInner {
             peer,
             frame,
             || {
-                // Built before the write lock, which every send waits for: it copies every
-                // registration.
+                // Built before the write lock, since it copies every registration!
                 Ok(self.registrations_snapshot())
             },
             // Under the lock, since a leave collects the lanes once, under the same lock.
@@ -1017,8 +957,7 @@ impl EndpointInner {
 
     /// Exposes a failed departure only after this node is downed and severed.
     pub(crate) async fn leave(&'static self) -> Result<Departure, LeaveError> {
-        // Decided under the lifecycle lock, so a down landing concurrently either precedes the
-        // departure or is ignored by it.
+        // Decided under the lifecycle lock, else a concurrent down slips in between!
         let mut departed_rx = self.lifecycle.coordinate(|coordinator| {
             match coordinator.lifecycle {
                 Lifecycle::Unformed => return Err(LeaveError::NotAMember),
@@ -1027,7 +966,6 @@ impl EndpointInner {
                 }
                 _ => {}
             }
-
             Ok(self
                 .departure
                 .get_or_init(|| self.spawn_departure())
@@ -1220,27 +1158,6 @@ impl EndpointInner {
             .collect()
     }
 
-    /// Skips a disconnected lane, whose uncounted queues would otherwise grow.
-    pub(crate) fn push_reachability(&self, observations: Vec<WireReachability>) {
-        if observations.is_empty() || self.downed() {
-            return;
-        }
-
-        for peer in self.membership.up_peers() {
-            if self.lane_connected(peer.addr()) == Some(false) {
-                continue;
-            }
-            let chunks =
-                reachability::snapshot_chunks(observations.clone(), self.frame_limit(peer));
-            if let Err(error) = chunks
-                .into_iter()
-                .try_for_each(|observations| self.send(peer, Frame::Reachability { observations }))
-            {
-                debug!(%peer, %error, "cannot send reachability observations");
-            }
-        }
-    }
-
     /// Pushes to every Up member whose lane is live; the periodic tick covers everyone else.
     pub(crate) fn push_gossip(&self) {
         if self.downed() {
@@ -1340,7 +1257,7 @@ impl EndpointInner {
     /// Ends every deferred departure the fence covers, since the death runs here instead.
     pub(crate) fn flush_fenced(&self, fence: NodeId) {
         lock(&self.departures)
-            .deferred
+            .deferrals
             .retain(|node, _| !fence.covers(*node));
         write(&self.peers).retain(|node, _| !fence.covers(*node));
         self.lanes.remove_fenced(fence);
@@ -1380,19 +1297,19 @@ impl EndpointInner {
         was_up: bool,
     ) -> bool {
         let deadline = timers::deadline(tokio_time::Instant::now(), self.config.leave_timeout);
-        let deferral = departures.deferred.entry(node).or_insert(Deferral {
+        let deferral = departures.deferrals.entry(node).or_insert(Deferral {
             deadline,
             awaited: false,
         });
         deferral.awaited |= was_up;
-        departures.inbound.contains_key(&node)
+        departures.inbound_counts.contains_key(&node)
     }
 
     /// Whether frames from the peer are still delivered: it is Up, or its departure is deferred.
     /// Membership is read first, since a deferral is recorded under the departures lock held
     /// across its merge.
     pub(crate) fn delivers_from(&self, peer: NodeId) -> bool {
-        !self.membership.is_down(peer) || lock(&self.departures).deferred.contains_key(&peer)
+        !self.membership.is_down(peer) || lock(&self.departures).deferrals.contains_key(&peer)
     }
 
     /// Decides a Member handshake in one critical section with the departures: a departure merged
@@ -1403,7 +1320,7 @@ impl EndpointInner {
         if self.membership.is_up(peer) {
             return MemberAdmission::Member(self.count_inbound(&mut departures, peer));
         }
-        if let Some(deferral) = departures.deferred.get_mut(&peer)
+        if let Some(deferral) = departures.deferrals.get_mut(&peer)
             && self.membership.state(peer) == Some(MemberState::Left)
         {
             deferral.awaited = true;
@@ -1422,7 +1339,7 @@ impl EndpointInner {
         departures: &mut Departures,
         peer: NodeId,
     ) -> InboundSlot {
-        *departures.inbound.entry(peer).or_default() += 1;
+        *departures.inbound_counts.entry(peer).or_default() += 1;
         InboundSlot {
             endpoint: self,
             peer,
@@ -1430,43 +1347,19 @@ impl EndpointInner {
         }
     }
 
-    /// Runs the deferred death of a departed peer once its last inbound connection has drained,
-    /// so a reader superseded by a reconnect leaves the deferral to its successor. A connection
-    /// abandoned before its reader started has drained nothing, so the deferral keeps waiting
-    /// for another one, until its deadline.
-    fn inbound_closed(&self, peer: NodeId, read: bool) {
-        let deferred = {
-            let mut departures = lock(&self.departures);
-            let remaining = departures.inbound.get_mut(&peer).map_or(0, |count| {
-                *count -= 1;
-                *count
-            });
-            if remaining == 0 {
-                departures.inbound.remove(&peer);
-                read && departures.deferred.remove(&peer).is_some()
-            } else {
-                false
-            }
-        };
-        if deferred {
-            info!(%peer, "node death, its departure has drained");
-            self.flush_fenced(peer);
-        }
-    }
-
     pub(crate) fn departure_deferred(&self, peer: NodeId) -> bool {
-        lock(&self.departures).deferred.contains_key(&peer)
+        lock(&self.departures).deferrals.contains_key(&peer)
     }
 
     #[cfg(test)]
     pub(crate) fn inbound_open(&self, peer: NodeId) -> bool {
-        lock(&self.departures).inbound.contains_key(&peer)
+        lock(&self.departures).inbound_counts.contains_key(&peer)
     }
 
     #[cfg(test)]
     pub(crate) fn departure_awaited(&self, peer: NodeId) -> bool {
         lock(&self.departures)
-            .deferred
+            .deferrals
             .get(&peer)
             .is_some_and(|deferral| deferral.awaited)
     }
@@ -1475,7 +1368,7 @@ impl EndpointInner {
     /// departure has not drained within `leave_timeout`.
     pub(crate) fn end_overdue_departures(&self, now: tokio_time::Instant) {
         let overdue = lock(&self.departures)
-            .deferred
+            .deferrals
             .extract_if(|_, deferral| deferral.deadline <= now)
             .map(|(peer, deferral)| (peer, deferral.awaited))
             .collect::<Vec<_>>();
@@ -1487,13 +1380,6 @@ impl EndpointInner {
             }
             self.flush_fenced(peer);
         }
-    }
-
-    /// The kept incarnations are reread inside the retention, else a fresh entry is lost for good.
-    pub(crate) fn untrack_idle_peers(&self) {
-        self.liveness.retain_with(|| self.membership.up_nodes());
-        let up = self.membership.up_nodes();
-        lock(&self.gossiped_versions).retain(|node, _| up.contains(node));
     }
 
     pub(crate) fn bind_lane(&self, addr: SocketAddr, generation: Generation, peer: NodeId) {
@@ -1595,6 +1481,62 @@ impl EndpointInner {
         self.lanes.remove(addr, generation)
     }
 
+    /// Runs the deferred death of a departed peer once its last inbound connection has drained,
+    /// so a reader superseded by a reconnect leaves the deferral to its successor. A connection
+    /// abandoned before its reader started has drained nothing, so the deferral keeps waiting
+    /// for another one, until its deadline.
+    fn inbound_closed(&self, peer: NodeId, read: bool) {
+        let deferred = {
+            let mut departures = lock(&self.departures);
+            let remaining = departures.inbound_counts.get_mut(&peer).map_or(0, |count| {
+                *count -= 1;
+                *count
+            });
+            if remaining == 0 {
+                departures.inbound_counts.remove(&peer);
+                read && departures.deferrals.remove(&peer).is_some()
+            } else {
+                false
+            }
+        };
+        if deferred {
+            info!(%peer, "node death, its departure has drained");
+            self.flush_fenced(peer);
+        }
+    }
+
+    fn offer_snapshot(&self, peer: NodeId, snapshot: &Arc<Snapshot>) {
+        self.lanes.offer_snapshot(peer.addr(), snapshot);
+    }
+
+    /// Skips a disconnected lane, whose uncounted queues would otherwise grow.
+    fn push_reachability(&self, observations: Vec<WireReachability>) {
+        if observations.is_empty() || self.downed() {
+            return;
+        }
+
+        for peer in self.membership.up_peers() {
+            if self.lane_connected(peer.addr()) == Some(false) {
+                continue;
+            }
+            let chunks =
+                reachability::snapshot_chunks(observations.clone(), self.frame_limit(peer));
+            if let Err(error) = chunks
+                .into_iter()
+                .try_for_each(|observations| self.send(peer, Frame::Reachability { observations }))
+            {
+                debug!(%peer, %error, "cannot send reachability observations");
+            }
+        }
+    }
+
+    /// The kept incarnations are reread inside the retention, else a fresh entry is lost for good.
+    fn untrack_idle_peers(&self) {
+        self.liveness.retain_with(|| self.membership.up_nodes());
+        let up = self.membership.up_nodes();
+        lock(&self.gossiped_versions).retain(|node, _| up.contains(node));
+    }
+
     fn sweep_foreign_clusters(&self, now: tokio_time::Instant) {
         if lock(&self.foreign_clusters).expire(now) {
             self.update(|_, _| ());
@@ -1619,9 +1561,9 @@ impl EndpointInner {
         let node = NodeId::new(config.advertised_addr);
         let membership = Membership::new(node, config.down_watermarks, config.down_retention);
         let state = ClusterState::new(
+            0,
             node,
             None,
-            0,
             vec![Member::new(node, MemberState::Up)],
             Vec::new(),
             Vec::new(),
@@ -1694,8 +1636,7 @@ impl EndpointInner {
     }
 
     async fn depart(&self) -> Departure {
-        // Announce before leaving, which refuses every send, and wait for the lanes before the
-        // sever, since a sever turns whatever is still queued or unacknowledged into dead letters.
+        // Announce, then drain the lanes, then sever, else queued frames are lost!
         self.update(|membership, _| membership.leave(self.node, Instant::now()));
         self.announce();
         let lanes_done = self.begin_leave();
@@ -1889,8 +1830,8 @@ pub(crate) struct Updated<R> {
 /// connected to drain: only then is a death at the deadline a departure which has not drained.
 #[derive(Default)]
 pub(crate) struct Departures {
-    inbound: HashMap<NodeId, usize>,
-    deferred: HashMap<NodeId, Deferral>,
+    inbound_counts: HashMap<NodeId, usize>,
+    deferrals: HashMap<NodeId, Deferral>,
 }
 
 /// An admitted inbound connection, counted in [Departures] from its admission until it is
@@ -1927,6 +1868,89 @@ pub(crate) enum MemberAdmission {
     Draining(InboundSlot),
     Dead,
     Unknown,
+}
+
+pub(crate) fn get() -> Option<&'static EndpointInner> {
+    #[cfg(test)]
+    if let Some(endpoint) = CURRENT_FOR_TESTS.get() {
+        return Some(endpoint);
+    }
+
+    ENDPOINT.get()
+}
+
+/// What [get] answers on this thread while `f` runs, for code reaching the endpoint through it.
+#[cfg(test)]
+pub(crate) fn with_current<F, R>(endpoint: &'static EndpointInner, f: F) -> R
+where
+    F: FnOnce() -> R,
+{
+    /// Must restore the outer endpoint even if `f` unwinds!
+    struct Restore(Option<&'static EndpointInner>);
+
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            CURRENT_FOR_TESTS.set(self.0);
+        }
+    }
+
+    let _restore = Restore(CURRENT_FOR_TESTS.replace(Some(endpoint)));
+    f()
+}
+
+#[cfg(feature = "serde")]
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct UncheckedEndpointConfig {
+    advertised_addr: SocketAddr,
+
+    #[serde(default)]
+    outbound_capacity: Option<NonZeroUsize>,
+
+    #[serde(default)]
+    max_streams_per_peer: Option<NonZeroUsize>,
+
+    #[serde(default)]
+    max_frame_size: Option<NonZeroUsize>,
+
+    #[serde(default)]
+    codec: Option<Codec>,
+
+    #[serde(default)]
+    app_version: Option<AppVersion>,
+
+    #[serde(default, with = "humantime_serde")]
+    heartbeat_interval: Option<Duration>,
+
+    #[serde(default, with = "humantime_serde")]
+    watch_refresh_interval: Option<Duration>,
+
+    #[serde(default)]
+    failure_detector: Option<FailureDetectorConfig>,
+
+    #[serde(default)]
+    downing_provider: Option<DowningProviderConfig>,
+
+    #[serde(default, with = "humantime_serde")]
+    down_retention: Option<Duration>,
+
+    #[serde(default)]
+    down_watermarks: Option<NonZeroUsize>,
+
+    #[serde(default, with = "humantime_serde")]
+    leave_timeout: Option<Duration>,
+
+    #[serde(default)]
+    reconnect_backoff: Option<Backoff>,
+
+    #[serde(default)]
+    max_connect_attempts: Option<NonZeroU32>,
+
+    #[serde(default, with = "humantime_serde")]
+    ambiguous_join_bound: Option<Duration>,
+
+    #[serde(default)]
+    change_capacity: Option<NonZeroUsize>,
 }
 
 fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
@@ -1980,36 +2004,7 @@ fn validate(config: &EndpointConfig) -> Result<(), InvalidEndpointConfig> {
     if !failure::tolerates_silence(&config.failure_detector, silence) {
         return Err(InvalidEndpointConfig::FailureDetectorTooEager { silence });
     }
-
     Ok(())
-}
-
-pub(crate) fn get() -> Option<&'static EndpointInner> {
-    #[cfg(test)]
-    if let Some(endpoint) = CURRENT_FOR_TESTS.get() {
-        return Some(endpoint);
-    }
-
-    ENDPOINT.get()
-}
-
-/// What [get] answers on this thread while `f` runs, for code reaching the endpoint through it.
-#[cfg(test)]
-pub(crate) fn with_current<F, R>(endpoint: &'static EndpointInner, f: F) -> R
-where
-    F: FnOnce() -> R,
-{
-    /// Must restore the outer endpoint even if `f` unwinds!
-    struct Restore(Option<&'static EndpointInner>);
-
-    impl Drop for Restore {
-        fn drop(&mut self) {
-            CURRENT_FOR_TESTS.set(self.0);
-        }
-    }
-
-    let _restore = Restore(CURRENT_FOR_TESTS.replace(Some(endpoint)));
-    f()
 }
 
 #[derive(Clone, Copy)]
@@ -2362,24 +2357,25 @@ struct Sighting {
 
 #[derive(Default)]
 struct UnreachableWarnings {
-    warned_at: HashMap<NodeId, tokio_time::Instant>,
+    warning_times: HashMap<NodeId, tokio_time::Instant>,
 }
 
 impl UnreachableWarnings {
     /// The peers among `unreachable` not warned about for an interval; any other peer is
     /// forgotten, so its next failure is warned about at once.
     fn due(&mut self, unreachable: &[NodeId], now: tokio_time::Instant) -> Vec<NodeId> {
-        self.warned_at.retain(|peer, _| unreachable.contains(peer));
+        self.warning_times
+            .retain(|peer, _| unreachable.contains(peer));
         unreachable
             .iter()
             .copied()
             .filter(|peer| {
                 let due = self
-                    .warned_at
+                    .warning_times
                     .get(peer)
                     .is_none_or(|warned_at| now >= *warned_at + UNREACHABLE_WARNING_INTERVAL);
                 if due {
-                    self.warned_at.insert(*peer, now);
+                    self.warning_times.insert(*peer, now);
                 }
                 due
             })
@@ -2582,6 +2578,7 @@ mod tests {
         sync::{
             Arc,
             atomic::{AtomicUsize, Ordering},
+            mpsc,
         },
         thread,
         time::{Duration, Instant},
@@ -3828,7 +3825,7 @@ mod tests {
         membership::on_gossip(endpoint, &[Member::new(leaver, MemberState::Left)]);
 
         assert_eq!(endpoint.membership().state(leaver), Some(MemberState::Left));
-        assert!(endpoint.departures().deferred.contains_key(&leaver));
+        assert!(endpoint.departures().deferrals.contains_key(&leaver));
     }
 
     /// An `ambiguous_join_bound` of `Duration::MAX` records the ambiguous join.
@@ -3905,7 +3902,7 @@ mod tests {
             );
         }
         assert!(
-            tokio::time::timeout(Duration::from_millis(50), changes.next())
+            timeout(Duration::from_millis(50), changes.next())
                 .await
                 .is_err()
         );
@@ -3918,9 +3915,9 @@ mod tests {
     fn a_borrowed_state_and_a_settlement_query_never_deadlock_an_update() {
         let (endpoint, _dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
-        let (done_tx, done_rx) = std::sync::mpsc::channel();
+        let (done_tx, done_rx) = mpsc::channel();
 
-        let consumer = std::thread::spawn(move || {
+        let consumer = thread::spawn(move || {
             let state_rx = endpoint.state_rx();
             for _ in 0..2_000 {
                 let borrowed = state_rx.borrow();
@@ -3928,14 +3925,14 @@ mod tests {
                 assert!(settlement.version() <= borrowed.version());
             }
         });
-        let updater = std::thread::spawn(move || {
+        let updater = thread::spawn(move || {
             for _ in 0..1_000 {
                 let peer = NodeId::new(addr(2));
                 endpoint.update(|membership, _| membership.add_up(peer));
                 endpoint.update(|membership, _| membership.down(peer, Instant::now()));
             }
         });
-        std::thread::spawn(move || {
+        thread::spawn(move || {
             consumer.join().expect("the consumer completes");
             updater.join().expect("the updater completes");
             let _ = done_tx.send(());
@@ -3956,7 +3953,7 @@ mod tests {
         let (endpoint, _dial_requests, _join_requests) = EndpointInner::for_tests(config);
         let mut published = endpoint.published_changes();
 
-        let snapshots = std::thread::spawn(move || {
+        let snapshots = thread::spawn(move || {
             for _ in 0..2_000 {
                 endpoint.receptionist().snapshot();
             }
@@ -4543,6 +4540,7 @@ mod tests {
         assert_eq!(coordinator.release_pin_if_gone(&universe), None);
         assert_eq!(pinned_addr(&coordinator), Some(addr(2)));
     }
+
     /// A down may land anywhere inside an attempt, and must win everywhere. No attempt starts on
     /// a downed node, and no pin is written after it. Whatever the attempt's raw outcome, its
     /// caller learns of the down and nothing stays pinned.

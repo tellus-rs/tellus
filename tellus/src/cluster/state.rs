@@ -152,9 +152,9 @@ impl ClusterState {
     }
 
     pub(crate) fn new(
+        version: u64,
         this: NodeId,
         cluster: Option<ClusterId>,
-        version: u64,
         members: Vec<Member>,
         unreachable: Vec<Member>,
         broken_links: Vec<BrokenLink>,
@@ -522,9 +522,9 @@ mod tests {
 
     fn state(this: NodeId, version: u64, members: Vec<Member>) -> ClusterState {
         ClusterState::new(
+            version,
             this,
             None,
-            version,
             members,
             Vec::new(),
             Vec::new(),
@@ -795,9 +795,9 @@ mod tests {
         let peer = NodeId::new(addr(2));
         let listed = state(this, 1, vec![up(this), up(peer)]);
         let unreachable = ClusterState::new(
+            2,
             this,
             None,
-            2,
             vec![up(this), up(peer)],
             vec![up(peer)],
             Vec::new(),
@@ -820,9 +820,9 @@ mod tests {
         let this = NodeId::new(addr(1));
         let peer = NodeId::new(addr(2));
         let unreachable = ClusterState::new(
+            1,
             this,
             None,
-            1,
             vec![up(this), up(peer)],
             vec![up(peer)],
             Vec::new(),
@@ -872,9 +872,9 @@ mod tests {
         let foreign = ClusterId::new();
         let link = BrokenLink::new(up(observer), up(this));
         let state = ClusterState::new(
+            7,
             this,
             Some(cluster),
-            7,
             vec![up(this), up(peer), up(observer)],
             vec![up(peer)],
             vec![link],

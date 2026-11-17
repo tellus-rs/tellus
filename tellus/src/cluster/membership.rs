@@ -26,6 +26,9 @@ use tokio::{
 };
 use tracing::{debug, info, warn};
 
+/// The smallest `max_frame_size` [snapshot_frames] can respect, one member plus its envelope.
+pub(crate) const MIN_FRAME_SIZE: usize = Member::MAX_ENCODED_LEN + Member::ENVELOPE_LEN;
+
 /// A member's three-point state lattice: `Up < Left < Down`, with removal represented by absence.
 /// A downing after a departure wins, since Down is the greater state.
 #[derive(Debug, Display, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -85,33 +88,10 @@ impl Member {
 
 impl Member {
     /// The largest encoding of one member, pinned by a test.
-    pub(crate) const MAX_ENCODED_LEN: usize = 40;
+    const MAX_ENCODED_LEN: usize = 40;
 
     /// Headroom for the `Gossip` envelope: its variant tag, length varint and `more` flag.
     const ENVELOPE_LEN: usize = 16;
-}
-
-#[derive(Serialize, Deserialize)]
-struct MemberRepr {
-    addr: SocketAddr,
-    incarnation: Incarnation,
-    state: MemberState,
-}
-
-impl From<Member> for MemberRepr {
-    fn from(member: Member) -> Self {
-        Self {
-            addr: member.addr(),
-            incarnation: member.incarnation(),
-            state: member.state(),
-        }
-    }
-}
-
-impl From<MemberRepr> for Member {
-    fn from(repr: MemberRepr) -> Self {
-        Self::new(NodeId::from_parts(repr.addr, repr.incarnation), repr.state)
-    }
 }
 
 /// A cluster which cannot be joined.
@@ -209,98 +189,6 @@ pub async fn join(seeds: &[SocketAddr]) -> Result<(), JoinError> {
     }
 }
 
-/// What one pass over the seeds saw, which is what a formation decision is taken on.
-pub(crate) enum JoinRound {
-    Joined,
-
-    /// The cluster at this address may count this node already, so only it may be tried and
-    /// nothing may be formed until the attempt resolves.
-    ClusterSeen(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
-
-    /// The cluster at this address holds back joins: one of its members is unreachable, or the
-    /// member at this address is leaving. It exists, so nothing may be formed beside it.
-    Held(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
-
-    NoAdmission(Vec<(SocketAddr, JoinOutcome)>),
-
-    /// Every seed tried is a member of another cluster than this node's.
-    ForeignCluster(Vec<(SocketAddr, JoinOutcome)>),
-
-    Downed,
-}
-
-/// One pass over the seeds, this node's own address skipped in every position: a formed node
-/// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
-/// first, and the other seeds only once its answer has released the pin. An attempt outlasting
-/// `attempt_timeout` is abandoned, and the round goes on only once it has given the join permit
-/// back. One abandoned before its `Join` handshake counts as unavailable. One past it runs to its
-/// end, two `heartbeat_interval`s at most, and counts as if it had answered in time.
-pub(crate) async fn join_round(
-    endpoint: &'static EndpointInner,
-    seeds: &[SocketAddr],
-    attempt_timeout: Option<Duration>,
-) -> JoinRound {
-    let pinned = endpoint.pinned_cluster();
-    let seeds = pinned
-        .into_iter()
-        .chain(
-            seeds
-                .iter()
-                .copied()
-                .filter(|seed| *seed != endpoint.node().addr() && Some(*seed) != pinned),
-        )
-        .collect::<Vec<_>>();
-
-    let mut outcomes = Vec::with_capacity(seeds.len());
-    let mut foreign = 0;
-    for seed in seeds {
-        if endpoint.downed() {
-            return JoinRound::Downed;
-        }
-
-        match join_within(endpoint, seed, attempt_timeout).await {
-            Ok(()) => return JoinRound::Joined,
-
-            Err(ConnectError::Refused(RefusalReason::Down) | ConnectError::SelfDowned) => {
-                return JoinRound::Downed;
-            }
-
-            Err(ConnectError::Refused(RefusalReason::NoCluster)) => {
-                outcomes.push((seed, JoinOutcome::NoCluster));
-            }
-
-            Err(ConnectError::Refused(RefusalReason::JoinsHeld)) => {
-                info!(
-                    seed_addr = %seed,
-                    "join held back, a member of the cluster is unreachable or the seed is leaving"
-                );
-                outcomes.push((seed, JoinOutcome::Held));
-                return JoinRound::Held(seed, outcomes);
-            }
-
-            Err(error) => {
-                debug!(seed_addr = %seed, %error, "cannot join via seed");
-                outcomes.push((seed, JoinOutcome::Unavailable));
-                if let Some(pinned) = endpoint.pinned_cluster() {
-                    return JoinRound::ClusterSeen(pinned, outcomes);
-                }
-                if matches!(
-                    error,
-                    ConnectError::Refused(RefusalReason::ForeignCluster)
-                        | ConnectError::ForeignCluster(_)
-                ) {
-                    foreign += 1;
-                }
-            }
-        }
-    }
-
-    if foreign > 0 && foreign == outcomes.len() {
-        return JoinRound::ForeignCluster(outcomes);
-    }
-    JoinRound::NoAdmission(outcomes)
-}
-
 /// The members of the cluster as this node sees them, this node included, ordered by address and
 /// incarnation. A member this node saw Up is listed Left or Down until its retention expires; one
 /// which was Left or Down before this node learned of it is kept only as its address's fence,
@@ -338,6 +226,26 @@ pub fn down(addr: SocketAddr) -> Result<(), DownError> {
     Ok(())
 }
 
+/// What one pass over the seeds saw, which is what a formation decision is taken on.
+pub(crate) enum JoinRound {
+    Joined,
+
+    /// The cluster at this address may count this node already, so only it may be tried and
+    /// nothing may be formed until the attempt resolves.
+    ClusterSeen(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
+
+    /// The cluster at this address holds back joins: one of its members is unreachable, or the
+    /// member at this address is leaving. It exists, so nothing may be formed beside it.
+    Held(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
+
+    NoAdmission(Vec<(SocketAddr, JoinOutcome)>),
+
+    /// Every seed tried is a member of another cluster than this node's.
+    ForeignCluster(Vec<(SocketAddr, JoinOutcome)>),
+
+    Downed,
+}
+
 /// Entry state is a monotone lattice per incarnation (`Up < Left < Down`), so gossip merge
 /// converges.
 pub(crate) struct Membership {
@@ -352,7 +260,7 @@ impl Membership {
         down_retention: Duration,
     ) -> Self {
         let mut members = HashMap::new();
-        members.insert(node, MemberEntry::up());
+        members.insert(node, MemberEntry::up(Instant::now()));
 
         Self {
             node,
@@ -390,7 +298,10 @@ impl Membership {
 
     /// Runs `f` with the node's Up state while no membership change can land, so what `f`
     /// stores or publishes is consistent with the state it was given.
-    pub(crate) fn while_up<R>(&self, node: NodeId, f: impl FnOnce(bool) -> R) -> R {
+    pub(crate) fn while_up<F, R>(&self, node: NodeId, f: F) -> R
+    where
+        F: FnOnce(bool) -> R,
+    {
         let entries = read(&self.entries);
         let up = entries
             .members
@@ -469,7 +380,7 @@ impl Membership {
             Entry::Occupied(_) => false,
 
             Entry::Vacant(entry) => {
-                entry.insert(MemberEntry::up());
+                entry.insert(MemberEntry::up(Instant::now()));
                 entries.version += 1;
                 true
             }
@@ -540,38 +451,6 @@ impl Membership {
     }
 }
 
-/// The most watermarks a node holds, twice `down_watermarks`.
-pub(crate) fn max_fences(down_watermarks: NonZeroUsize) -> usize {
-    down_watermarks.get().saturating_mul(2)
-}
-
-/// The smallest `max_frame_size` [snapshot_frames] can respect, one member plus its envelope.
-pub(crate) const MIN_FRAME_SIZE: usize = Member::MAX_ENCODED_LEN + Member::ENVELOPE_LEN;
-
-/// Chunks a snapshot into `Gossip` frames, all but the last marked `more`; arrival order is free.
-pub(crate) fn snapshot_frames(members: Vec<Member>, max_frame_size: usize) -> Vec<Frame<'static>> {
-    let per_chunk = max_frame_size
-        .saturating_sub(Member::ENVELOPE_LEN)
-        .div_euclid(Member::MAX_ENCODED_LEN)
-        .max(1);
-    if members.len() <= per_chunk {
-        return vec![Frame::Gossip {
-            members,
-            more: false,
-        }];
-    }
-
-    let chunks = members.len().div_ceil(per_chunk);
-    members
-        .chunks(per_chunk)
-        .enumerate()
-        .map(|(index, chunk)| Frame::Gossip {
-            members: chunk.to_vec(),
-            more: index + 1 < chunks,
-        })
-        .collect()
-}
-
 /// What [Membership::merge] changed, for its caller to act on outside the membership lock.
 pub(crate) struct Merge {
     pub(crate) new_up: Vec<NodeId>,
@@ -602,6 +481,107 @@ pub(crate) enum JoinAdmission {
         outcome: DownOutcome,
     },
     SupersedesThisNode,
+}
+
+/// One pass over the seeds, this node's own address skipped in every position: a formed node
+/// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
+/// first, and the other seeds only once its answer has released the pin. An attempt outlasting
+/// `attempt_timeout` is abandoned, and the round goes on only once it has given the join permit
+/// back. One abandoned before its `Join` handshake counts as unavailable. One past it runs to its
+/// end, two `heartbeat_interval`s at most, and counts as if it had answered in time.
+pub(crate) async fn join_round(
+    endpoint: &'static EndpointInner,
+    seeds: &[SocketAddr],
+    attempt_timeout: Option<Duration>,
+) -> JoinRound {
+    let pinned = endpoint.pinned_cluster();
+    let seeds = pinned
+        .into_iter()
+        .chain(
+            seeds
+                .iter()
+                .copied()
+                .filter(|seed| *seed != endpoint.node().addr() && Some(*seed) != pinned),
+        )
+        .collect::<Vec<_>>();
+
+    let mut outcomes = Vec::with_capacity(seeds.len());
+    let mut foreign = 0;
+    for seed in seeds {
+        if endpoint.downed() {
+            return JoinRound::Downed;
+        }
+
+        match join_within(endpoint, seed, attempt_timeout).await {
+            Ok(()) => return JoinRound::Joined,
+
+            Err(ConnectError::Refused(RefusalReason::Down) | ConnectError::SelfDowned) => {
+                return JoinRound::Downed;
+            }
+
+            Err(ConnectError::Refused(RefusalReason::NoCluster)) => {
+                outcomes.push((seed, JoinOutcome::NoCluster));
+            }
+
+            Err(ConnectError::Refused(RefusalReason::JoinsHeld)) => {
+                info!(
+                    seed_addr = %seed,
+                    "join held back, a member of the cluster is unreachable or the seed is leaving"
+                );
+                outcomes.push((seed, JoinOutcome::Held));
+                return JoinRound::Held(seed, outcomes);
+            }
+
+            Err(error) => {
+                debug!(seed_addr = %seed, %error, "cannot join via seed");
+                outcomes.push((seed, JoinOutcome::Unavailable));
+                if let Some(pinned) = endpoint.pinned_cluster() {
+                    return JoinRound::ClusterSeen(pinned, outcomes);
+                }
+                if matches!(
+                    error,
+                    ConnectError::Refused(RefusalReason::ForeignCluster)
+                        | ConnectError::ForeignCluster(_)
+                ) {
+                    foreign += 1;
+                }
+            }
+        }
+    }
+
+    if foreign > 0 && foreign == outcomes.len() {
+        return JoinRound::ForeignCluster(outcomes);
+    }
+    JoinRound::NoAdmission(outcomes)
+}
+
+/// The most watermarks a node holds, twice `down_watermarks`.
+pub(crate) fn max_fences(down_watermarks: NonZeroUsize) -> usize {
+    down_watermarks.get().saturating_mul(2)
+}
+
+/// Chunks a snapshot into `Gossip` frames, all but the last marked `more`; arrival order is free.
+pub(crate) fn snapshot_frames(members: Vec<Member>, max_frame_size: usize) -> Vec<Frame<'static>> {
+    let per_chunk = max_frame_size
+        .saturating_sub(Member::ENVELOPE_LEN)
+        .div_euclid(Member::MAX_ENCODED_LEN)
+        .max(1);
+    if members.len() <= per_chunk {
+        return vec![Frame::Gossip {
+            members,
+            more: false,
+        }];
+    }
+
+    let chunks = members.len().div_ceil(per_chunk);
+    members
+        .chunks(per_chunk)
+        .enumerate()
+        .map(|(index, chunk)| Frame::Gossip {
+            members: chunk.to_vec(),
+            more: index + 1 < chunks,
+        })
+        .collect()
 }
 
 /// The merge's consequences run out here, where no membership lock is held. A departure is
@@ -652,7 +632,6 @@ pub(crate) fn on_gossip(endpoint: &'static EndpointInner, members: &[Member]) {
     let changed = !merge.new_up.is_empty() || !merge.downed.is_empty();
     for node in merge.new_up {
         endpoint.unrefuse(node.addr());
-        // Called for the arming side effect; no inbound delivery to gate here.
         let _ = endpoint.track_liveness(node);
         endpoint.receptionist().origin_up(node);
     }
@@ -680,6 +659,29 @@ pub(crate) fn on_gossip(endpoint: &'static EndpointInner, members: &[Member]) {
 
     if changed {
         endpoint.push_gossip();
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+struct MemberRepr {
+    addr: SocketAddr,
+    incarnation: Incarnation,
+    state: MemberState,
+}
+
+impl From<Member> for MemberRepr {
+    fn from(member: Member) -> Self {
+        Self {
+            addr: member.addr(),
+            incarnation: member.incarnation(),
+            state: member.state(),
+        }
+    }
+}
+
+impl From<MemberRepr> for Member {
+    fn from(repr: MemberRepr) -> Self {
+        Self::new(NodeId::from_parts(repr.addr, repr.incarnation), repr.state)
     }
 }
 
@@ -738,7 +740,7 @@ impl Entries {
             }
         };
 
-        self.members.insert(node, MemberEntry::up());
+        self.members.insert(node, MemberEntry::up(Instant::now()));
         self.version += 1;
         JoinAdmission::Admitted { superseded }
     }
@@ -801,7 +803,7 @@ impl Entries {
                         }
                     }
 
-                    self.members.insert(member.node, MemberEntry::up());
+                    self.members.insert(member.node, MemberEntry::up(now));
                     self.version += 1;
                     scan.new_up.push(member.node);
                 }
@@ -953,21 +955,21 @@ struct MemberEntry {
     changed_at: Instant,
 }
 
+impl MemberEntry {
+    fn up(changed_at: Instant) -> Self {
+        Self {
+            state: MemberState::Up,
+            changed_at,
+        }
+    }
+}
+
 #[derive(Default)]
 struct Scan {
     new_up: Vec<NodeId>,
     to_down: Vec<(NodeId, MemberState)>,
     to_flush: Vec<NodeId>,
     self_down: bool,
-}
-
-impl MemberEntry {
-    fn up() -> Self {
-        Self {
-            state: MemberState::Up,
-            changed_at: Instant::now(),
-        }
-    }
 }
 
 async fn join_within(
