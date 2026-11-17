@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794924312885,
+  "lastUpdate": 1794924314450,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -36375,6 +36375,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4335574,
             "range": "± 104590",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e8d0de2fbf696edbbb3b987e6352deeafc15ef35",
+          "message": "Merge pull request #476 from tellus-rs/docs/370-core-persistence\n\ndocs: fix the review's core and persistence doc findings",
+          "timestamp": "2026-11-17T14:57:36+01:00",
+          "tree_id": "2175491d49e6f6dcc0d6e75e23e1c1e93071eeb8",
+          "url": "https://github.com/tellus-rs/tellus/commit/e8d0de2fbf696edbbb3b987e6352deeafc15ef35"
+        },
+        "date": 1794924314186,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 24136622,
+            "range": "± 1628723",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 24688673,
+            "range": "± 1117319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4809305,
+            "range": "± 327467",
             "unit": "ns/iter"
           }
         ]
