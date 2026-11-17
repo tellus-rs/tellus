@@ -12,7 +12,7 @@ use crate::{
 use semver::Version;
 use serde::{Serialize, de::DeserializeOwned};
 use std::{
-    any::type_name,
+    any,
     net::SocketAddr,
     panic::{AssertUnwindSafe, catch_unwind},
 };
@@ -130,18 +130,6 @@ pub struct Peer {
 }
 
 impl Peer {
-    pub(crate) fn new(
-        node: NodeId,
-        app_version: Option<AppVersion>,
-        max_frame_size: Option<usize>,
-    ) -> Self {
-        Self {
-            node,
-            app_version,
-            max_frame_size,
-        }
-    }
-
     /// The address the node advertises.
     pub fn addr(&self) -> SocketAddr {
         self.node.addr()
@@ -159,6 +147,18 @@ impl Peer {
     /// such a message is delivered in that shape.
     pub fn app_version(&self) -> Option<&AppVersion> {
         self.app_version.as_ref()
+    }
+
+    pub(crate) fn new(
+        node: NodeId,
+        app_version: Option<AppVersion>,
+        max_frame_size: Option<usize>,
+    ) -> Self {
+        Self {
+            node,
+            app_version,
+            max_frame_size,
+        }
     }
 
     pub(crate) fn max_frame_size(&self) -> Option<usize> {
@@ -186,7 +186,7 @@ impl UnsupportedSchemaVersion {
         T: Schema,
     {
         Self {
-            type_name: type_name::<T>(),
+            type_name: any::type_name::<T>(),
             schema_version,
             current: T::VERSION,
         }
@@ -204,7 +204,7 @@ where
 {
     catch_unwind(AssertUnwindSafe(f)).unwrap_or_else(|panic| {
         error!(
-            payload_type = type_name::<T>(),
+            payload_type = any::type_name::<T>(),
             panic = %PanicPayload(panic.as_ref()),
             "{failure}"
         );
@@ -219,7 +219,7 @@ mod tests {
         cluster::{
             codec::{Codec, CodecError},
             node::NodeId,
-            schema::{Peer, Schema, catch_panic_and_log},
+            schema::{Peer, Schema, UnsupportedSchemaVersion, catch_panic_and_log},
         },
     };
     use serde::{Deserialize, Serialize};
@@ -265,9 +265,9 @@ mod tests {
             if schema_version == Self::VERSION {
                 return codec.decode(payload);
             }
-            Err(CodecError::make_decoding(
-                super::UnsupportedSchemaVersion::new::<Self>(schema_version),
-            ))
+            Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
+                Self,
+            >(schema_version)))
         }
     }
 

@@ -2,7 +2,6 @@ use crate::{
     ActorId, ActorRef, ReplyTo, SchemaVersion,
     cluster::{
         codec::{Codec, CodecError},
-        discovery::Nonce,
         endpoint::{self, EndpointInner},
         frame::{Frame, StreamKey},
         node::NodeId,
@@ -13,16 +12,19 @@ use crate::{
     sync::lock,
     watch::{ActorTerminated, TerminatedHandler, Watcher, WatcherRegistry},
 };
-use derive_more::Debug;
+use derive_more::{Debug, Display};
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de, ser};
 use std::{
-    any::{Any, type_name},
+    any::{self, Any},
     borrow::Cow,
     cell::RefCell,
     collections::{HashMap, hash_map::Entry},
     error::Error,
     net::SocketAddr,
-    sync::{Arc, Mutex, Weak, atomic::AtomicU64},
+    sync::{
+        Arc, Mutex, Weak,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 use thiserror::Error;
 use tracing::{debug, warn};
@@ -117,22 +119,6 @@ where
             ))
         }
     }
-}
-
-/// A reply destination which cannot be serialized or resolved; rendered into the serde error.
-#[derive(Debug, Error)]
-pub(crate) enum ReplyToError {
-    #[error("remoting endpoint not started")]
-    EndpointNotStarted,
-
-    #[error("reply destination already serialized")]
-    AlreadySerialized,
-
-    #[error("no pending reply destination under this nonce")]
-    NoPendingReply,
-
-    #[error("reply destination of another reply type")]
-    ReplyType,
 }
 
 /// Dropping an entry resolves its ask as `NoReply`; otherwise only the ask timeout resolves it.
@@ -238,29 +224,6 @@ impl PendingReplies {
         drop(released);
     }
 
-    pub(crate) fn discard_ask(&self, tags: &[ReplyTag]) -> Vec<Cancellation> {
-        if tags.is_empty() {
-            return Vec::new();
-        }
-
-        let mut pending = lock(&self.pending);
-        let (released, cancellations) = release(
-            &mut pending,
-            tags.iter()
-                .filter(|tag| tag.recipient.is_none())
-                .map(|tag| tag.nonce),
-        );
-        drop(pending);
-        drop(released);
-
-        cancellations
-    }
-
-    /// An actor-origin request has no timeout, so its entry must not outlive its recipient.
-    pub(crate) fn fail_recipient(&self, recipient: ActorId) -> Vec<Cancellation> {
-        self.release_where(|entry| entry.recipient == Some(recipient))
-    }
-
     pub(crate) fn fail_addr(&self, addr: SocketAddr) {
         drop(self.take_where(|entry| {
             entry
@@ -286,14 +249,37 @@ impl PendingReplies {
         self.release_where(PendingReply::is_abandoned)
     }
 
-    pub(crate) fn cancel_proxy(&self, origin: ProxyOrigin) -> Vec<Cancellation> {
-        self.forget_proxy(origin);
-        self.release_abandoned()
-    }
-
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         lock(&self.pending).len()
+    }
+
+    fn discard_ask(&self, tags: &[ReplyTag]) -> Vec<Cancellation> {
+        if tags.is_empty() {
+            return Vec::new();
+        }
+
+        let mut pending = lock(&self.pending);
+        let (released, cancellations) = release(
+            &mut pending,
+            tags.iter()
+                .filter(|tag| tag.recipient.is_none())
+                .map(|tag| tag.nonce),
+        );
+        drop(pending);
+        drop(released);
+
+        cancellations
+    }
+
+    /// An actor-origin request has no timeout, so its entry must not outlive its recipient.
+    fn fail_recipient(&self, recipient: ActorId) -> Vec<Cancellation> {
+        self.release_where(|entry| entry.recipient == Some(recipient))
+    }
+
+    fn cancel_proxy(&self, origin: ProxyOrigin) -> Vec<Cancellation> {
+        self.forget_proxy(origin);
+        self.release_abandoned()
     }
 
     /// The eviction is registered after the insert and never under the pending lock the sink takes.
@@ -395,6 +381,25 @@ impl PendingReplies {
     }
 }
 
+/// Answers match by nonce, so two requests from one asker cannot resolve each other.
+#[derive(Debug, Display, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub(crate) struct Nonce(u64);
+
+impl Nonce {
+    pub(crate) fn mint(next: &AtomicU64) -> Self {
+        Self(next.fetch_add(1, Ordering::Relaxed))
+    }
+
+    pub(crate) fn as_u64(self) -> u64 {
+        self.0
+    }
+
+    #[cfg(test)]
+    pub(crate) fn first() -> Self {
+        Self(0)
+    }
+}
+
 /// Repeated in the frame, so a node dead-lettering a message or reply undecoded can answer each.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct ReplyTag {
@@ -456,30 +461,17 @@ impl AskGuard {
     }
 }
 
-/// Releases the ask's own reply destinations on drop, however the ask ends.
-pub(crate) struct AskReplyTags<'a> {
-    pending: &'a PendingReplies,
-    tags: Vec<ReplyTag>,
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct Cancellation {
+    pub(crate) peer: NodeId,
+    pub(crate) nonce: Nonce,
+    pub(crate) stream: Option<StreamKey>,
 }
 
-impl<'a> AskReplyTags<'a> {
-    pub(crate) fn new(pending: &'a PendingReplies, tags: Vec<ReplyTag>) -> Self {
-        Self { pending, tags }
-    }
-
-    /// Only once the ask resolved: its entry was taken or dropped with it, nothing is left.
-    pub(crate) fn disarm(&mut self) {
-        self.tags.clear();
-    }
-}
-
-impl Drop for AskReplyTags<'_> {
-    fn drop(&mut self) {
-        let cancellations = self.pending.discard_ask(&self.tags);
-        if let Some(endpoint) = endpoint::get() {
-            send_cancellations(endpoint, cancellations);
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub(crate) struct ProxyOrigin {
+    node: NodeId,
+    nonce: Nonce,
 }
 
 /// Runs `f` recording every reply destination minted on this thread, so a send site learns them.
@@ -600,19 +592,6 @@ pub(crate) fn send_cancellations(endpoint: &EndpointInner, cancellations: Vec<Ca
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub(crate) struct Cancellation {
-    pub(crate) peer: NodeId,
-    pub(crate) nonce: Nonce,
-    pub(crate) stream: Option<StreamKey>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) struct ProxyOrigin {
-    node: NodeId,
-    nonce: Nonce,
-}
-
 /// For a message or reply dead-lettered undecoded only, and tolerant of a repeated notification.
 pub(crate) fn on_undeliverable(endpoint: &EndpointInner, peer: NodeId, reply_tags: &[ReplyTag]) {
     for tag in reply_tags {
@@ -623,6 +602,48 @@ pub(crate) fn on_undeliverable(endpoint: &EndpointInner, peer: NodeId, reply_tag
         };
         if let Err(error) = endpoint.send(peer, frame) {
             debug!(%peer, nonce = %tag.nonce, %error, "cannot send reply-dropped notification");
+        }
+    }
+}
+
+/// A reply destination which cannot be serialized or resolved; rendered into the serde error.
+#[derive(Debug, Error)]
+enum ReplyToError {
+    #[error("remoting endpoint not started")]
+    EndpointNotStarted,
+
+    #[error("reply destination already serialized")]
+    AlreadySerialized,
+
+    #[error("no pending reply destination under this nonce")]
+    NoPendingReply,
+
+    #[error("reply destination of another reply type")]
+    ReplyType,
+}
+
+/// Releases the ask's own reply destinations on drop, however the ask ends.
+struct AskReplyTags<'a> {
+    pending: &'a PendingReplies,
+    tags: Vec<ReplyTag>,
+}
+
+impl<'a> AskReplyTags<'a> {
+    fn new(pending: &'a PendingReplies, tags: Vec<ReplyTag>) -> Self {
+        Self { pending, tags }
+    }
+
+    /// Only once the ask resolved: its entry was taken or dropped with it, nothing is left.
+    fn disarm(&mut self) {
+        self.tags.clear();
+    }
+}
+
+impl Drop for AskReplyTags<'_> {
+    fn drop(&mut self) {
+        let cancellations = self.pending.discard_ask(&self.tags);
+        if let Some(endpoint) = endpoint::get() {
+            send_cancellations(endpoint, cancellations);
         }
     }
 }
@@ -695,7 +716,6 @@ impl TerminatedHandler for RecipientEvictor {
                 endpoint.pending_replies().fail_recipient(actor_id),
             );
         }
-
         Ok(())
     }
 }
@@ -830,7 +850,7 @@ where
             Err(error) => warn!(
                 origin = %origin,
                 recipient = ?recipient,
-                reply_type = type_name::<R>(),
+                reply_type = any::type_name::<R>(),
                 %error,
                 source = error.source(),
                 "dead letter"
@@ -887,15 +907,14 @@ mod tests {
         ActorId, MailboxCapacity, ReplyTo, SchemaVersion,
         cluster::{
             codec::{Codec, CodecError},
-            discovery::Nonce,
             endpoint::{self, EndpointConfig, EndpointInner},
             frame::{Frame, MIN_FRAME_SIZE, StreamKey},
             node::NodeId,
             peer::DialRequest,
             reply::{
-                AskReplyTags, Cancellation, PendingReplies, ProxyOrigin, ReplyTag, WireReplyTo,
-                note_minted, on_reply, on_reply_canceled, on_reply_dropped, record_minted,
-                remote_proxy,
+                AskReplyTags, Cancellation, Nonce, PendingReplies, ProxyOrigin, ReplyTag,
+                WireReplyTo, note_minted, on_reply, on_reply_canceled, on_reply_dropped,
+                record_minted, remote_proxy,
             },
             schema::{Peer, Schema},
         },
@@ -911,8 +930,7 @@ mod tests {
         },
     };
 
-    /// The bytes the trait object codec this one replaced encoded a [WireReplyTo] with a recipient
-    /// into, and one without.
+    /// The pinned bytes of a [WireReplyTo] with a recipient, and of one without.
     const REPLY_TO_PAYLOADS: [&[u8]; 2] = [
         &[
             1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 249, 19, 16, 1, 161, 219, 7, 101,
@@ -1897,10 +1915,10 @@ mod tests {
         }
     }
 
-    /// A reply-to serialized by the trait object codec decodes here, with and without a
-    /// recipient, and encodes back into the same bytes.
+    /// A reply-to decodes from its pinned bytes, with and without a recipient, and encodes back
+    /// into the same bytes.
     #[test]
-    fn a_wire_reply_to_matches_the_trait_object_codec() {
+    fn a_wire_reply_to_matches_its_pinned_bytes() {
         for (payload, nonce) in REPLY_TO_PAYLOADS.into_iter().zip([41, 42]) {
             let reply_to = Codec::Postcard
                 .decode::<WireReplyTo>(payload)

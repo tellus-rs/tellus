@@ -39,9 +39,12 @@ where
     /// # Panics
     /// Panics in debug builds if another type of this process has claimed the same
     /// [Manifest::MANIFEST] as `M`.
-    pub fn new(name: impl Into<String>) -> Self {
+    pub fn new<N>(name: N) -> Self
+    where
+        N: Into<String>,
+    {
         Self {
-            key: Key::topic(name),
+            key: Key::make_topic(name),
         }
     }
 

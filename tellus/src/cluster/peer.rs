@@ -2041,7 +2041,7 @@ mod tests {
         cluster::{
             bootstrap::{self, BootstrapConfig, FixedSeeds, SeedDiscovery},
             codec::{Codec, CodecError},
-            discovery::{KeyKind, Nonce, WireKey},
+            discovery::{KeyKind, WireKey},
             endpoint::{self, EndpointConfig, EndpointInner, FormError, MemberAdmission},
             formation::JoinOutcome,
             frame::{
@@ -2059,7 +2059,7 @@ mod tests {
                 write_frames, write_streams,
             },
             receptionist::{self, WireGroup},
-            reply,
+            reply::{self, Nonce},
             schema::Schema,
             state::ForeignCluster,
             transport::{

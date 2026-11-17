@@ -342,10 +342,10 @@ mod tests {
     use crate::{
         ActorId, SchemaVersion,
         cluster::{
-            discovery::Nonce,
             frame::{Frame, StreamKey},
             lanes::{Generation, Lane, LaneError, Lanes, matching_sender, stream_index, try_send},
             node::NodeId,
+            reply::Nonce,
         },
         quota::{CountedSender, Quota},
         sync::read,
