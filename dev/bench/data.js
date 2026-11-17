@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794915128971,
+  "lastUpdate": 1794915130991,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35955,6 +35955,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5109289,
             "range": "± 310132",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "8fdf692f603d47a99df04d42e126a6bfdac8a728",
+          "message": "Merge pull request #472 from tellus-rs/style/cluster-failure-bootstrap\n\nstyle(cluster): order and shorten failure, reachability, bootstrap, QUIC",
+          "timestamp": "2026-11-17T12:23:09+01:00",
+          "tree_id": "c51acb49cfe63e6da7cca1fc8b4146871ae1280f",
+          "url": "https://github.com/tellus-rs/tellus/commit/8fdf692f603d47a99df04d42e126a6bfdac8a728"
+        },
+        "date": 1794915130395,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 33061269,
+            "range": "± 1217122",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 32350155,
+            "range": "± 1379296",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5617053,
+            "range": "± 462539",
             "unit": "ns/iter"
           }
         ]
