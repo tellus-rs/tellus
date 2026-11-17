@@ -68,7 +68,10 @@ impl DnsSeeds {
     ///
     /// # Errors
     /// Fails if the given name is blank, or if the system resolver configuration cannot be read.
-    pub fn srv(name: impl Into<String>) -> Result<Self, DnsSeedsError> {
+    pub fn srv<N>(name: N) -> Result<Self, DnsSeedsError>
+    where
+        N: Into<String>,
+    {
         Self::new(Query::Srv(name.into()))
     }
 
@@ -78,7 +81,10 @@ impl DnsSeeds {
     ///
     /// # Errors
     /// Fails if the given name is blank, or if the system resolver configuration cannot be read.
-    pub fn ip(name: impl Into<String>, port: NonZeroU16) -> Result<Self, DnsSeedsError> {
+    pub fn ip<N>(name: N, port: NonZeroU16) -> Result<Self, DnsSeedsError>
+    where
+        N: Into<String>,
+    {
         Self::new(Query::Ip {
             name: name.into(),
             port,
@@ -254,7 +260,6 @@ fn validate(query: &Query) -> Result<(), InvalidQuery> {
             source,
         });
     }
-
     Ok(())
 }
 

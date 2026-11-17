@@ -219,7 +219,6 @@ async fn test_invalid_pods() -> anyhow::Result<()> {
             matches!(error, K8sSeedsError::Config(error) if error.to_string() == expected.to_string())
         );
     }
-
     Ok(())
 }
 
