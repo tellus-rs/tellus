@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794926129312,
+  "lastUpdate": 1794926131015,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -32461,6 +32461,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105623,
             "range": "± 2994",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "9aa6ed0ac7bed433dbfc76aa09b9bcaeb584eb08",
+          "message": "Merge pull request #475 from tellus-rs/docs/cluster-review-findings\n\ndocs: clarify cluster guarantees and complete the READMEs",
+          "timestamp": "2026-11-17T15:27:24+01:00",
+          "tree_id": "6b19c64341e8602fb0b5d9c497dfa6a9bc797a25",
+          "url": "https://github.com/tellus-rs/tellus/commit/9aa6ed0ac7bed433dbfc76aa09b9bcaeb584eb08"
+        },
+        "date": 1794926130733,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3994348,
+            "range": "± 162426",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4219867,
+            "range": "± 229369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1089527,
+            "range": "± 12380",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 141703,
+            "range": "± 4440",
             "unit": "ns/iter"
           }
         ]
