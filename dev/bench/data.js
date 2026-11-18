@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795005267739,
+  "lastUpdate": 1795005269294,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -34309,6 +34309,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 629166,
             "range": "± 16551",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ce0848a26e47000516684c4d73b5e919baaeb0c",
+          "message": "Merge pull request #485 from tellus-rs/ci/public-deps-check\n\nci: require ! for breaking public dependency bumps",
+          "timestamp": "2026-11-18T14:27:04+02:00",
+          "tree_id": "163051636f2078e855884584d04dea09f23efa8e",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ce0848a26e47000516684c4d73b5e919baaeb0c"
+        },
+        "date": 1795005269075,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3293945,
+            "range": "± 43797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3257711,
+            "range": "± 31983",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 746469,
+            "range": "± 17091",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 101565,
+            "range": "± 5138",
             "unit": "ns/iter"
           }
         ]
