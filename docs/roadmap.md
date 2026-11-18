@@ -13,8 +13,9 @@ The core is complete for its purpose: actors as state machines with one Tokio ta
 mailboxes, death watch with the ordering guarantee, supervision with restart and backoff. Timers and
 stashing are opt-in per actor type, and a [`Host`](../tellus/src/host.rs) spawns entities identified
 by a key on demand and can passivate them after an idle timeout. Two extensions have landed behind
-features. `persistence` adds event-sourced actors whose replay equals live execution, with effects
-gated on durability, fencing via conditional append and schema evolution via manifests;
+features. `persistence` adds event-sourced actors with effects gated on durability, fencing via
+conditional append and schema evolution via manifests. Their replay equals live execution if every
+event and snapshot survives its codec's round trip.
 [`tellus-persistence-postgres`](../tellus-persistence-postgres) is the first store. `cluster` makes
 `ActorRef` serializable, so actors on different nodes tell, ask and watch each other through the
 same API. It adds membership, gossip, failure detection, pluggable downing and a drained,
