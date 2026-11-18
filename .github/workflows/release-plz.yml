@@ -74,6 +74,8 @@ jobs:
         uses: MarcoIeni/release-plz-action@66b324fd6c72d05d2a08568492ecdd62bfb8a62b # v0.5.148
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          # The semver baseline, the released crate, may predate .cargo/config.toml's version!
+          K8S_OPENAPI_ENABLED_VERSION: "1.36"
 
       - name: Put the release notes in front of the changelog
         if: steps.release-plz.outputs.releases_created == 'true' || github.event_name == 'workflow_dispatch'
