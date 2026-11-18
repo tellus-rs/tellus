@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795038997922,
+  "lastUpdate": 1795038999581,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -39735,6 +39735,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5596930,
             "range": "± 361494",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "b809f04f7cab13abfeba244159e3df9034468121",
+          "message": "Merge pull request #505 from tellus-rs/docs/regenerate-changelogs\n\ndocs: regenerate changelogs with the unified config",
+          "timestamp": "2026-11-18T23:49:02+02:00",
+          "tree_id": "7a645afe18d4d69344416b9d9107680418b26261",
+          "url": "https://github.com/tellus-rs/tellus/commit/b809f04f7cab13abfeba244159e3df9034468121"
+        },
+        "date": 1795038999202,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 32291262,
+            "range": "± 1134055",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 31810990,
+            "range": "± 1630299",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 6360676,
+            "range": "± 342264",
             "unit": "ns/iter"
           }
         ]
