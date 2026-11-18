@@ -1,66 +1,59 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
 ## [0.5.3](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.2...tellus-v0.5.3) - 2026-11-01
 
-### Other
+### Documentation
 
-- correct and complete the documentation
+- Correct and complete the documentation ([#237](https://github.com/tellus-rs/tellus/pull/237))
 
 ## [0.5.2](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.1...tellus-v0.5.2) - 2026-11-01
 
-### Fixed
+### Bug Fixes
 
-- pass the crypto provider explicitly in QuicTransport
-- require full pages from EventStore::read
+- Pass the crypto provider explicitly in QuicTransport ([#229](https://github.com/tellus-rs/tellus/pull/229))
+- Require full pages from EventStore::read ([#228](https://github.com/tellus-rs/tellus/pull/228))
 
-### Other
+### Refactor
 
-- Merge pull request #231 from tellus-rs/test/fix-218
-- check snapshot isolation in the store contract
-- synchronize watch tests without relying on watcher order
-- rename identifiers with British spellings
-- fix the findings of the documentation review
-- use hotpath criterion adapter for benchmarks
-- run the profile flood on a current-thread runtime
+- Rename identifiers with British spellings ([#226](https://github.com/tellus-rs/tellus/pull/226))
+
+### Documentation
+
+- Fix the findings of the documentation review ([#225](https://github.com/tellus-rs/tellus/pull/225))
+
+### Miscellaneous Tasks
+
+- Use hotpath criterion adapter for benchmarks ([#199](https://github.com/tellus-rs/tellus/pull/199))
+- Run the profile flood on a current-thread runtime ([#211](https://github.com/tellus-rs/tellus/pull/211))
 
 ## [0.5.1](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.0...tellus-v0.5.1) - 2026-10-29
 
-### Added
+### Features
 
-- deliver a reply_to reply past a full mailbox
+- Deliver a reply_to reply past a full mailbox ([#197](https://github.com/tellus-rs/tellus/pull/197))
 
-### Fixed
+### Bug Fixes
 
-- deliver a piped future's output past a full mailbox
+- Deliver a piped future's output past a full mailbox ([#196](https://github.com/tellus-rs/tellus/pull/196))
 
-### Other
+### Miscellaneous Tasks
 
-- Merge pull request #179 from hotpath-rs/callgrind_mode
-- Use callgrind merged mode for hotpath benchmarks
-- *(deps)* bump the cargo-major group across 1 directory with 3 updates
+- Use callgrind merged mode for hotpath benchmarks ([#179](https://github.com/tellus-rs/tellus/pull/179))
 
 ## [0.5.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.4.0...tellus-v0.5.0) - 2026-10-28
 
-### Added
+### Features
 
-- add timers, opt-in per actor via Actor::Timers
-- let an actor read its own mailbox depth
+- Add timers, opt-in per actor via Actor::Timers ([#185](https://github.com/tellus-rs/tellus/pull/185))
+- Let an actor read its own mailbox depth ([#162](https://github.com/tellus-rs/tellus/pull/162))
 
-### Fixed
+### Bug Fixes
 
-- *(cluster)* drain a departure over a connection still being set up
+- *(cluster)* Drain a departure over a connection still being set up ([#170](https://github.com/tellus-rs/tellus/pull/170))
 
-### Other
+### Documentation
 
-- add a stale readings tutorial step and a batch writes example
-- *(cluster)* recover from ports taken before a node binds them
+- Add a stale readings tutorial step and a batch writes example ([#191](https://github.com/tellus-rs/tellus/pull/191))
 
 ## [0.4.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.9...tellus-v0.4.0) - 2026-10-21
 
@@ -85,106 +78,102 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.3.9](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.8...tellus-v0.3.9) - 2026-10-19
 
-### Other
+### Documentation
 
-- describe restarts by their count instead of a streak
+- Describe restarts by their count instead of a streak ([#147](https://github.com/tellus-rs/tellus/pull/147))
 
 ## [0.3.8](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.7...tellus-v0.3.8) - 2026-10-19
 
-### Other
+### Documentation
 
-- add example anchors for the site and rename the cellar device
+- Add example anchors for the site and rename the cellar device ([#145](https://github.com/tellus-rs/tellus/pull/145))
 
 ## [0.3.7](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.6...tellus-v0.3.7) - 2026-10-19
 
-### Other
+### Miscellaneous Tasks
 
-- add crate keywords and categories for search
+- Add crate keywords and categories for search ([#143](https://github.com/tellus-rs/tellus/pull/143))
 
 ## [0.3.6](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.5...tellus-v0.3.6) - 2026-10-19
 
-### Other
+### Documentation
 
-- add event-sourced tutorial, how-tos and explanation examples
-- fix flaky error formatting assertions with a global subscriber
+- Add event-sourced tutorial, how-tos and explanation examples ([#142](https://github.com/tellus-rs/tellus/pull/142))
 
 ## [0.3.5](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.4...tellus-v0.3.5) - 2026-10-18
 
-### Fixed
+### Bug Fixes
 
-- yield the worker from busy actors via the cooperative budget
-- contain panics in logged and dropped errors
+- Yield the worker from busy actors via the cooperative budget ([#138](https://github.com/tellus-rs/tellus/pull/138))
+- Contain panics in logged and dropped errors ([#136](https://github.com/tellus-rs/tellus/pull/136))
 
 ## [0.3.4](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.3...tellus-v0.3.4) - 2026-10-18
 
-### Added
+### Features
 
-- add ActorContext::pipe_to_self
+- Add ActorContext::pipe_to_self ([#135](https://github.com/tellus-rs/tellus/pull/135))
 
-### Other
+### Styling
 
-- drop blank lines before a closing Ok
+- Drop blank lines before a closing Ok ([#133](https://github.com/tellus-rs/tellus/pull/133))
 
 ## [0.3.3](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.2...tellus-v0.3.3) - 2026-10-18
 
-### Other
+### Documentation
 
-- unify the examples into a getting started tutorial
-- point links and crate homepage to tellus.rs
+- Unify the examples into a getting started tutorial ([#130](https://github.com/tellus-rs/tellus/pull/130))
+- Point links and crate homepage to tellus.rs ([#128](https://github.com/tellus-rs/tellus/pull/128))
 
 ## [0.3.2](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.1...tellus-v0.3.2) - 2026-10-17
 
-### Other
+### Miscellaneous Tasks
 
-- move repo links and code owners to tellus-rs
-- drop redundant homepage from manifests
+- Move repo links and code owners to tellus-rs ([#126](https://github.com/tellus-rs/tellus/pull/126))
+- Drop redundant homepage from manifests ([#118](https://github.com/tellus-rs/tellus/pull/118))
 
-## [0.3.1](https://github.com/hseeberger/tellus/compare/tellus-v0.3.0...tellus-v0.3.1) - 2026-10-12
+## [0.3.1](https://github.com/tellus-rs/tellus/compare/tellus-v0.3.0...tellus-v0.3.1) - 2026-10-12
 
-### Added
+### Features
 
-- add TestContext behind test-util for unit testing actors
+- Add TestContext behind test-util for unit testing actors ([#103](https://github.com/tellus-rs/tellus/pull/103))
 
-### Other
+## [0.3.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.2.1...tellus-v0.3.0) - 2026-09-13
 
-- migrate profiling to hotpath cloud
-- replace TestStore with FaultyStore over InMemoryStore
+### Features
 
-## [0.3.0](https://github.com/hseeberger/tellus/compare/tellus-v0.2.1...tellus-v0.3.0) - 2026-09-13
+- Add hosts, spawning/passivating managed entities ([#73](https://github.com/tellus-rs/tellus/pull/73))
+- Add in-memory store behind persistence-in-memory feature ([#74](https://github.com/tellus-rs/tellus/pull/74))
+- Stop an actor system from the outside ([#72](https://github.com/tellus-rs/tellus/pull/72))
 
-### Added
+## [0.2.1](https://github.com/tellus-rs/tellus/compare/tellus-v0.2.0...tellus-v0.2.1) - 2026-08-30
 
-- add hosts, spawning/passivating managed entities
-- add in-memory store behind persistence-in-memory feature
-- stop an actor system from the outside
+### Bug Fixes
 
-## [0.2.1](https://github.com/hseeberger/tellus/compare/tellus-v0.2.0...tellus-v0.2.1) - 2026-08-30
+- Harden backoff config, recovery drop and bench sizing ([#63](https://github.com/tellus-rs/tellus/pull/63))
 
-### Fixed
+### Refactor
 
-- harden backoff config, recovery drop and bench sizing
+- Harden core and persistence guarantees ([#62](https://github.com/tellus-rs/tellus/pull/62))
+- Cut nesting and duplication in core and persistence ([#61](https://github.com/tellus-rs/tellus/pull/61))
 
-### Other
+### Miscellaneous Tasks
 
-- harden core and persistence guarantees
-- cut nesting and duplication in core and persistence
-- pin bench runtime threads and raise sampling
+- Pin bench runtime threads and raise sampling ([#55](https://github.com/tellus-rs/tellus/pull/55))
 
-## [0.2.0](https://github.com/hseeberger/tellus/compare/tellus-v0.1.0...tellus-v0.2.0) - 2026-08-27
+## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.1.0...tellus-v0.2.0) - 2026-08-27
 
-### Added
+### Features
 
-- add event-sourced persistence
-- add hotpath-based profiling behind hotpath feature
+- Add event-sourced persistence ([#21](https://github.com/tellus-rs/tellus/pull/21))
+- Add hotpath-based profiling behind hotpath feature ([#38](https://github.com/tellus-rs/tellus/pull/38))
 
-### Other
+### Documentation
 
-- use independent versions per crate
-- install via cargo add instead of pinned versions
-- refresh docs after persistence landed
+- Install via cargo add instead of pinned versions ([#51](https://github.com/tellus-rs/tellus/pull/51))
+- Refresh docs after persistence landed ([#47](https://github.com/tellus-rs/tellus/pull/47))
 
-## [0.1.0](https://github.com/hseeberger/tellus/releases/tag/tellus-v0.1.0) - 2026-08-24
+## [0.1.0](https://github.com/tellus-rs/tellus/releases/tag/tellus-v0.1.0) - 2026-08-24
 
-### Other
+### Miscellaneous Tasks
 
-- rename ferrier to tellus
+- Rename ferrier to tellus ([#34](https://github.com/tellus-rs/tellus/pull/34))
