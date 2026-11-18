@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794988970122,
+  "lastUpdate": 1794988972317,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33805,6 +33805,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 133548,
             "range": "± 3001",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1dfa83d10b1d2596d5ae9ecf4a571b79f684b82",
+          "message": "Merge pull request #487 from tellus-rs/ci/release-plz-k8s-baseline\n\nci(release-plz): build the k8s semver baseline at kubernetes 1.36",
+          "timestamp": "2026-11-18T09:55:11+02:00",
+          "tree_id": "ce8630fc383e5fb96de537b775291c634fe2d212",
+          "url": "https://github.com/tellus-rs/tellus/commit/c1dfa83d10b1d2596d5ae9ecf4a571b79f684b82"
+        },
+        "date": 1794988971710,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3639870,
+            "range": "± 138667",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3491472,
+            "range": "± 139421",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 856679,
+            "range": "± 13397",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 104706,
+            "range": "± 3436",
             "unit": "ns/iter"
           }
         ]
