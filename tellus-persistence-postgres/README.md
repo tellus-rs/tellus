@@ -19,21 +19,33 @@ cargo add tellus-persistence-postgres
 
 `PostgresStore::new` takes a `PgPool` of the sqlx version this crate depends on. The crate
 re-exports sqlx, so an application builds the pool through it and needs no sqlx dependency of its
-own. One store serves as both event store and snapshot store:
+own. The pool gets a `statement_timeout` and an acquire timeout, which [Timeouts](#timeouts)
+explains. One store serves as both event store and snapshot store:
 
 ```rust
+use std::time::Duration;
 use tellus::Persistence;
-use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
+use tellus_persistence_postgres::{
+    PostgresStore,
+    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
+};
 
-let pool = PgPool::connect("postgres://tellus:tellus@localhost:5432/tellus").await?;
+let options = "postgres://tellus:tellus@localhost:5432/tellus"
+    .parse::<PgConnectOptions>()?
+    .options([("statement_timeout", "3s")]);
+let pool = PgPoolOptions::new()
+    .acquire_timeout(Duration::from_secs(3))
+    .connect_with(options)
+    .await?;
 let store = PostgresStore::new(pool);
 store.migrate().await?;
 
-let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
+let persistence = Persistence::new(store.clone())
+    .with_snapshot_store(store)
+    .with_timeout(Duration::from_secs(10))?;
 ```
 
-The re-export also gives access to `sqlx::postgres::PgPoolOptions`, which configures the pool,
-for example its size.
+`PgPoolOptions` configures more of the pool, for example its size.
 
 `migrate` applies the embedded schema, idempotently. Calling it is optional: `PostgresStore::new`
 does not touch the schema. An application which manages its schema with a tool of its own can
@@ -71,38 +83,20 @@ reached the server. sqlx sends no cancel request, so the statement runs on, and 
 returns to the pool only once the statement has ended. A dropped append can hence still commit, even
 after the replay of the actor's next incarnation has read the stream. Its events are then in the
 stream but not in the state, and the next append at the same position fails with
-`AppendError::Conflict`.
+`AppendError::Conflict`. Snapshot saves given up that way keep connections of the pool which both
+stores share, so they can starve appends.
 
 The pool therefore bounds the calls itself, with a `statement_timeout` on its connections and an
 acquire timeout. The server cancels a statement which exceeds `statement_timeout`, and the call
 then fails definitely: nothing it sent commits later. The statement timeout counts from the moment
 the statement reaches the server, not the wait for a pool connection, which the acquire timeout
-bounds. A call can hence take as long as both together, and their sum stays below the
-`Persistence` timeout, with room for the network round trips. sqlx's default acquire timeout, 30 s,
-is above the default `Persistence` timeout:
-
-```rust
-use std::time::Duration;
-use tellus::Persistence;
-use tellus_persistence_postgres::{
-    PostgresStore,
-    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
-};
-
-let options = "postgres://tellus:tellus@localhost:5432/tellus"
-    .parse::<PgConnectOptions>()?
-    .options([("statement_timeout", "4s")]);
-let pool = PgPoolOptions::new()
-    .acquire_timeout(Duration::from_secs(4))
-    .connect_with(options)
-    .await?;
-let store = PostgresStore::new(pool);
-store.migrate().await?;
-
-let persistence = Persistence::new(store.clone())
-    .with_snapshot_store(store)
-    .with_timeout(Duration::from_secs(10))?;
-```
+bounds. The statement timeout can count twice, too. sqlx prepares a statement on its first use on a
+connection in a separate round trip which ends with a Sync. PostgreSQL cancels the statement timeout
+when that Sync completes and starts it again with the Bind which follows. A call can hence take as
+long as the acquire timeout plus twice the statement timeout, and that sum stays below the
+`Persistence` timeout, with room for the network round trips. The example under [Usage](#usage) sets
+both to 3 s, which leaves 1 s of its 10 s `Persistence` timeout for the round trips. sqlx's default
+acquire timeout, 30 s, is above the default `Persistence` timeout.
 
 `migrate` runs under the same statement timeout. While another process migrates the same database,
 `migrate` hence waits for it at most the statement timeout and then fails.

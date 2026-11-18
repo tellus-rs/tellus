@@ -13,7 +13,10 @@ use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, Incoming, Persistence, PersistenceId, ReplyTo,
     SchemaVersion, Unstashed, Untimed, Versioned,
 };
-use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
+use tellus_persistence_postgres::{
+    PostgresStore,
+    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
+};
 
 const DATABASE_URL: &str = "postgres://tellus:tellus@localhost:5432/tellus";
 const SNAPSHOT_EVERY: u64 = 3;
@@ -22,7 +25,13 @@ const SNAPSHOT_EVERY: u64 = 3;
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let url = env::var("DATABASE_URL").unwrap_or_else(|_| DATABASE_URL.to_string());
-    let pool = PgPool::connect(&url)
+    let options = url
+        .parse::<PgConnectOptions>()
+        .context("database URL")?
+        .options([("statement_timeout", "3s")]);
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(3))
+        .connect_with(options)
         .await
         .context("connection to PostgreSQL")?;
     let store = PostgresStore::new(pool);

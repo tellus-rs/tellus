@@ -16,30 +16,6 @@
 //! its own:
 //!
 //! ```rust,no_run
-//! use tellus::Persistence;
-//! use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
-//!
-//! # #[tokio::main]
-//! # async fn main() -> anyhow::Result<()> {
-//! let pool = PgPool::connect("postgres://tellus:tellus@localhost:5432/tellus").await?;
-//! let store = PostgresStore::new(pool);
-//! store.migrate().await?;
-//!
-//! let persistence = Persistence::new(store.clone()).with_snapshot_store(store);
-//! # Ok(())
-//! # }
-//! ```
-//!
-//! tellus bounds every store call by the timeout of its [Persistence](tellus::Persistence), but
-//! only as a backstop: it drops a call which exceeds it, and a dropped call does not end a
-//! statement which has reached the server, so a dropped append can still commit. The pool therefore
-//! bounds the calls itself, with a `statement_timeout` on its connections and an acquire timeout,
-//! whose sum stays below the `Persistence` timeout, since the statement timeout does not count the
-//! wait for a connection. Neither the statement timeout nor `transaction_timeout` covers the commit
-//! which ends a statement, so an append which fails while it commits stays ambiguous. The README
-//! says more:
-//!
-//! ```rust,no_run
 //! use std::time::Duration;
 //! use tellus::Persistence;
 //! use tellus_persistence_postgres::{
@@ -51,9 +27,9 @@
 //! # async fn main() -> anyhow::Result<()> {
 //! let options = "postgres://tellus:tellus@localhost:5432/tellus"
 //!     .parse::<PgConnectOptions>()?
-//!     .options([("statement_timeout", "4s")]);
+//!     .options([("statement_timeout", "3s")]);
 //! let pool = PgPoolOptions::new()
-//!     .acquire_timeout(Duration::from_secs(4))
+//!     .acquire_timeout(Duration::from_secs(3))
 //!     .connect_with(options)
 //!     .await?;
 //! let store = PostgresStore::new(pool);
@@ -65,6 +41,18 @@
 //! # Ok(())
 //! # }
 //! ```
+//!
+//! tellus bounds every store call by the timeout of its [Persistence](tellus::Persistence), but
+//! only as a backstop: it drops a call which exceeds it, and a dropped call does not end a
+//! statement which has reached the server, so a dropped append can still commit. The pool therefore
+//! bounds the calls itself, with a `statement_timeout` on its connections and an acquire timeout.
+//! The acquire timeout plus twice the statement timeout stays below the `Persistence` timeout, with
+//! room for the network round trips. The statement timeout does not count the wait for a
+//! connection, and it can count twice. sqlx prepares a statement on its first use on a connection
+//! in a separate round trip which ends with a Sync. PostgreSQL cancels the statement timeout when
+//! that Sync completes and starts it again with the Bind which follows. Neither the statement
+//! timeout nor `transaction_timeout` covers the commit which ends a statement, so an append which
+//! fails while it commits stays ambiguous. The README says more.
 
 #![doc(
     html_logo_url = "https://tellus.rs/brand/logo-tile.svg",

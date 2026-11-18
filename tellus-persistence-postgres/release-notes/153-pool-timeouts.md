@@ -8,12 +8,18 @@ The next append of that actor then conflicts and fails its command.
 
 Configure the pool to bound its calls itself: a `statement_timeout` on its connections, for example
 through `PgConnectOptions::options`, and an acquire timeout through
-`PgPoolOptions::acquire_timeout`. Keep their sum below the `Persistence` timeout, since the
-statement timeout does not count the wait for a connection. sqlx's default acquire timeout, 30 s, is
-above tellus's default. Neither the statement timeout nor `transaction_timeout` covers the commit
-which ends a statement, so an append which fails while it commits stays ambiguous. The new section
+`PgPoolOptions::acquire_timeout`. Keep the acquire timeout plus twice the statement timeout below
+the `Persistence` timeout, with room for the network round trips. The statement timeout does not
+count the wait for a connection, and it can count twice. sqlx prepares a statement on its first use
+on a connection in a separate round trip which ends with a Sync. PostgreSQL cancels the statement
+timeout when that Sync completes and starts it again with the Bind which follows. sqlx's default
+acquire timeout, 30 s, is above tellus's default. Neither the statement timeout nor
+`transaction_timeout` covers the commit which ends a statement, so an append which fails while it
+commits stays ambiguous. The README shows the configuration under
+[Usage](https://github.com/tellus-rs/tellus/blob/main/tellus-persistence-postgres/README.md#usage),
+and its new section
 [Timeouts](https://github.com/tellus-rs/tellus/blob/main/tellus-persistence-postgres/README.md#timeouts)
-of the README shows the configuration and what stays ambiguous.
+explains it and what stays ambiguous.
 
 A shutdown of an event-sourced actor now waits for an append under way at most the `Persistence`
 timeout, where it used to wait until the append settled.
