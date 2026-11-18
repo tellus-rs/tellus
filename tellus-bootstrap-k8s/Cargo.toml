@@ -19,8 +19,8 @@ serde = [ "dep:humantime-serde", "dep:serde" ]
 derive_more     = { workspace = true, features = [ "debug" ] }
 humantime-serde = { workspace = true, optional = true }
 k8s-openapi     = { workspace = true }
-kube            = { workspace = true, features = [ "client", "ring", "rustls-tls" ] }
-serde           = { workspace = true, features = [ "derive" ], optional = true }
+kube            = { version = "5.0", default-features = false, features = [ "client", "ring", "rustls-tls" ] }
+serde           = { version = "1.0", features = [ "derive" ], optional = true }
 tellus          = { workspace = true, features = [ "cluster" ] }
 thiserror       = { workspace = true }
 tokio           = { workspace = true, features = [ "time" ] }

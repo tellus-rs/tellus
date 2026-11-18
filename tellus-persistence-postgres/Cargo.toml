@@ -13,7 +13,7 @@ categories    = [ "database", "asynchronous" ]
 publish       = true
 
 [dependencies]
-sqlx      = { workspace = true, features = [ "runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros" ] }
+sqlx      = { version = "0.9", default-features = false, features = [ "runtime-tokio", "tls-rustls-ring", "postgres", "migrate", "macros" ] }
 thiserror = { workspace = true }
 tellus    = { workspace = true, features = [ "persistence" ] }
 

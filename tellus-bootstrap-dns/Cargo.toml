@@ -14,8 +14,8 @@ serde = [ "dep:serde" ]
 
 [dependencies]
 futures-util     = { workspace = true }
-hickory-resolver = { workspace = true, features = [ "tokio" ] }
-serde            = { workspace = true, features = [ "derive" ], optional = true }
+hickory-resolver = { version = "0.26", features = [ "tokio" ] }
+serde            = { version = "1.0", features = [ "derive" ], optional = true }
 thiserror        = { workspace = true }
 tellus           = { workspace = true, features = [ "cluster" ] }
 tracing          = { workspace = true }
