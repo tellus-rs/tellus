@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795042179089,
+  "lastUpdate": 1795042180735,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -40155,6 +40155,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6236182,
             "range": "± 677551",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2302713df006042a6a9dd2d35fc5865d158880b2",
+          "message": "Merge pull request #503 from tellus-rs/ci/ignore-rustsec-2026-0543\n\nci: ignore RUSTSEC-2026-0543, chrono is never built",
+          "timestamp": "2026-11-19T00:33:32+02:00",
+          "tree_id": "0d8e1e289a1c83de36b962b99a8412fbb1ca3bc6",
+          "url": "https://github.com/tellus-rs/tellus/commit/2302713df006042a6a9dd2d35fc5865d158880b2"
+        },
+        "date": 1795042180372,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 21294170,
+            "range": "± 1436392",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 20670378,
+            "range": "± 601909",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3856321,
+            "range": "± 201086",
             "unit": "ns/iter"
           }
         ]
