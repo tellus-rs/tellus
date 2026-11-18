@@ -35,13 +35,13 @@ async fn main() -> anyhow::Result<()> {
         ("cellar", "boiler", 11.0),
     ];
     for (group_name, device_name, degrees) in readings {
-        manager.tell(Command::Record {
+        manager.tell(DeviceManagerMessage::Record {
             group_name,
             device_name,
             degrees,
         });
     }
-    manager.tell(Command::Retire {
+    manager.tell(DeviceManagerMessage::Retire {
         group_name: "attic",
         device_name: "right",
     });
@@ -49,7 +49,7 @@ async fn main() -> anyhow::Result<()> {
     print_averages(manager).await?;
 
     sleep(2 * STALE_AFTER).await;
-    manager.tell(Command::Record {
+    manager.tell(DeviceManagerMessage::Record {
         group_name: "attic",
         device_name: "left",
         degrees: 22.3,
@@ -76,12 +76,14 @@ fn init_tracing() {
         .init();
 }
 
-async fn print_averages(manager: &ActorRef<Command>) -> anyhow::Result<()> {
+async fn print_averages(manager: &ActorRef<DeviceManagerMessage>) -> anyhow::Result<()> {
     for group_name in ["attic", "cellar", "garage"] {
         let average = manager
-            .ask(Duration::from_secs(5), |reply_to| Command::Average {
-                group_name,
-                reply_to,
+            .ask(Duration::from_secs(5), |reply_to| {
+                DeviceManagerMessage::Average {
+                    group_name,
+                    reply_to,
+                }
             })
             .await
             .context("asking for the average temperature")?;
@@ -97,7 +99,7 @@ async fn print_averages(manager: &ActorRef<Command>) -> anyhow::Result<()> {
 struct DeviceManager;
 
 impl Actor for DeviceManager {
-    type Message = Command;
+    type Message = DeviceManagerMessage;
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<GroupMessage>>;
@@ -113,12 +115,12 @@ impl Actor for DeviceManager {
         incoming: Incoming<Self::Message>,
         mut groups: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        let Incoming::Message(command) = incoming else {
+        let Incoming::Message(message) = incoming else {
             unreachable!("the manager watches no actor, hence never gets a terminated signal")
         };
 
-        match command {
-            Command::Record {
+        match message {
+            DeviceManagerMessage::Record {
                 group_name,
                 device_name,
                 degrees,
@@ -133,7 +135,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Retire {
+            DeviceManagerMessage::Retire {
                 group_name,
                 device_name,
             } => {
@@ -143,7 +145,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Average {
+            DeviceManagerMessage::Average {
                 group_name,
                 reply_to,
             } => {
@@ -157,7 +159,7 @@ impl Actor for DeviceManager {
     }
 }
 
-enum Command {
+enum DeviceManagerMessage {
     Record {
         group_name: &'static str,
         device_name: &'static str,
