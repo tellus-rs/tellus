@@ -289,5 +289,5 @@ run-cluster-demo-tui:
 _nightly:
     @[[ "{{ nightly }}" =~ ^nightly-[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]] || { echo "no nightly derived from rustc --version: '{{ nightly }}'" >&2; exit 1; }
 
-public-deps:
-    python3 {{ env("PUBLIC_DEPS_CHECK", "../../hseeberger/public-deps-check/public_deps_check.py") }} analyze --base origin/main --head HEAD --toolchain {{ nightly }}
+breaking-bump:
+    cargo +{{ nightly }} breaking-bump check
