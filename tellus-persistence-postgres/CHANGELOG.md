@@ -1,28 +1,20 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
 ## [0.2.14](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.13...tellus-persistence-postgres-v0.2.14) - 2026-11-01
 
-### Other
+### Documentation
 
-- correct and complete the documentation
+- Correct and complete the documentation ([#237](https://github.com/tellus-rs/tellus/pull/237))
 
 ## [0.2.13](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.12...tellus-persistence-postgres-v0.2.13) - 2026-11-01
 
-### Added
+### Features
 
-- re-export sqlx from tellus-persistence-postgres
+- Re-export sqlx from tellus-persistence-postgres ([#227](https://github.com/tellus-rs/tellus/pull/227))
 
-### Other
+### Documentation
 
-- fix the findings of the documentation review
-- pin images by digest
+- Fix the findings of the documentation review ([#225](https://github.com/tellus-rs/tellus/pull/225))
 
 ## [0.2.12](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.11...tellus-persistence-postgres-v0.2.12) - 2026-10-29
 
@@ -32,15 +24,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.11](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.10...tellus-persistence-postgres-v0.2.11) - 2026-10-28
 
-### Added
+### Features
 
-- add timers, opt-in per actor via Actor::Timers
+- Add timers, opt-in per actor via Actor::Timers ([#185](https://github.com/tellus-rs/tellus/pull/185))
 
 ## [0.2.10](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.9...tellus-persistence-postgres-v0.2.10) - 2026-10-21
 
-### Added
+### Features
 
-- add remoting and cluster support
+- Add remoting and cluster support ([#1](https://github.com/tellus-rs/tellus/pull/1))
 
 ## [0.2.9](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.8...tellus-persistence-postgres-v0.2.9) - 2026-10-19
 
@@ -56,15 +48,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.7](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.6...tellus-persistence-postgres-v0.2.7) - 2026-10-19
 
-### Other
+### Miscellaneous Tasks
 
-- add crate keywords and categories for search
+- Add crate keywords and categories for search ([#143](https://github.com/tellus-rs/tellus/pull/143))
 
 ## [0.2.6](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.5...tellus-persistence-postgres-v0.2.6) - 2026-10-19
 
-### Other
+### Documentation
 
-- add event-sourced tutorial, how-tos and explanation examples
+- Add event-sourced tutorial, how-tos and explanation examples ([#142](https://github.com/tellus-rs/tellus/pull/142))
 
 ## [0.2.5](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.4...tellus-persistence-postgres-v0.2.5) - 2026-10-18
 
@@ -74,54 +66,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.4](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.3...tellus-persistence-postgres-v0.2.4) - 2026-10-18
 
-### Other
+### Styling
 
-- drop blank lines before a closing Ok
+- Drop blank lines before a closing Ok ([#133](https://github.com/tellus-rs/tellus/pull/133))
 
 ## [0.2.3](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.2...tellus-persistence-postgres-v0.2.3) - 2026-10-18
 
-### Other
+### Documentation
 
-- unify the examples into a getting started tutorial
-- point links and crate homepage to tellus.rs
+- Unify the examples into a getting started tutorial ([#130](https://github.com/tellus-rs/tellus/pull/130))
+- Point links and crate homepage to tellus.rs ([#128](https://github.com/tellus-rs/tellus/pull/128))
 
 ## [0.2.2](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.1...tellus-persistence-postgres-v0.2.2) - 2026-10-17
 
-### Other
+### Miscellaneous Tasks
 
-- drop redundant homepage from manifests
+- Drop redundant homepage from manifests ([#118](https://github.com/tellus-rs/tellus/pull/118))
 
-## [0.2.1](https://github.com/hseeberger/tellus/compare/tellus-persistence-postgres-v0.2.0...tellus-persistence-postgres-v0.2.1) - 2026-10-12
+## [0.2.1](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.0...tellus-persistence-postgres-v0.2.1) - 2026-10-12
 
 ### Other
 
 - updated the following local packages: tellus
 
-## [0.2.0](https://github.com/hseeberger/tellus/compare/tellus-persistence-postgres-v0.1.1...tellus-persistence-postgres-v0.2.0) - 2026-09-13
+## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.1.1...tellus-persistence-postgres-v0.2.0) - 2026-09-13
 
 ### Other
 
 - updated the following local packages: tellus, tellus
 
-## [0.1.1](https://github.com/hseeberger/tellus/compare/tellus-persistence-postgres-v0.1.0...tellus-persistence-postgres-v0.1.1) - 2026-08-30
+## [0.1.1](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.1.0...tellus-persistence-postgres-v0.1.1) - 2026-08-30
 
-### Fixed
+### Bug Fixes
 
-- harden backoff config, recovery drop and bench sizing
+- Harden backoff config, recovery drop and bench sizing ([#63](https://github.com/tellus-rs/tellus/pull/63))
 
-### Other
+### Refactor
 
-- harden core and persistence guarantees
+- Harden core and persistence guarantees ([#62](https://github.com/tellus-rs/tellus/pull/62))
 
-## [0.1.0](https://github.com/hseeberger/tellus/releases/tag/tellus-persistence-postgres-v0.1.0) - 2026-08-27
+## [0.1.0](https://github.com/tellus-rs/tellus/releases/tag/tellus-persistence-postgres-v0.1.0) - 2026-08-27
 
-### Added
+### Features
 
-- add event-sourced persistence
+- Add event-sourced persistence ([#21](https://github.com/tellus-rs/tellus/pull/21))
 
-### Other
+### Documentation
 
-- use independent versions per crate
-- install via cargo add instead of pinned versions
-- publish tellus-persistence-postgres to crates.io
-- refresh docs after persistence landed
+- Install via cargo add instead of pinned versions ([#51](https://github.com/tellus-rs/tellus/pull/51))
+- Refresh docs after persistence landed ([#47](https://github.com/tellus-rs/tellus/pull/47))

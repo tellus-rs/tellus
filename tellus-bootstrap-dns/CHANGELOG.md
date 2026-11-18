@@ -1,24 +1,17 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
-
-## [Unreleased]
-
 ## [0.1.4](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.3...tellus-bootstrap-dns-v0.1.4) - 2026-11-01
 
-### Other
+### Documentation
 
-- correct and complete the documentation
+- Correct and complete the documentation ([#237](https://github.com/tellus-rs/tellus/pull/237))
 
 ## [0.1.3](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.2...tellus-bootstrap-dns-v0.1.3) - 2026-11-01
 
-### Other
+### Documentation
 
-- fix the findings of the documentation review
-- correct stale statements on inspect, min_peers, caching and lb
+- Fix the findings of the documentation review ([#225](https://github.com/tellus-rs/tellus/pull/225))
+- Correct stale statements on inspect, min_peers, caching and lb ([#216](https://github.com/tellus-rs/tellus/pull/216))
 
 ## [0.1.2](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.1...tellus-bootstrap-dns-v0.1.2) - 2026-10-29
 
@@ -34,6 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.1.0](https://github.com/tellus-rs/tellus/releases/tag/tellus-bootstrap-dns-v0.1.0) - 2026-10-21
 
-### Added
+### Features
 
-- add remoting and cluster support
+- Add remoting and cluster support ([#1](https://github.com/tellus-rs/tellus/pull/1))
