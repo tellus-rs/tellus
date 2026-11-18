@@ -1,6 +1,7 @@
 # k8s-openapi requires the Kubernetes version to be chosen by a feature of the leaf binary, which a
 # library crate must not enable: tellus-bootstrap-k8s hence only enables `latest` in its
 # dev-dependency, and every command not building dev-dependencies (plain `cargo check`, `cargo doc`,
-# rust-analyzer) needs this instead. Keep it at the version behind that `latest`.
+# rust-analyzer) needs this instead. Keep it at the version behind that `latest`. The release-plz
+# workflow overrides it with a version the last released tellus-bootstrap-k8s supports as well.
 [env]
 K8S_OPENAPI_ENABLED_VERSION = "1.37"
