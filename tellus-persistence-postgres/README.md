@@ -4,7 +4,7 @@ PostgreSQL-backed stores for [tellus](../tellus) persistence: `PostgresStore` im
 `EventStore` and `SnapshotStore` over one shared connection pool, so a single value, cheap to
 clone, wires a whole `Persistence`.
 
-For the contract these stores implement, from replay equals live execution to fencing and schema
+For the contract these stores implement, from replay and live execution to fencing and schema
 evolution, see [docs/persistence.md](../docs/persistence.md).
 
 tellus-persistence-postgres is available on
