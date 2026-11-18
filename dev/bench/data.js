@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795004069684,
+  "lastUpdate": 1795004074811,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -34141,6 +34141,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 101876,
             "range": "± 8653",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "bba4c75c578bd384997e0153dd98ee77b62e5cb2",
+          "message": "Merge pull request #488 from tellus-rs/ci/app-client-id-secret\n\nci: read the App client id from a secret",
+          "timestamp": "2026-11-18T14:02:47+02:00",
+          "tree_id": "29f552499f97e8306bfd40677a2e58d232e64937",
+          "url": "https://github.com/tellus-rs/tellus/commit/bba4c75c578bd384997e0153dd98ee77b62e5cb2"
+        },
+        "date": 1795004073694,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 21091486,
+            "range": "± 630896",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 20838332,
+            "range": "± 742797",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 4973082,
+            "range": "± 30567",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 629166,
+            "range": "± 16551",
             "unit": "ns/iter"
           }
         ]
