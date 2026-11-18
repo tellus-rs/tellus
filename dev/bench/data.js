@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795041715407,
+  "lastUpdate": 1795041717059,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -39945,6 +39945,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6360676,
             "range": "± 342264",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "85fbf84048621ec6a7515c351cb81c34643d7a3b",
+          "message": "Merge pull request #501 from tellus-rs/docs/replay-condition\n\ndocs: qualify the replay claim in the postgres readme and the roadmap",
+          "timestamp": "2026-11-19T00:33:12+02:00",
+          "tree_id": "a48d1e922b52e2f7d5bfa551453a0692d3783217",
+          "url": "https://github.com/tellus-rs/tellus/commit/85fbf84048621ec6a7515c351cb81c34643d7a3b"
+        },
+        "date": 1795041716701,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 36021884,
+            "range": "± 3386889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 35427971,
+            "range": "± 2458389",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 6236182,
+            "range": "± 677551",
             "unit": "ns/iter"
           }
         ]
