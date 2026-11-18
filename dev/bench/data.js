@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1794939185912,
+  "lastUpdate": 1794988970122,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -22739,6 +22739,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 30832175,
             "range": "± 1936851",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c1dfa83d10b1d2596d5ae9ecf4a571b79f684b82",
+          "message": "Merge pull request #487 from tellus-rs/ci/release-plz-k8s-baseline\n\nci(release-plz): build the k8s semver baseline at kubernetes 1.36",
+          "timestamp": "2026-11-18T09:55:11+02:00",
+          "tree_id": "ce8630fc383e5fb96de537b775291c634fe2d212",
+          "url": "https://github.com/tellus-rs/tellus/commit/c1dfa83d10b1d2596d5ae9ecf4a571b79f684b82"
+        },
+        "date": 1794988968178,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 11273124,
+            "range": "± 415169",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 11398393,
+            "range": "± 426960",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 689450,
+            "range": "± 39033",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 586520,
+            "range": "± 6394",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4969014,
+            "range": "± 73310",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3408168,
+            "range": "± 25117",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 16352875,
+            "range": "± 511250",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 16495568,
+            "range": "± 375733",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 16143963,
+            "range": "± 397589",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 16758497,
+            "range": "± 408551",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17479618,
+            "range": "± 350980",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 18583738,
+            "range": "± 449636",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 23750337,
+            "range": "± 739628",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17320960,
+            "range": "± 304285",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 18643066,
+            "range": "± 291129",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 23413125,
+            "range": "± 795235",
             "unit": "ns/iter"
           }
         ]
