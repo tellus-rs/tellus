@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795002784471,
+  "lastUpdate": 1795002786858,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -33973,6 +33973,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 104706,
             "range": "± 3436",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "a232f15b790b2a2ea758e29c3471e08e7bca0892",
+          "message": "Merge pull request #484 from tellus-rs/build/public-dependencies-per-crate\n\nbuild: declare public dependencies per crate",
+          "timestamp": "2026-11-18T13:45:29+02:00",
+          "tree_id": "9b46bb564a1733d2506c3301d87efc11444c7d12",
+          "url": "https://github.com/tellus-rs/tellus/commit/a232f15b790b2a2ea758e29c3471e08e7bca0892"
+        },
+        "date": 1795002786644,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3422474,
+            "range": "± 53230",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3465865,
+            "range": "± 52530",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 780606,
+            "range": "± 31388",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 101876,
+            "range": "± 8653",
             "unit": "ns/iter"
           }
         ]
