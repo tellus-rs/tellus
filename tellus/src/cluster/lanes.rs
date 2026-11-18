@@ -48,10 +48,12 @@ pub(crate) enum Drain {
 }
 
 /// A lane taken for a departure. `connected_rx` names the incarnation its latest connection went
-/// to, also one established after the lane was taken, which `peer` never learns.
+/// to, also one established after the lane was taken, which `peer` never learns. `newest_peer` is
+/// the newest incarnation a send on the lane was addressed to.
 pub(crate) struct DrainedLane {
     pub(crate) addr: SocketAddr,
     pub(crate) peer: Option<NodeId>,
+    pub(crate) newest_peer: NodeId,
     pub(crate) connected_rx: watch::Receiver<Option<NodeId>>,
     pub(crate) done_rx: oneshot::Receiver<Drain>,
 }
@@ -79,7 +81,8 @@ impl Lanes {
         }
     }
 
-    /// A bound lane refuses any incarnation but its own.
+    /// A bound lane refuses any incarnation but its own. A lane records the newest incarnation a
+    /// send was addressed to.
     pub(crate) fn enqueue<P, A>(
         &self,
         peer: NodeId,
@@ -91,8 +94,19 @@ impl Lanes {
         P: FnOnce() -> Result<Arc<Snapshot>, LaneError>,
         A: FnOnce() -> bool,
     {
-        {
+        let records_older = {
             let lanes = read(&self.lanes);
+            match matching_lane(&lanes, peer)? {
+                Some(lane) if peer.incarnation() <= lane.newest_peer.incarnation() => {
+                    return try_send(lane.outbound_tx(&frame), frame, peer);
+                }
+                Some(_) => true,
+                None => false,
+            }
+        };
+        if records_older {
+            let mut lanes = write(&self.lanes);
+            record_newest(&mut lanes, peer);
             if let Some(outbound_tx) = matching_sender(&lanes, peer, &frame)? {
                 return try_send(outbound_tx, frame, peer);
             }
@@ -100,6 +114,7 @@ impl Lanes {
 
         let snapshot = prepare()?;
         let mut lanes = write(&self.lanes);
+        record_newest(&mut lanes, peer);
         if let Some(outbound_tx) = matching_sender(&lanes, peer, &frame)? {
             return try_send(outbound_tx, frame, peer);
         }
@@ -107,7 +122,7 @@ impl Lanes {
             return Err(LaneError::NodeUnreachable(peer));
         }
 
-        let outbound_tx = self.open(&mut lanes, peer.addr(), &frame, snapshot);
+        let outbound_tx = self.open(&mut lanes, peer, &frame, snapshot);
         try_send(outbound_tx, frame, peer)
     }
 
@@ -188,13 +203,15 @@ impl Lanes {
         }
     }
 
-    /// Every lane with the incarnation it is bound to, if it has connected.
+    /// Every lane with the incarnation it is bound to, if it has connected, and the newest one a
+    /// send was addressed to.
     pub(crate) fn drain(&self) -> Vec<DrainedLane> {
         write(&self.lanes)
             .drain()
             .map(|(addr, lane)| DrainedLane {
                 addr,
                 peer: lane.peer,
+                newest_peer: lane.newest_peer,
                 connected_rx: lane.connected_rx,
                 done_rx: lane.done_rx,
             })
@@ -205,10 +222,11 @@ impl Lanes {
     fn open<'a>(
         &self,
         lanes: &'a mut HashMap<SocketAddr, Lane>,
-        addr: SocketAddr,
+        peer: NodeId,
         frame: &Frame,
         snapshot: Arc<Snapshot>,
     ) -> &'a CountedSender<Frame<'static>> {
+        let addr = peer.addr();
         let quota = Quota::bounded(self.outbound_capacity);
         let generation = Generation(self.next_generation.fetch_add(1, Ordering::Relaxed));
 
@@ -227,6 +245,7 @@ impl Lanes {
         let lane = Lane {
             generation,
             peer: None,
+            newest_peer: peer,
             connected: false,
             control_tx,
             data_tx,
@@ -261,6 +280,7 @@ impl Lanes {
 struct Lane {
     generation: Generation,
     peer: Option<NodeId>,
+    newest_peer: NodeId,
     connected: bool,
     control_tx: CountedSender<Frame<'static>>,
     data_tx: Vec<CountedSender<Frame<'static>>>,
@@ -298,14 +318,28 @@ fn matching_sender<'a>(
     peer: NodeId,
     frame: &Frame,
 ) -> Result<Option<&'a CountedSender<Frame<'static>>>, LaneError> {
+    Ok(matching_lane(lanes, peer)?.map(|lane| lane.outbound_tx(frame)))
+}
+
+fn matching_lane(
+    lanes: &HashMap<SocketAddr, Lane>,
+    peer: NodeId,
+) -> Result<Option<&Lane>, LaneError> {
     match lanes.get(&peer.addr()) {
-        Some(lane) if lane.peer.is_none_or(|bound| bound == peer) => {
-            Ok(Some(lane.outbound_tx(frame)))
-        }
+        Some(lane) if lane.peer.is_none_or(|bound| bound == peer) => Ok(Some(lane)),
 
         Some(_) => Err(LaneError::NodeUnreachable(peer)),
 
         None => Ok(None),
+    }
+}
+
+fn record_newest(lanes: &mut HashMap<SocketAddr, Lane>, peer: NodeId) {
+    if let Some(lane) = lanes.get_mut(&peer.addr())
+        && lane.peer.is_none_or(|bound| bound == peer)
+        && lane.newest_peer.incarnation() < peer.incarnation()
+    {
+        lane.newest_peer = peer;
     }
 }
 
@@ -416,6 +450,7 @@ mod tests {
         let lane = Lane {
             generation: Generation(0),
             peer: None,
+            newest_peer: NodeId::new("127.0.0.1:2552".parse().expect("valid address")),
             connected: false,
             control_tx,
             data_tx,

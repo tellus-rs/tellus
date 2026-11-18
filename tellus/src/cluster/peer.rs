@@ -6627,6 +6627,38 @@ mod tests {
         assert_eq!(started.elapsed(), left_after);
     }
 
+    /// A lane which dials a node not known here is listed as unacknowledged, and the departure
+    /// does not wait for it: no member is Up at its address, so the connect is given up at once.
+    #[tokio::test(start_paused = true)]
+    async fn a_leaving_node_lists_a_dialing_lane_toward_a_node_not_known_here() {
+        let (endpoint, lane_dials, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        let unknown = NodeId::new(addr(2));
+        endpoint
+            .send(
+                unknown,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("a lane opens toward a node not known here");
+        let _pending = dials.recv().await.expect("the lane dials");
+
+        let started = tokio::time::Instant::now();
+        let departure = endpoint.leave().await.expect("a departure");
+
+        assert_eq!(departure.unacknowledged(), [unknown.addr()]);
+        assert_eq!(started.elapsed(), Duration::ZERO);
+    }
+
     /// A lane which connects only once the departure has begun, to the successor of the
     /// incarnation it was opened for, resolves by that successor: a successor which never
     /// acknowledges leaves the departure incomplete, although the predecessor is Left.
