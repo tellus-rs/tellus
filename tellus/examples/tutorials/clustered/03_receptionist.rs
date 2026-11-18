@@ -77,20 +77,20 @@ async fn first_node() -> anyhow::Result<()> {
         ("cellar", "boiler", f64::NAN),
     ];
     for (group_name, device_name, degrees) in readings {
-        manager.tell(Command::Record {
+        manager.tell(DeviceManagerMessage::Record {
             group_name: group_name.to_string(),
             device_name: device_name.to_string(),
             degrees,
         });
     }
-    manager.tell(Command::Retire {
+    manager.tell(DeviceManagerMessage::Retire {
         group_name: "attic".to_string(),
         device_name: "right".to_string(),
     });
 
     for group_name in ["attic", "cellar", "garage"] {
         let average = manager
-            .ask(ASK_TIMEOUT, |reply_to| Command::Average {
+            .ask(ASK_TIMEOUT, |reply_to| DeviceManagerMessage::Average {
                 group_name: group_name.to_string(),
                 reply_to,
             })
@@ -121,7 +121,7 @@ async fn manager_node() -> anyhow::Result<()> {
 // ANCHOR_END: manager-node
 
 // ANCHOR: find-manager
-async fn find_manager() -> anyhow::Result<ActorRef<Command>> {
+async fn find_manager() -> anyhow::Result<ActorRef<DeviceManagerMessage>> {
     let mut managers =
         receptionist::subscribe(&Key::new(MANAGER_KEY)).context("subscribing to the key")?;
     let find = async {
@@ -193,7 +193,7 @@ fn spawn_node(role: &str, addr: SocketAddr, seeds: &[SocketAddr]) -> anyhow::Res
 struct DeviceManager;
 
 impl Actor for DeviceManager {
-    type Message = Command;
+    type Message = DeviceManagerMessage;
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<String, ActorRef<GroupMessage>>;
@@ -209,12 +209,12 @@ impl Actor for DeviceManager {
         incoming: Incoming<Self::Message>,
         mut groups: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        let Incoming::Message(command) = incoming else {
+        let Incoming::Message(message) = incoming else {
             unreachable!("the manager watches no actor, hence never gets a terminated signal")
         };
 
-        match command {
-            Command::Record {
+        match message {
+            DeviceManagerMessage::Record {
                 group_name,
                 device_name,
                 degrees,
@@ -229,7 +229,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Retire {
+            DeviceManagerMessage::Retire {
                 group_name,
                 device_name,
             } => {
@@ -239,7 +239,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Average {
+            DeviceManagerMessage::Average {
                 group_name,
                 reply_to,
             } => {
@@ -253,9 +253,9 @@ impl Actor for DeviceManager {
     }
 }
 
-// ANCHOR: command
+// ANCHOR: device-manager-message
 #[derive(Serialize, Deserialize)]
-enum Command {
+enum DeviceManagerMessage {
     Record {
         group_name: String,
         device_name: String,
@@ -273,12 +273,12 @@ enum Command {
     },
 }
 
-impl Schema for Command {}
+impl Schema for DeviceManagerMessage {}
 
-impl Manifest for Command {
-    const MANIFEST: &'static str = "device-manager-command";
+impl Manifest for DeviceManagerMessage {
+    const MANIFEST: &'static str = "device-manager-message";
 }
-// ANCHOR_END: command
+// ANCHOR_END: device-manager-message
 // ANCHOR_END: manager
 
 struct Group;

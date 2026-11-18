@@ -89,7 +89,7 @@ async fn first_node() -> anyhow::Result<()> {
         .next()
         .context("no device manager on the second node")?;
     for (device_name, degrees) in [("left", 21.5), ("right", 19.1)] {
-        manager.tell(Command::Record {
+        manager.tell(DeviceManagerMessage::Record {
             group_name: "attic".to_string(),
             device_name: device_name.to_string(),
             degrees,
@@ -117,7 +117,7 @@ async fn first_node() -> anyhow::Result<()> {
 
 // ANCHOR: watcher
 struct Watcher {
-    manager: ActorRef<Command>,
+    manager: ActorRef<DeviceManagerMessage>,
 }
 
 impl Actor for Watcher {
@@ -178,7 +178,7 @@ async fn await_all_up() -> anyhow::Result<()> {
 // ANCHOR_END: await-all-up
 
 // ANCHOR: find-managers
-async fn find_managers(count: usize) -> anyhow::Result<Vec<ActorRef<Command>>> {
+async fn find_managers(count: usize) -> anyhow::Result<Vec<ActorRef<DeviceManagerMessage>>> {
     let mut managers =
         receptionist::subscribe(&Key::new(MANAGER_KEY)).context("subscribing to the key")?;
     let find = async {
@@ -199,9 +199,9 @@ async fn find_managers(count: usize) -> anyhow::Result<Vec<ActorRef<Command>>> {
 }
 // ANCHOR_END: find-managers
 
-async fn print_attic_average(manager: &ActorRef<Command>) -> anyhow::Result<()> {
+async fn print_attic_average(manager: &ActorRef<DeviceManagerMessage>) -> anyhow::Result<()> {
     let average = manager
-        .ask(ASK_TIMEOUT, |reply_to| Command::Average {
+        .ask(ASK_TIMEOUT, |reply_to| DeviceManagerMessage::Average {
             group_name: "attic".to_string(),
             reply_to,
         })
@@ -282,7 +282,7 @@ fn spawn_node(role: &str, addr: SocketAddr, seeds: &[SocketAddr]) -> anyhow::Res
 struct DeviceManager;
 
 impl Actor for DeviceManager {
-    type Message = Command;
+    type Message = DeviceManagerMessage;
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<String, ActorRef<GroupMessage>>;
@@ -298,12 +298,12 @@ impl Actor for DeviceManager {
         incoming: Incoming<Self::Message>,
         mut groups: Self::State,
     ) -> Result<Control<Self::State>, Self::Error> {
-        let Incoming::Message(command) = incoming else {
+        let Incoming::Message(message) = incoming else {
             unreachable!("the manager watches no actor, hence never gets a terminated signal")
         };
 
-        match command {
-            Command::Record {
+        match message {
+            DeviceManagerMessage::Record {
                 group_name,
                 device_name,
                 degrees,
@@ -318,7 +318,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Retire {
+            DeviceManagerMessage::Retire {
                 group_name,
                 device_name,
             } => {
@@ -328,7 +328,7 @@ impl Actor for DeviceManager {
                 Ok(Control::Continue(groups))
             }
 
-            Command::Average {
+            DeviceManagerMessage::Average {
                 group_name,
                 reply_to,
             } => {
@@ -342,9 +342,9 @@ impl Actor for DeviceManager {
     }
 }
 
-// ANCHOR: command
+// ANCHOR: device-manager-message
 #[derive(Serialize, Deserialize)]
-enum Command {
+enum DeviceManagerMessage {
     Record {
         group_name: String,
         device_name: String,
@@ -362,12 +362,12 @@ enum Command {
     },
 }
 
-impl Schema for Command {}
+impl Schema for DeviceManagerMessage {}
 
-impl Manifest for Command {
-    const MANIFEST: &'static str = "device-manager-command";
+impl Manifest for DeviceManagerMessage {
+    const MANIFEST: &'static str = "device-manager-message";
 }
-// ANCHOR_END: command
+// ANCHOR_END: device-manager-message
 // ANCHOR_END: manager
 
 struct Group;
