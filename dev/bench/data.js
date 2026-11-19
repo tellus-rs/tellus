@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795077505623,
+  "lastUpdate": 1795077507511,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -40365,6 +40365,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3856321,
             "range": "± 201086",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "99622b897bdf45360f538817d3cb2f9a97e1a751",
+          "message": "Merge pull request #506 from tellus-rs/fix/leave-lane-incarnations\n\nfix(cluster): drain lanes toward unknown and restarted nodes on leave",
+          "timestamp": "2026-11-19T10:31:01+02:00",
+          "tree_id": "217ba17d83381244e61ef84bb9e218eb7b251d4b",
+          "url": "https://github.com/tellus-rs/tellus/commit/99622b897bdf45360f538817d3cb2f9a97e1a751"
+        },
+        "date": 1795077507004,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 27786775,
+            "range": "± 240608",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27413152,
+            "range": "± 218456",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4281553,
+            "range": "± 75213",
             "unit": "ns/iter"
           }
         ]
