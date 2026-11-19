@@ -1,0 +1,29 @@
+name: Smoke
+
+on:
+  pull_request:
+
+permissions: {}
+
+jobs:
+  mark-install:
+    name: Mark install
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Install cargo-binstall
+        uses: taiki-e/install-action@cfdb7ed4ccc7c7dce37759eae89dc5674b469b39 # v2.90.3
+        with:
+          tool: cargo-binstall
+
+      - name: Install breaking-bump
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          VERSION: 0.1.2
+        run: |
+          cargo binstall "cargo-breaking-bump@$VERSION" --no-confirm \
+            --disable-strategies quick-install,compile
+
+      - name: Mark help
+        run: |
+          cargo breaking-bump mark --help
