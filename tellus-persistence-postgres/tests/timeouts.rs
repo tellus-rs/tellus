@@ -27,12 +27,13 @@ const HELD_UP: &str = "INSERT INTO tellus_events \
 
 const PAGE: NonZeroUsize = NonZeroUsize::new(10).unwrap();
 
-/// Stands in for the `Persistence` timeout, above the sum of the pool's bounds.
+/// Stands in for the `Persistence` timeout, above the acquire timeout plus twice the statement
+/// timeout.
 const BACKSTOP: Duration = Duration::from_secs(1);
 
 const BOUNDS: Bounds = Bounds {
     statement_timeout: Duration::from_millis(300),
-    acquire_timeout: Duration::from_millis(400),
+    acquire_timeout: Duration::from_millis(300),
 };
 
 static COMPOSE: LazyLock<Compose> = LazyLock::new(|| compose!("../compose.yaml"));
@@ -127,9 +128,9 @@ async fn with_bounds_a_held_up_append_fails_definitely() {
     assert_nothing_lands_and_the_position_is_free(&store, &id).await;
 }
 
-/// The statement timeout does not count the wait for a connection. With both other connections
-/// of a pool of three busy, the append starts late, and the sum of the acquire timeout and the
-/// statement timeout, below the backstop, still ends it definitely.
+/// The statement timeout does not count the wait for a connection. With both other connections of a
+/// pool of three busy, the append starts late. The bounds still end it definitely, since their
+/// acquire timeout plus twice the statement timeout stays below the backstop.
 #[tokio::test]
 async fn with_bounds_an_append_which_starts_late_fails_definitely() {
     let (url, _container) = database().await;
@@ -138,7 +139,7 @@ async fn with_bounds_an_append_which_starts_late_fails_definitely() {
     let id = persistence_id("late-start");
 
     let blocker = hold_up(&pool, &id).await;
-    let sleepers = keep_busy(&pool, &monitor, 2, Duration::from_millis(250)).await;
+    let sleepers = keep_busy(&pool, &monitor, 2, Duration::from_millis(150)).await;
     let started = Instant::now();
     let appended = timeout(BACKSTOP, store.append(&id, SeqNo::ZERO, vec![event()]))
         .await
@@ -159,6 +160,76 @@ async fn with_bounds_an_append_which_starts_late_fails_definitely() {
 
     blocker.rollback().await.expect("the blocker rolls back");
     finish(sleepers).await;
+    assert_nothing_lands_and_the_position_is_free(&store, &id).await;
+}
+
+/// The statement timeout can count twice. An append which is the first use of its statement on
+/// the pool's only connection waits about two thirds of the acquire timeout for that connection,
+/// then about two thirds of the statement timeout in Parse behind a SHARE lock. sqlx ends that
+/// round trip with a Sync, which cancels the statement timeout, and the Bind which follows starts
+/// it again. Behind a second SHARE lock, the append then waits until its statement timeout ends
+/// it: after more than the acquire timeout plus one statement timeout, but before the backstop.
+#[tokio::test]
+async fn with_bounds_an_append_which_prepares_its_statement_counts_the_statement_timeout_twice() {
+    const LOCK: &str = "LOCK TABLE tellus_events IN SHARE MODE";
+
+    let (url, _container) = database().await;
+    let (store, pool) = store(&url, 1, Some(BOUNDS)).await;
+    let monitor = monitor(&url).await;
+    let lockers = PgPoolOptions::new()
+        .max_connections(2)
+        .connect(&url)
+        .await
+        .expect("the lockers connect");
+    let id = persistence_id("first-use");
+
+    let mut first = lockers.begin().await.expect("the transaction begins");
+    sqlx::query(LOCK)
+        .execute(&mut *first)
+        .await
+        .expect("the first lock is taken");
+    let mut second = lockers.begin().await.expect("the transaction begins");
+    let sleepers = keep_busy(&pool, &monitor, 1, BOUNDS.acquire_timeout * 2 / 3).await;
+    let started = Instant::now();
+    let appending = tokio::spawn({
+        let store = store.clone();
+        let id = id.clone();
+        async move { timeout(BACKSTOP, store.append(&id, SeqNo::ZERO, vec![event()])).await }
+    });
+    finish(sleepers).await;
+    while running_appends(&monitor).await < 1 {
+        sleep(Duration::from_millis(5)).await;
+    }
+    let second = tokio::spawn(async move {
+        sqlx::query(LOCK)
+            .execute(&mut *second)
+            .await
+            .expect("the second lock is taken");
+        second
+    });
+    sleep(BOUNDS.statement_timeout * 2 / 3).await;
+    first.commit().await.expect("the first lock is released");
+
+    let appended = appending
+        .await
+        .expect("the append task ends")
+        .expect("the statement timeout must end the append before the backstop");
+    let elapsed = started.elapsed();
+    assert!(
+        is_statement_timeout(&appended),
+        "the append must fail by its statement timeout, got {appended:?}"
+    );
+    assert!(
+        elapsed > BOUNDS.acquire_timeout + BOUNDS.statement_timeout,
+        "the statement timeout must have counted twice, the append took {elapsed:?}"
+    );
+
+    second
+        .await
+        .expect("the second locker ends")
+        .commit()
+        .await
+        .expect("the second lock is released");
     assert_nothing_lands_and_the_position_is_free(&store, &id).await;
 }
 

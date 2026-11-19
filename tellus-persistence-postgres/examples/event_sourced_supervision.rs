@@ -19,7 +19,10 @@ use tellus::{
     Incoming, Nothing, Persistence, PersistenceId, RestartPolicy, SchemaVersion,
     SupervisionStrategy, Unstashed, Untimed, Versioned,
 };
-use tellus_persistence_postgres::{PostgresStore, sqlx::PgPool};
+use tellus_persistence_postgres::{
+    PostgresStore,
+    sqlx::postgres::{PgConnectOptions, PgPoolOptions},
+};
 use thiserror::Error;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -33,7 +36,13 @@ async fn main() -> anyhow::Result<()> {
     init_tracing();
 
     let url = env::var("DATABASE_URL").unwrap_or_else(|_| DATABASE_URL.to_string());
-    let pool = PgPool::connect(&url)
+    let options = url
+        .parse::<PgConnectOptions>()
+        .context("database URL")?
+        .options([("statement_timeout", "3s")]);
+    let pool = PgPoolOptions::new()
+        .acquire_timeout(Duration::from_secs(3))
+        .connect_with(options)
         .await
         .context("connection to PostgreSQL")?;
     let store = PostgresStore::new(pool);
