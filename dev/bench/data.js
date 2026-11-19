@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795102719129,
+  "lastUpdate": 1795102721165,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35989,6 +35989,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 97714,
             "range": "± 10629",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5fdc98fb506f2c172ddbb9e92524b75c81e294f3",
+          "message": "Merge pull request #511 from tellus-rs/ci/dependabot-compose-daily\n\nci: run docker-compose dependabot updates daily",
+          "timestamp": "2026-11-19T17:30:39+02:00",
+          "tree_id": "177d1576782c33c5b9707172f6cb3e865030cfb6",
+          "url": "https://github.com/tellus-rs/tellus/commit/5fdc98fb506f2c172ddbb9e92524b75c81e294f3"
+        },
+        "date": 1795102720666,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2732731,
+            "range": "± 68282",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2683395,
+            "range": "± 58366",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 629663,
+            "range": "± 4762",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 80419,
+            "range": "± 5557",
             "unit": "ns/iter"
           }
         ]
