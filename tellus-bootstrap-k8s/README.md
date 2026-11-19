@@ -24,13 +24,13 @@ tellus-bootstrap-k8s is available on [crates.io](https://crates.io/crates/tellus
 ```sh
 cargo add tellus --features cluster
 cargo add tellus-bootstrap-k8s
-cargo add k8s-openapi@0.28 --features v1_33
+cargo add k8s-openapi@0.29 --features v1_33
 ```
 
 The last one is not optional. `k8s-openapi` requires the minimum Kubernetes version to be chosen by
 a feature, and only the binary may choose it. A library crate cannot do it for you, and without it
 your build fails with "None of the v1_* features are enabled". The feature has to reach the
-`k8s-openapi` this crate depends on, so the version must be the same, 0.28.
+`k8s-openapi` this crate depends on, so the version must be the same, 0.29.
 
 Start the endpoint, then bootstrap through the discovered seeds, bounded by a timeout of your
 choosing:
