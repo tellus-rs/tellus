@@ -169,7 +169,7 @@ jobs:
     name: Breaking Bump
     if: github.event_name == 'pull_request'
     needs: toolchain
-    uses: hseeberger/breaking-bump/.github/workflows/breaking-bump.yml@a7ddb444882e5c6c746121bb771f6b113ee35d4b # v0.1.1
+    uses: hseeberger/breaking-bump/.github/workflows/breaking-bump.yml@dab5a95de641b8fcd8a6574082b4b88b72db88db # v0.1.3
     permissions:
       contents: read
     with:
