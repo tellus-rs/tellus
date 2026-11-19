@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795105171237,
+  "lastUpdate": 1795105173927,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -36157,6 +36157,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 80419,
             "range": "± 5557",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "353935e5ffde0ac9555d13464d78d51672252197",
+          "message": "Merge pull request #512 from tellus-rs/dependabot/docker_compose/postgres-18.6-alpine\n\nbuild(deps): Bump postgres from 18.6-alpine to 18.6-alpine",
+          "timestamp": "2026-11-19T18:11:17+02:00",
+          "tree_id": "3327bccff7169cd8d9eb5119f0ad1473bb10b59f",
+          "url": "https://github.com/tellus-rs/tellus/commit/353935e5ffde0ac9555d13464d78d51672252197"
+        },
+        "date": 1795105173630,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4076401,
+            "range": "± 188862",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4043444,
+            "range": "± 162200",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1088209,
+            "range": "± 10895",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 138270,
+            "range": "± 9348",
             "unit": "ns/iter"
           }
         ]
