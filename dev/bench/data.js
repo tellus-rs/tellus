@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795101703237,
+  "lastUpdate": 1795101706370,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35821,6 +35821,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 130764,
             "range": "± 4593",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "3e0b517b486f71848ecedabcd730dc90e7a05185",
+          "message": "Merge pull request #510 from tellus-rs/ci/breaking-bump-action\n\nci: run breaking-bump through its action",
+          "timestamp": "2026-11-19T17:14:21+02:00",
+          "tree_id": "f0173e4fd3258ff02dfd63a4a9e26dd7c5f4fbd0",
+          "url": "https://github.com/tellus-rs/tellus/commit/3e0b517b486f71848ecedabcd730dc90e7a05185"
+        },
+        "date": 1795101705861,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3378733,
+            "range": "± 53344",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3341151,
+            "range": "± 46100",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 736597,
+            "range": "± 13386",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 97714,
+            "range": "± 10629",
             "unit": "ns/iter"
           }
         ]
