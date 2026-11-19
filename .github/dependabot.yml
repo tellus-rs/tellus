@@ -31,7 +31,7 @@ updates:
       - "/"
       - "/tellus-cluster-demo"
     schedule:
-      interval: weekly
+      interval: daily
     cooldown:
       default-days: 7
     commit-message:
