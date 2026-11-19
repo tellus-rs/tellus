@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795077995261,
+  "lastUpdate": 1795077996958,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -35485,6 +35485,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 102400,
             "range": "± 9720",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "6f1f1192fa891faf3eb6d5c4f556ea99d08971c8",
+          "message": "Merge pull request #507 from tellus-rs/docs/pool-bounds\n\ndocs(postgres): count the statement timeout twice in the pool bounds",
+          "timestamp": "2026-11-19T10:31:10+02:00",
+          "tree_id": "05d53e08ee812e7470de6dd4dc53964eb9a1511b",
+          "url": "https://github.com/tellus-rs/tellus/commit/6f1f1192fa891faf3eb6d5c4f556ea99d08971c8"
+        },
+        "date": 1795077996670,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 4079050,
+            "range": "± 201002",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 4044713,
+            "range": "± 202439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1082717,
+            "range": "± 17870",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 134996,
+            "range": "± 4575",
             "unit": "ns/iter"
           }
         ]
