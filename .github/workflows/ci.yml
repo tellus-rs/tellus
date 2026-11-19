@@ -165,18 +165,61 @@ jobs:
           rustup override set ${{ needs.toolchain.outputs.stable }}
           just doc
 
-  breaking-bump:
-    name: Breaking Bump
+  breaking-bump-check:
+    name: Breaking Bump Check
     if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     needs: toolchain
-    uses: hseeberger/breaking-bump/.github/workflows/breaking-bump.yml@dab5a95de641b8fcd8a6574082b4b88b72db88db # v0.1.3
     permissions:
       contents: read
-    with:
-      nightly: ${{ needs.toolchain.outputs.nightly }}
-    secrets:
-      app-client-id: ${{ secrets.APP_CLIENT_ID }}
-      app-private-key: ${{ secrets.APP_PRIVATE_KEY }}
+    outputs:
+      result: ${{ steps.breaking-bump.outputs.result }}
+      violations: ${{ steps.breaking-bump.outputs.violations }}
+      head: ${{ steps.breaking-bump.outputs.head }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          prefix-key: breaking-bump
+
+      - name: Check
+        id: breaking-bump
+        uses: hseeberger/breaking-bump@c52a11f8fe87719c843b9c33af45459b85c45a17 # v0.1.4
+        with:
+          command: check
+          nightly: ${{ needs.toolchain.outputs.nightly }}
+
+  breaking-bump-mark:
+    name: Breaking Bump Mark
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: breaking-bump-check
+    if: >-
+      ${{ !cancelled()
+      && github.event_name == 'pull_request'
+      && needs.breaking-bump-check.outputs.violations == 'missing-marker'
+      && github.event.pull_request.user.login == 'dependabot[bot]' }}
+    permissions: {}
+    steps:
+      - name: Generate a token
+        id: app-token
+        uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        with:
+          client-id: ${{ secrets.APP_CLIENT_ID }}
+          private-key: ${{ secrets.APP_PRIVATE_KEY }}
+
+      - name: Mark
+        uses: hseeberger/breaking-bump@c52a11f8fe87719c843b9c33af45459b85c45a17 # v0.1.4
+        with:
+          command: mark
+          token: ${{ steps.app-token.outputs.token }}
 
   stack-sweep-scripts:
     name: Test stack sweep scripts
