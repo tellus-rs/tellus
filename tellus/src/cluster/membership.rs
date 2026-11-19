@@ -279,21 +279,20 @@ impl Membership {
         self.while_up(node, |up| up)
     }
 
-    /// Left counts as dead here: only the receive side treats a departure differently.
+    /// Left counts as dead here.
     pub(crate) fn is_down(&self, node: NodeId) -> bool {
         read(&self.entries).is_down(node)
     }
 
     /// The node's own state, from its detailed entry or else from a fence naming it exactly.
     pub(crate) fn state(&self, node: NodeId) -> Option<MemberState> {
-        let entries = read(&self.entries);
-        let detailed = entries.members.get(&node).map(|entry| entry.state);
-        let fenced = entries
-            .fences
-            .get(&node.addr())
-            .filter(|fence| fence.node == node)
-            .map(|fence| fence.state);
-        detailed.max(fenced)
+        read(&self.entries).state(node)
+    }
+
+    /// Whether the node is Left here, or neither Down here nor older than a Left or Down
+    /// incarnation at its address.
+    pub(crate) fn is_live_or_left(&self, node: NodeId) -> bool {
+        read(&self.entries).is_live_or_left(node)
     }
 
     /// Runs `f` with the node's Up state while no membership change can land, so what `f`
@@ -854,6 +853,10 @@ impl Entries {
         }
     }
 
+    fn is_live_or_left(&self, node: NodeId) -> bool {
+        !self.is_down(node) || self.state(node) == Some(MemberState::Left)
+    }
+
     fn is_down(&self, node: NodeId) -> bool {
         self.fences
             .get(&node.addr())
@@ -862,6 +865,16 @@ impl Entries {
                 .members
                 .get(&node)
                 .is_some_and(|entry| entry.state != MemberState::Up)
+    }
+
+    fn state(&self, node: NodeId) -> Option<MemberState> {
+        let detailed = self.members.get(&node).map(|entry| entry.state);
+        let fenced = self
+            .fences
+            .get(&node.addr())
+            .filter(|fence| fence.node == node)
+            .map(|fence| fence.state);
+        detailed.max(fenced)
     }
 
     fn up_nodes(&self) -> HashSet<NodeId> {
@@ -1915,5 +1928,76 @@ mod tests {
         assert!(down.contains(&endpoint.node()));
         assert!(incoming_rx.is_empty());
         assert!(witness_lane.control_rx.try_recv().is_err());
+    }
+
+    /// A node is live or Left here unless it is Down, or older than a Left or Down incarnation at
+    /// its address without being Left itself, checked row by row.
+    #[test]
+    fn a_node_is_live_or_left_unless_down_or_fenced_without_being_left() {
+        let membership = Membership::new(NodeId::new(addr(1)), NonZeroUsize::MAX, RETENTION);
+        let [
+            up,
+            left,
+            superseded_left,
+            down,
+            swept_left,
+            swept_down,
+            unknown,
+        ] = [2, 3, 4, 5, 6, 7, 8].map(|port| NodeId::new(addr(port)));
+        let superseding = NodeId::new(superseded_left.addr());
+        let older_unknown = NodeId::new(addr(9));
+        let fencing = NodeId::new(addr(9));
+        let newer_unknown = NodeId::new(addr(9));
+        let superseded_up = NodeId::new(addr(10));
+        let superseding_down = NodeId::new(addr(10));
+        for node in [
+            up,
+            left,
+            superseded_left,
+            down,
+            swept_left,
+            swept_down,
+            fencing,
+            superseded_up,
+        ] {
+            membership.add_up(node);
+        }
+        let swept_at = Instant::now();
+        membership.leave(swept_left, swept_at);
+        membership.down(swept_down, swept_at);
+        let kept_at = swept_at + RETENTION;
+        membership.leave(left, kept_at);
+        membership.leave(superseded_left, kept_at);
+        membership.add_up(superseding);
+        membership.leave(superseding, kept_at);
+        membership.down(down, kept_at);
+        membership.down(fencing, kept_at);
+        membership.down(superseding_down, kept_at);
+        membership.sweep(kept_at);
+        assert_eq!(membership.state(superseding), Some(MemberState::Left));
+        assert_eq!(membership.state(superseded_up), Some(MemberState::Up));
+        assert!(
+            membership
+                .members()
+                .iter()
+                .all(|member| ![swept_left, swept_down].contains(&member.node())),
+            "the entries retired a retention earlier are swept"
+        );
+
+        let rows = [
+            (up, true),
+            (left, true),
+            (superseded_left, true),
+            (swept_left, true),
+            (newer_unknown, true),
+            (unknown, true),
+            (down, false),
+            (swept_down, false),
+            (older_unknown, false),
+            (superseded_up, false),
+        ];
+        for (node, live_or_left) in rows {
+            assert_eq!(membership.is_live_or_left(node), live_or_left, "{node}");
+        }
     }
 }

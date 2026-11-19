@@ -2,9 +2,10 @@ use crate::{ActorSystem, actor_system, cluster::endpoint};
 use std::net::SocketAddr;
 use thiserror::Error;
 
-/// The report of a departure: the address of every peer connection [leave] drained. They are split
-/// into those which acknowledged the drain and those which did not, e.g. since the connection ended
-/// first or a stream failed. A third list holds those which had not acknowledged it within
+/// The report of a departure: the address of every peer connection [leave] drained, one to a node
+/// not known here included. They are split into those which acknowledged the drain and those which
+/// did not, e.g. since the connection ended first or a stream failed. A third list holds those
+/// which had not acknowledged it within
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout), and a fourth those which left
 /// the cluster themselves before they acknowledged it. Each list is in address order. A peer
 /// acknowledges once every frame queued for it reached its delivery path, a local mailbox or a
@@ -24,8 +25,8 @@ impl Departure {
         &self.acknowledged
     }
 
-    /// The peers whose connection ended, or one of whose streams failed, before they acknowledged
-    /// the drain.
+    /// The peers whose connection ended, one of whose streams failed, or whose lane gave up
+    /// dialing, before they acknowledged the drain.
     pub fn unacknowledged(&self) -> &[SocketAddr] {
         &self.unacknowledged
     }
@@ -36,8 +37,8 @@ impl Departure {
     }
 
     /// The peers which left the cluster themselves before they acknowledged the drain, the
-    /// incarnation the drain went to having turned Left. Whether they received what was queued for
-    /// them is unknown.
+    /// incarnation the drain went to being Left once the last drain has ended. Whether they
+    /// received what was queued for them is unknown.
     pub fn departed(&self) -> &[SocketAddr] {
         &self.departed
     }
@@ -116,9 +117,10 @@ where
 }
 
 /// Leave the cluster: gossip this node's own entry as [Left](crate::cluster::MemberState::Left),
-/// drain the connection to every member which is Up or Left, then sever every connection, and
-/// report how each drain ended. A connection to a node which is Down, or to no member, is not
-/// drained: that node's death already settled what was queued for it.
+/// drain every connection, then sever every connection, and report how each drain ended. A
+/// connection to a node which is Down, or older than a Left or Down incarnation at its address
+/// without being Left itself, is not drained: a node death already settled what was queued for it.
+/// A connection to a node not known here is drained like any other.
 ///
 /// Draining a connection writes out everything queued for the peer, the departure included, and
 /// finishes every data stream. Then a final control frame tells the peer how many data streams
@@ -156,8 +158,9 @@ where
 /// already costs that timeout and learns of the departure from another member's gossip, or, with no
 /// live path at all, from its own failure detection, exactly as it would from a crash. A peer which
 /// leaves at the same time can still acknowledge after this node has seen its departure. Otherwise
-/// the drain towards it is reported as [departed](Departure::departed), never as acknowledged, and
-/// while its lane dials or backs off, the drain gives up as soon as no member is Up at its address.
+/// the drain toward it is reported as [departed](Departure::departed) if the peer is Left here
+/// once the last drain has ended. While its lane dials or backs off, the drain gives up as soon as
+/// no member is Up at its address.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if

@@ -1647,7 +1647,7 @@ impl EndpointInner {
         }
 
         let deadline = timers::deadline(tokio_time::Instant::now(), self.config.leave_timeout);
-        let mut departure = Departure::default();
+        let mut drains = Vec::with_capacity(lanes_done.len());
         for (peer, lane) in lanes_done {
             let DrainedLane {
                 addr,
@@ -1656,6 +1656,11 @@ impl EndpointInner {
                 ..
             } = lane;
             let drained = timeout_at(deadline, done_rx).await;
+            drains.push((addr, peer, connected_rx, drained));
+        }
+        // Only after the last lane, else the report depends on the order of the walk!
+        let mut departure = Departure::default();
+        for (addr, peer, connected_rx, drained) in drains {
             let peer = connected_rx.borrow().unwrap_or(peer);
             let departed = self.membership.state(peer) == Some(MemberState::Left);
             match drained {
@@ -1695,29 +1700,24 @@ impl EndpointInner {
         }
     }
 
-    /// A lane which never connected drains towards the latest member at its address. A lane
-    /// towards no Up or Left member is not waited for: that node's death settled its queue.
+    /// A lane which never connected drains toward the newest incarnation a send was addressed to. A
+    /// lane toward a node which counts as dead here without being Left is not waited for: a node
+    /// death settled its queue.
     fn begin_leave(&self) -> Vec<(NodeId, DrainedLane)> {
         self.leaving.store(true, Ordering::Relaxed);
         self.leave_tx.send_replace(true);
-        let members = self.membership.members();
         self.lanes
             .drain()
             .into_iter()
             .filter_map(|lane| {
-                let latest = || {
-                    members
-                        .iter()
-                        .map(Member::node)
-                        .filter(|node| node.addr() == lane.addr)
-                        .max_by_key(|node| node.incarnation())
-                };
-                let peer = lane.connected_rx.borrow().or(lane.peer).or_else(latest)?;
-                matches!(
-                    self.membership.state(peer),
-                    Some(MemberState::Up | MemberState::Left)
-                )
-                .then_some((peer, lane))
+                let peer = lane
+                    .connected_rx
+                    .borrow()
+                    .or(lane.peer)
+                    .unwrap_or(lane.newest_peer);
+                self.membership
+                    .is_live_or_left(peer)
+                    .then_some((peer, lane))
             })
             .collect()
     }
@@ -2559,7 +2559,7 @@ mod tests {
             failure::{Deadline, DeadlineFailureDetector, FailureDetectorFactory},
             frame::{Frame, Handshake, MIN_FRAME_SIZE, RefusalReason},
             lanes::{Drain, LaneError},
-            leave::LeaveError,
+            leave::{Departure, LeaveError},
             membership::{self, Member, MemberState},
             node::{ClusterId, NodeId},
             peer::{ConnectError, DialRequest},
@@ -4828,6 +4828,215 @@ mod tests {
         assert_eq!(started.elapsed(), Duration::ZERO);
         assert_eq!(departure.acknowledged(), [live.addr()]);
         assert!(departure.is_acknowledged());
+    }
+
+    /// A lane toward a node not known here, opened by an optimistic send, had no node death to
+    /// settle its queue. A departure waits for it, whether it is bound to that node or still
+    /// dials, and lists it as unacknowledged.
+    #[tokio::test(start_paused = true)]
+    async fn a_departure_waits_for_the_lanes_of_nodes_not_known_here() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let (known, bound, dialing) = (
+            NodeId::new(addr(2)),
+            NodeId::new(addr(3)),
+            NodeId::new(addr(4)),
+        );
+        endpoint.update(|membership, _| membership.add_up(known));
+        let known_lane = connected_lane(endpoint, &dial_requests, known);
+        known_lane.connected_tx.send_replace(Some(known));
+        let bound_lane = connected_lane(endpoint, &dial_requests, bound);
+        bound_lane.connected_tx.send_replace(Some(bound));
+        endpoint
+            .send(dialing, gossip())
+            .expect("a lane opens toward a node not known here");
+        let dialing_lane = dial_requests.try_recv().expect("the lane is dialed");
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let _ = known_lane.done_tx.send(Drain::Acknowledged);
+        for _ in 0..10 {
+            task::yield_now().await;
+        }
+        assert!(
+            !leaving.is_finished(),
+            "the departure waits for the lanes of nodes not known here"
+        );
+        for lane in [bound_lane, dialing_lane] {
+            let _ = lane.done_tx.send(Drain::Unacknowledged);
+        }
+        let departure = leaving
+            .await
+            .expect("the departure does not panic")
+            .expect("a departure");
+
+        assert_eq!(departure.acknowledged(), [known.addr()]);
+        assert_eq!(departure.unacknowledged(), [bound.addr(), dialing.addr()]);
+    }
+
+    /// A process restarted at the address of a Left or a Down member is not that member: a
+    /// departure waits for its lane and lists it as unacknowledged, neither as departed nor left
+    /// out. The same holds for a lane opened toward the predecessor which the restarted process
+    /// then shares.
+    #[tokio::test(start_paused = true)]
+    async fn a_departure_judges_a_restarted_process_by_its_own_incarnation() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let predecessors = [2, 3, 4, 5].map(|port| NodeId::new(addr(port)));
+        let [after_left, after_down, shared_after_left, shared_after_down] = predecessors;
+        for predecessor in predecessors {
+            endpoint.update(|membership, _| membership.add_up(predecessor));
+        }
+        for predecessor in [shared_after_left, shared_after_down] {
+            endpoint.send(predecessor, gossip()).expect("a lane opens");
+        }
+        endpoint.update(|membership, _| {
+            for predecessor in [after_left, shared_after_left] {
+                membership.leave(predecessor, Instant::now());
+            }
+        });
+        for predecessor in [after_down, shared_after_down] {
+            endpoint.node_death(predecessor);
+        }
+        for predecessor in predecessors {
+            endpoint
+                .send(NodeId::new(predecessor.addr()), gossip())
+                .expect("a lane toward the restarted process opens or is shared");
+        }
+        let dials = dial_requests.try_iter().collect::<Vec<_>>();
+        assert_eq!(dials.len(), predecessors.len(), "one lane per address");
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        for _ in 0..10 {
+            task::yield_now().await;
+        }
+        assert!(
+            !leaving.is_finished(),
+            "the departure waits for the lanes of the restarted processes"
+        );
+        for dial in dials {
+            let _ = dial.done_tx.send(Drain::Unacknowledged);
+        }
+        let departure = leaving
+            .await
+            .expect("the departure does not panic")
+            .expect("a departure");
+
+        assert_eq!(
+            departure.unacknowledged(),
+            predecessors.map(|predecessor| predecessor.addr())
+        );
+        assert!(departure.departed().is_empty());
+    }
+
+    /// A lane recorded for an incarnation older than a Down one at its address is neither waited
+    /// for nor listed, like a lane toward a Down node.
+    #[tokio::test(start_paused = true)]
+    async fn a_departure_skips_a_lane_settled_by_a_newer_death_at_its_address() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let stale = NodeId::new(addr(2));
+        endpoint
+            .send(stale, gossip())
+            .expect("a lane opens toward a node not known here");
+        let _dial = dial_requests.try_recv().expect("the lane is dialed");
+        endpoint.node_death(NodeId::new(stale.addr()));
+
+        let started = tokio_time::Instant::now();
+        let departure = endpoint.leave().await.expect("a departure");
+
+        assert_eq!(started.elapsed(), Duration::ZERO);
+        assert_eq!(departure, Departure::default());
+    }
+
+    /// A lane opened toward a member which died before it ever connected is shared by the member's
+    /// successor: the departure's announcement goes to the successor on that lane, so the departure
+    /// waits for it there.
+    #[tokio::test(start_paused = true)]
+    async fn a_departure_waits_for_a_successor_on_its_predecessors_lane() {
+        let (endpoint, dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let predecessor = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(predecessor));
+        endpoint.send(predecessor, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+        endpoint.node_death(predecessor);
+        let successor = NodeId::new(predecessor.addr());
+        endpoint.update(|membership, _| membership.add_up(successor));
+
+        let leaving = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        for _ in 0..10 {
+            task::yield_now().await;
+        }
+        assert!(
+            !leaving.is_finished(),
+            "the departure waits for the successor"
+        );
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        let departure = leaving
+            .await
+            .expect("the departure does not panic")
+            .expect("a departure");
+
+        assert_eq!(departure.acknowledged(), [successor.addr()]);
+    }
+
+    /// A peer whose drain ends unacknowledged counts as departed if its Left arrives before the
+    /// last lane has ended, whichever lane the departure awaits first. The lanes come out of a
+    /// `HashMap`, so the sequence runs on ten fresh endpoints.
+    #[tokio::test(start_paused = true)]
+    async fn a_departure_classifies_its_peers_once_the_last_lane_has_ended() {
+        for _ in 0..10 {
+            let (endpoint, dial_requests, _join_requests) =
+                EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+            endpoint.form_cluster().expect("an unformed endpoint forms");
+            let (departing, acknowledging) = (NodeId::new(addr(2)), NodeId::new(addr(3)));
+            for peer in [departing, acknowledging] {
+                endpoint.update(|membership, _| membership.add_up(peer));
+                endpoint.send(peer, gossip()).expect("a lane opens");
+            }
+            let mut dials = dial_requests
+                .try_iter()
+                .map(|dial| (dial.addr, dial))
+                .collect::<HashMap<_, _>>();
+            let departing_dial = dials
+                .remove(&departing.addr())
+                .expect("a lane toward the departing peer");
+            let acknowledging_dial = dials
+                .remove(&acknowledging.addr())
+                .expect("a lane toward the acknowledging peer");
+
+            let leaving = task::spawn(endpoint.leave());
+            while !endpoint.leaving() {
+                task::yield_now().await;
+            }
+            let _ = departing_dial.done_tx.send(Drain::Unacknowledged);
+            for _ in 0..10 {
+                task::yield_now().await;
+            }
+            endpoint.update(|membership, _| membership.leave(departing, Instant::now()));
+            let _ = acknowledging_dial.done_tx.send(Drain::Acknowledged);
+            let departure = leaving
+                .await
+                .expect("the departure does not panic")
+                .expect("a departure");
+
+            assert_eq!(departure.departed(), [departing.addr()]);
+            assert_eq!(departure.acknowledged(), [acknowledging.addr()]);
+            assert!(departure.is_complete());
+        }
     }
 
     /// docs/cluster.md, Leaving: "The announcement goes to every Up member, a lane still being
