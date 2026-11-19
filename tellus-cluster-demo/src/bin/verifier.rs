@@ -972,7 +972,8 @@ mod tests {
         assert_eq!(view.state.version(), view.settlement.version());
     }
 
-    #[tokio::test(start_paused = true)]
+    /// A paused clock can fire the client's timeout mid-request, so this one runs in real time.
+    #[tokio::test]
     async fn a_verdict_lagging_on_every_attempt_is_checked_as_it_is() {
         let lagging = lagging(view_json("node1", 1, Phase::Member, &[1]));
         let (url, asked) = serve_views(vec![lagging]).await;
