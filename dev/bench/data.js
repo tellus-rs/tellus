@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795114106921,
+  "lastUpdate": 1795114108801,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -41625,6 +41625,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5337493,
             "range": "± 343415",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e2775f889c25ec30b67135a30cc88dda200ea399",
+          "message": "Merge pull request #514 from tellus-rs/docs/k8s-openapi-0-29\n\ndocs(bootstrap-k8s): name k8s-openapi 0.29 in the README",
+          "timestamp": "2026-11-19T20:40:07+02:00",
+          "tree_id": "930014a3b53476e1c933a9a3024f12e37a1c2c10",
+          "url": "https://github.com/tellus-rs/tellus/commit/e2775f889c25ec30b67135a30cc88dda200ea399"
+        },
+        "date": 1795114108498,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 30162367,
+            "range": "± 1360095",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 30390808,
+            "range": "± 1552778",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5383864,
+            "range": "± 235529",
             "unit": "ns/iter"
           }
         ]
