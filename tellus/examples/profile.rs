@@ -12,7 +12,7 @@
 //! future's lifetime, hence includes waiting for messages.
 
 use anyhow::Context;
-use std::{convert::Infallible, num::NonZeroUsize, time::Duration};
+use std::{num::NonZeroUsize, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Control, Incoming, MailboxCapacity, ReplyTo,
     Unstashed, Untimed,
@@ -87,7 +87,7 @@ impl Actor for Countdown {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self.messages)
@@ -121,7 +121,7 @@ impl Actor for Echo {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self.requests)

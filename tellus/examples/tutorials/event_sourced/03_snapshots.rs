@@ -6,7 +6,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, InMemoryStore, Incoming, Persistence,
     PersistenceId, ReplyTo, SchemaVersion, Unstashed, Untimed, Versioned,
@@ -73,7 +73,7 @@ impl EventSourced for Device {
     type Event = Recorded;
     type State = Readings;
     type Snapshot = Readings;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("device", "left").expect("the segments are valid")

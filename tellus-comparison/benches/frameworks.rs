@@ -194,7 +194,7 @@ const fn count_down(remaining: usize) -> Option<usize> {
 
 mod tellus_bench {
     use crate::{FLOOD_MESSAGES, PING_PONG_ROUNDS, count_down, fan_out_share, measure};
-    use std::{convert::Infallible, time::Duration};
+    use std::time::Duration;
     use tellus::{
         Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, Unstashed, Untimed,
     };
@@ -308,7 +308,7 @@ mod tellus_bench {
         type Timers = Untimed;
         type Stash = Unstashed;
         type State = usize;
-        type Error = Infallible;
+        type Error = !;
 
         fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
             self.started.send(()).expect("tellus startup is awaited");
@@ -344,7 +344,7 @@ mod tellus_bench {
         type Timers = Untimed;
         type Stash = Unstashed;
         type State = Pinging;
-        type Error = Infallible;
+        type Error = !;
 
         fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
             let ponger = context.spawn(Ponger {
@@ -402,7 +402,7 @@ mod tellus_bench {
         type Timers = Untimed;
         type Stash = Unstashed;
         type State = ();
-        type Error = Infallible;
+        type Error = !;
 
         fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
             self.started.send(()).expect("tellus startup is awaited");

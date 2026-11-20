@@ -3,6 +3,7 @@ name          = "tellus-comparison"
 description   = "Benchmarks comparing tellus against other actor frameworks"
 version       = "0.1.0"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 readme        = "README.md"
 repository    = { workspace = true }

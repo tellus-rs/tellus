@@ -3,7 +3,6 @@ mod logs;
 use crate::logs::Logs;
 use std::{
     collections::HashMap,
-    convert::Infallible,
     fmt::Debug,
     num::{NonZeroU32, NonZeroUsize},
     sync::{
@@ -697,7 +696,7 @@ impl Actor for UntimedParent {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let child = context.spawn(Clock {
@@ -733,7 +732,7 @@ impl Actor for TimedParent {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -765,7 +764,7 @@ impl Actor for Echo {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -821,7 +820,7 @@ impl Actor for PanickingTimer {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -868,7 +867,7 @@ impl Actor for Discarder {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -971,7 +970,7 @@ impl Actor for Holder {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message, Timed>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1000,7 +999,7 @@ impl Actor for Flooder {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -1052,7 +1051,7 @@ impl Actor for Replacer {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -1112,7 +1111,7 @@ impl Actor for VendingMachine {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = Phase;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message, Timed>) -> Result<Self::State, Self::Error> {
         Ok(Phase::Idle)
@@ -1268,7 +1267,7 @@ impl Actor for Customer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

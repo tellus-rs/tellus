@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 use std::{
-    convert::Infallible,
     sync::{
         Arc,
         atomic::{AtomicUsize, Ordering},
@@ -86,7 +85,7 @@ impl EventSourced for Counter {
     type Event = Increased;
     type State = u64;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("counter", self.key.to_string()).expect("a number is a valid ID segment")

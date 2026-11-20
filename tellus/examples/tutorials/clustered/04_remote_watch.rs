@@ -12,7 +12,6 @@ use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    convert::Infallible,
     env, io,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     num::NonZeroU32,
@@ -125,7 +124,7 @@ impl Actor for Watcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.manager);
@@ -286,7 +285,7 @@ impl Actor for DeviceManager {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<String, ActorRef<GroupMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -377,7 +376,7 @@ impl Actor for Group {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<String, ActorRef<DeviceMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -445,7 +444,7 @@ impl Actor for Query {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = QueryState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(QueryState::Starting)
@@ -515,7 +514,7 @@ impl Query {
         sum: f64,
         count: u32,
         reply_to: ReplyTo<Option<f64>>,
-    ) -> Result<Control<QueryState>, Infallible> {
+    ) -> Result<Control<QueryState>, !> {
         if pending.is_empty() {
             reply_to.reply((count > 0).then(|| sum / f64::from(count)));
             Ok(Control::Stop)

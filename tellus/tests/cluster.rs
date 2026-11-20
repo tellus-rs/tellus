@@ -68,7 +68,6 @@ use rustls::{
 use serde::{Deserialize, Deserializer, Serialize, de::DeserializeOwned};
 use std::{
     collections::{HashMap, HashSet},
-    convert::Infallible,
     env, fmt, fs, future,
     io::{self, BufRead, BufReader, Write},
     net::{Ipv4Addr, SocketAddr, UdpSocket},
@@ -844,7 +843,7 @@ impl Actor for EchoServer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = EchoState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(EchoState::default())
@@ -1023,7 +1022,7 @@ impl Actor for Recorder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1374,7 +1373,7 @@ impl Actor for Computer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1434,7 +1433,7 @@ impl Actor for LegacyComputer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1557,7 +1556,7 @@ impl Actor for Keeper {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1631,7 +1630,7 @@ impl Actor for Streamer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -4515,7 +4514,7 @@ impl Actor for EchoClient {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         for seq in 0..PINGS {
@@ -4566,7 +4565,7 @@ impl Actor for AskThenTellClient {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = bool;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.server.tell(Request::AskThenTell {
@@ -4617,7 +4616,7 @@ impl Actor for Responder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -4651,7 +4650,7 @@ impl Actor for SerdeRoundTrip {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let fail = |message: String| {
@@ -4717,7 +4716,7 @@ impl Actor for OrderedWatch {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = OrderedWatchState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -4795,7 +4794,7 @@ impl Actor for TerminateChild {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<ActorRef<StreamerMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -4853,7 +4852,7 @@ impl Actor for WatchTerminated {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.child);
@@ -4890,7 +4889,7 @@ impl Actor for UnwatchClient {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -4955,7 +4954,7 @@ impl Actor for TwoWatchers {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -5011,7 +5010,7 @@ impl Actor for ChildWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.child);
@@ -5050,7 +5049,7 @@ impl Actor for HeadOfLine {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HeadOfLineState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         for _ in 0..BULK_TARGETS {
@@ -5161,7 +5160,7 @@ impl Actor for Oversize {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -5237,7 +5236,7 @@ impl Actor for BenchEcho {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = BenchState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let sent = self.window.min(self.total);
@@ -5297,7 +5296,7 @@ impl Actor for BenchBulk {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<BenchBulkState>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -5369,7 +5368,7 @@ impl Actor for SeverFifo {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<SeverFifoState>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -5452,7 +5451,7 @@ impl Actor for SeverTerminated {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<SeverTerminatedState>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.keeper.tell(KeeperMessage::Spawn {
@@ -5535,7 +5534,7 @@ impl Actor for LostTerminated {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = Option<ActorRef<StreamerMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -5615,7 +5614,7 @@ where
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.subject);
@@ -5655,7 +5654,7 @@ impl Actor for DepartureWatch {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.subject);
@@ -5711,7 +5710,7 @@ impl Actor for PingOnce {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.server.tell(Request::Ping {

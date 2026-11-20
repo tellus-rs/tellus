@@ -37,7 +37,7 @@ where
     type Snapshot: Versioned;
 
     /// The type of the failures returned by the fallible methods. For infallible actors use
-    /// [std::convert::Infallible].
+    /// [`!`](prim@never).
     type Error: Error;
 
     /// The stable identity of this actor's event stream, chosen by the application and unchanged

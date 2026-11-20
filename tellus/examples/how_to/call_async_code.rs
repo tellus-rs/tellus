@@ -3,7 +3,7 @@
 //! way via `tokio::task::spawn_blocking`.
 
 use anyhow::Context;
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed};
 use thiserror::Error;
 use tokio::{
@@ -56,7 +56,7 @@ impl Actor for Directory {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

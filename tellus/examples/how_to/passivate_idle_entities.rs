@@ -3,7 +3,7 @@
 //! with `Hosted::Passivate` once it has been idle, so the next visit starts a new session.
 
 use anyhow::Context;
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Host, HostConfig, HostEnvelope, Hosted,
     Incoming, ReplyTo, Unstashed, Untimed,
@@ -57,7 +57,7 @@ impl Actor for Session {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u64;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         println!("Session of {} started", self.visitor);

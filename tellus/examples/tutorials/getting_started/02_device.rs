@@ -2,7 +2,7 @@
 //! told and answers when asked for the last one.
 
 use anyhow::Context;
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed};
 
 // ANCHOR: main
@@ -39,7 +39,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<f64>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(None)

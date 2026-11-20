@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     error::Error,
     fmt::{self, Debug, Display, Formatter},
     marker::PhantomData,
@@ -462,7 +461,7 @@ impl Actor for Root {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.spawn(Child(self.0.child("child"), self.1.clone()));
@@ -487,7 +486,7 @@ impl Actor for Enduring {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.spawn(Child(self.0.child("child"), self.1.clone()));
@@ -528,7 +527,7 @@ where
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let parent = context.spawn(HastyParent::<T, S> {
@@ -574,7 +573,7 @@ where
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -623,7 +622,7 @@ where
     type Timers = T;
     type Stash = S;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message, T, S>) -> Result<Self::State, Self::Error> {
         let _ = self.events.send(Event::UnbornInitialized);
@@ -664,7 +663,7 @@ impl Actor for Witness {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let subject = context.spawn(Subject(context.self_ref().clone()));
@@ -701,7 +700,7 @@ impl Actor for Subject {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -737,7 +736,7 @@ impl Actor for StatefulParent {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ReportingState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.spawn(ReportingChild(self.0.clone()));
@@ -771,7 +770,7 @@ impl Actor for ReportingChild {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -808,7 +807,7 @@ impl Actor for Hoarder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -854,7 +853,7 @@ impl Actor for Blocking {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -881,7 +880,7 @@ impl Actor for Child {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let grand_child = GrandChild {
@@ -912,7 +911,7 @@ impl Actor for GrandChild {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let _ = self.started.try_send(());
@@ -937,7 +936,7 @@ impl Actor for Echo {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -963,7 +962,7 @@ impl Actor for SelfSender {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     /// The mailbox is FIFO, hence `Done` arrives behind every `Tick` and the count it reports is
     /// the number of ticks which survived.
@@ -1013,7 +1012,7 @@ impl Actor for PanickingActor {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -1036,7 +1035,7 @@ impl Actor for PanickingStateRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let _ = self.0.try_send(context.spawn(PanickingStateChild));
@@ -1060,7 +1059,7 @@ impl Actor for PanickingStateChild {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = PanickingState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(PanickingState)
@@ -1119,7 +1118,7 @@ impl Actor for Observer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

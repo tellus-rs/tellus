@@ -3,6 +3,7 @@ name          = "tellus-bootstrap-dns"
 description   = "DNS seed discovery for tellus cluster bootstrap"
 version       = "0.1.4"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 readme        = "README.md"
 repository    = { workspace = true }

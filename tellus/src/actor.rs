@@ -28,7 +28,7 @@ pub trait Actor {
     type State;
 
     /// The type of the failures returned by [Actor::init] and [Actor::receive]. For infallible
-    /// actors use [std::convert::Infallible].
+    /// actors use [`!`](prim@never).
     type Error: Error;
 
     /// Create the initial state, possibly spawning child actors or sending messages.

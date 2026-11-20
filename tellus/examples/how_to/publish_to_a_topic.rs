@@ -10,7 +10,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
-    convert::Infallible,
     env, io,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     time::Duration,
@@ -176,7 +175,7 @@ impl Actor for Listener {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -222,7 +221,7 @@ impl Actor for Collector {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

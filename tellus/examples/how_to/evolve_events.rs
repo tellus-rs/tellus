@@ -8,7 +8,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{
     ActorContext, ActorSystem, Codec, DecodeError, Effect, EventSourced, InMemoryStore, Incoming,
     Json, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, Unstashed, Untimed,
@@ -71,7 +71,7 @@ impl EventSourced for ThermometerV1 {
     type Event = RecordedV1;
     type State = ();
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         thermometer_id()
@@ -127,7 +127,7 @@ impl EventSourced for Thermometer {
     type Event = Recorded;
     type State = Vec<f64>;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         thermometer_id()

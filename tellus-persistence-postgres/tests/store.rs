@@ -10,7 +10,6 @@ use sqlx::{
     migrate::{MigrateError, Migration, MigrationType, Migrator},
 };
 use std::{
-    convert::Infallible,
     num::NonZeroUsize,
     sync::LazyLock,
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -495,7 +494,7 @@ impl EventSourced for Counter {
     type Event = Increased;
     type State = u64;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("counter", &self.entity_id).expect("the segments are valid")

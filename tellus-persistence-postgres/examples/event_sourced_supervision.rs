@@ -13,7 +13,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{convert::Infallible, env, io, num::NonZeroU32, time::Duration};
+use std::{env, io, num::NonZeroU32, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Backoff, Control, Effect, EventSourced,
     Incoming, Nothing, Persistence, PersistenceId, RestartPolicy, SchemaVersion,
@@ -87,7 +87,7 @@ impl Actor for Overseer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let loader = context.spawn_event_sourced_with_config(

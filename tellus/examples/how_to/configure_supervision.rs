@@ -6,7 +6,6 @@
 
 use anyhow::Context;
 use config::{Config, File, FileFormat};
-use std::convert::Infallible;
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed,
 };
@@ -58,7 +57,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

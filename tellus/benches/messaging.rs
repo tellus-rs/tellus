@@ -18,7 +18,6 @@ use hotpath::criterion::{
     BenchmarkId, Config, Criterion, Throughput, criterion_group, criterion_main,
 };
 use std::{
-    convert::Infallible,
     hint::black_box,
     num::NonZeroUsize,
     time::{Duration, Instant},
@@ -260,7 +259,7 @@ impl Actor for Countdown {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self.messages)
@@ -300,7 +299,7 @@ impl Actor for Probing {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self.messages)
@@ -341,7 +340,7 @@ impl Actor for IdleTimeout {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -382,7 +381,7 @@ impl Actor for PingPongRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = usize;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self.pairs)
@@ -421,7 +420,7 @@ impl Actor for Pinger {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Pinging;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let ponger = context.spawn(Ponger {
@@ -468,7 +467,7 @@ impl Actor for Ponger {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -496,7 +495,7 @@ impl Actor for FanOutRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = FanningOut;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let workers = (0..self.workers)

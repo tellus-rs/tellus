@@ -13,7 +13,6 @@ use futures_util::{Stream, StreamExt, stream};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    convert::Infallible,
     fmt::{self, Display, Formatter},
     iter,
     num::NonZeroUsize,
@@ -288,7 +287,7 @@ where
     let opening = stream::iter(
         iter::once((None, hello))
             .chain(items)
-            .map(|(cursor, stamped)| Ok::<_, Infallible>(event(cursor, &stamped))),
+            .map(|(cursor, stamped)| Ok::<_, !>(event(cursor, &stamped))),
     );
     let live = log
         .follow_from(anchor)

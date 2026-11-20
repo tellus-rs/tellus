@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 use std::{
-    convert::Infallible,
     error::{self, Error as _},
     fmt::{self, Display, Formatter},
     future::pending,
@@ -2594,7 +2593,7 @@ where
     type Event = Held<T>;
     type State = T;
     type Snapshot = Held<T>;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         persistence_id(self.entity_id)
@@ -2740,7 +2739,7 @@ impl EventSourced for Watcher {
     type Event = Nothing;
     type State = Option<ActorRef<()>>;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         persistence_id("watcher")
@@ -2819,7 +2818,7 @@ impl Actor for Child {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -2854,7 +2853,7 @@ impl Actor for Parent {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.spawn_event_sourced(
@@ -2889,7 +2888,7 @@ impl Actor for HastyParent {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -2921,7 +2920,7 @@ impl Actor for UntimedParent {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let child = context.spawn_event_sourced(
@@ -2960,7 +2959,7 @@ impl Actor for TimedParent {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -3243,7 +3242,7 @@ struct BlockingLoads {
 }
 
 impl SnapshotStore for BlockingLoads {
-    type Error = Infallible;
+    type Error = !;
 
     async fn save(
         &self,
@@ -3279,7 +3278,7 @@ struct LastPositionStore {
 }
 
 impl EventStore for LastPositionStore {
-    type Error = Infallible;
+    type Error = !;
 
     async fn append(
         &self,
@@ -3309,7 +3308,7 @@ impl EventStore for LastPositionStore {
 }
 
 impl SnapshotStore for LastPositionStore {
-    type Error = Infallible;
+    type Error = !;
 
     async fn save(
         &self,
@@ -3337,7 +3336,7 @@ impl SnapshotStore for LastPositionStore {
 struct GapStore;
 
 impl EventStore for GapStore {
-    type Error = Infallible;
+    type Error = !;
 
     async fn append(
         &self,

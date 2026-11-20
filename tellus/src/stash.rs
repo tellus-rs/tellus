@@ -105,7 +105,6 @@ const STASHED_FAILED_TO_DROP: &str = "stashed message failed to drop";
 /// An [Unstashed] actor cannot stash; its context has no `stash`:
 ///
 /// ```compile_fail,E0599
-/// use std::convert::Infallible;
 /// use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed};
 ///
 /// struct Eager;
@@ -115,7 +114,7 @@ const STASHED_FAILED_TO_DROP: &str = "stashed message failed to drop";
 ///     type Timers = Untimed;
 ///     type Stash = Unstashed;
 ///     type State = ();
-///     type Error = Infallible;
+///     type Error = !;
 ///
 ///     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
 ///         Ok(())

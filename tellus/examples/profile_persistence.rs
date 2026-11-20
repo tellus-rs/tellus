@@ -13,7 +13,6 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
 use tellus::{
     ActorContext, ActorSystem, Effect, EventSourced, InMemoryStore, Incoming, Persistence,
     PersistenceId, SchemaVersion, Unstashed, Untimed, Versioned,
@@ -93,7 +92,7 @@ impl EventSourced for Counter {
     type Event = Increased;
     type State = u64;
     type Snapshot = Count;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("counter", "profile").expect("the segments are valid")

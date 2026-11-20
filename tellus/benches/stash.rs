@@ -14,10 +14,7 @@ use hotpath::criterion::{
     BenchmarkId, Config, Criterion, Throughput, criterion_group, criterion_main,
 };
 use serde::{Deserialize, Serialize};
-use std::{
-    convert::Infallible,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Effect, EventSourced,
     InMemoryStore, Incoming, Persistence, PersistenceId, SchemaVersion, Stashed, Untimed,
@@ -170,7 +167,7 @@ impl Actor for Stashing {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = StashingState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -247,7 +244,7 @@ impl EventSourced for StashingCounter {
     type Event = Increased;
     type State = u64;
     type Snapshot = Count;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("counter", "stashing").expect("the segments are valid")

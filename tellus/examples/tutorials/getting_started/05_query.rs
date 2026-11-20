@@ -3,7 +3,7 @@
 //! meanwhile cannot make the query wait forever.
 
 use anyhow::Context;
-use std::{collections::HashMap, convert::Infallible, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tellus::{
     Actor, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed,
     Untimed,
@@ -49,7 +49,7 @@ impl Actor for Group {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -121,7 +121,7 @@ impl Actor for Query {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = QueryState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(QueryState::Starting)
@@ -191,7 +191,7 @@ impl Query {
         sum: f64,
         count: u32,
         reply_to: ReplyTo<Option<f64>>,
-    ) -> Result<Control<QueryState>, Infallible> {
+    ) -> Result<Control<QueryState>, !> {
         if pending.is_empty() {
             reply_to.reply((count > 0).then(|| sum / f64::from(count)));
             Ok(Control::Stop)
@@ -237,7 +237,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<f64>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(None)

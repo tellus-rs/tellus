@@ -9,11 +9,7 @@
 //! work_pulling`.
 
 use anyhow::Context;
-use std::{
-    convert::{Infallible, identity},
-    io,
-    num::NonZeroUsize,
-};
+use std::{convert::identity, io, num::NonZeroUsize};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, Control, Incoming, MailboxCapacity,
     ReplyTo, Unstashed, Untimed,
@@ -66,7 +62,7 @@ impl Actor for Manager {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Managing;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         // ANCHOR: spawn
@@ -138,7 +134,7 @@ impl Actor for Worker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     // ANCHOR: init
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {

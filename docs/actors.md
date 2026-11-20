@@ -45,7 +45,7 @@ impl Actor for Greeter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -81,7 +81,7 @@ The [`Actor`](../tellus/src/actor.rs) trait separates the actor value from its s
   actor's context has `stash` and `unstash_all`.
 - `State` is rebuilt on every restart, while the actor value itself survives; stateless actors use
   `()`.
-- `Error` is the failure type of `init` and `receive`; infallible actors use `Infallible`.
+- `Error` is the failure type of `init` and `receive`; infallible actors use `!`, the never type.
 
 `init` creates the initial state and may already spawn children or send messages. `receive` takes
 the state by value and returns [`Control`](../tellus/src/actor.rs): `Continue(next_state)`
@@ -695,7 +695,6 @@ one together with the mailbox behind it. Everything the actor sends to itself, d
 a `ReplyTo`, can be read back in order with `take_incoming`.
 
 ```rust
-use std::convert::Infallible;
 use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed, testing::TestContext};
 
 struct Countdown;
@@ -705,7 +704,7 @@ impl Actor for Countdown {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(0)

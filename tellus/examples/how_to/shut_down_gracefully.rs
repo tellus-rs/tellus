@@ -10,7 +10,6 @@
 use anyhow::Context;
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
-    convert::Infallible,
     env,
     future::IntoFuture,
     io,
@@ -202,7 +201,7 @@ impl Actor for Counter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u64;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(0)

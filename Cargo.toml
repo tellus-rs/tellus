@@ -5,6 +5,7 @@ default-members = [ "tellus", "tellus-bootstrap-dns", "tellus-bootstrap-k8s", "t
 
 [workspace.package]
 edition       = "2024"
+rust-version  = "1.100"
 license       = "Apache-2.0"
 homepage      = "https://tellus.rs"
 repository    = "https://github.com/tellus-rs/tellus"

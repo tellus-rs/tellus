@@ -2,7 +2,7 @@
 //! demand and routes readings and requests to it.
 
 use anyhow::Context;
-use std::{collections::HashMap, convert::Infallible, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed,
 };
@@ -56,7 +56,7 @@ impl Actor for Group {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -120,7 +120,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<f64>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(None)

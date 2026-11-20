@@ -8,14 +8,13 @@ use crate::persistence::{
 };
 use std::{
     collections::HashMap,
-    convert::Infallible,
     num::NonZeroUsize,
     sync::{Arc, Mutex},
 };
 
 /// An in-memory [EventStore] and [SnapshotStore] for testing event-sourced actors: clones share
 /// the same streams and snapshots, which are lost with the process. An append fails only with
-/// [SeqNoOverflow], the snapshot store never fails, hence [Infallible], and a poisoned lock
+/// [SeqNoOverflow], the snapshot store never fails, hence `!`, and a poisoned lock
 /// panics.
 #[derive(Debug, Clone, Default)]
 pub struct InMemoryStore {
@@ -96,7 +95,7 @@ impl EventStore for InMemoryStore {
 }
 
 impl SnapshotStore for InMemoryStore {
-    type Error = Infallible;
+    type Error = !;
 
     async fn save(
         &self,

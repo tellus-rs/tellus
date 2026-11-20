@@ -2,7 +2,7 @@
 //! [InMemoryStore], which follows the contract by construction, and a check must fail against a
 //! store which breaks the property it names.
 
-use std::{convert::Infallible, num::NonZeroUsize};
+use std::num::NonZeroUsize;
 use tellus::{
     AppendError, EncodedEvent, EncodedSnapshot, EventStore, InMemoryStore, PersistenceId, SeqNo,
     SnapshotStore, StoredEvent, StoredSnapshot,
@@ -120,7 +120,7 @@ impl EventStore for ShortPages {
 struct FirstSnapshotWins(InMemoryStore);
 
 impl SnapshotStore for FirstSnapshotWins {
-    type Error = Infallible;
+    type Error = !;
 
     async fn save(
         &self,

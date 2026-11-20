@@ -2,7 +2,6 @@ mod logs;
 
 use crate::logs::Logs;
 use std::{
-    convert::Infallible,
     num::NonZeroUsize,
     sync::{
         Arc, Condvar, Mutex,
@@ -473,7 +472,7 @@ impl Actor for Root {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ActorRef<HostEnvelope<u8, Message>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let entities = self.entities.clone();
@@ -524,7 +523,7 @@ impl Actor for Entity {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -591,7 +590,7 @@ impl Actor for Busy {
     type Timers = Timed;
     type Stash = Unstashed;
     type State = (u32, u32);
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -644,7 +643,7 @@ impl Actor for Lingering {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let release = self
@@ -697,7 +696,7 @@ impl Actor for Clinging {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
