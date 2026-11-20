@@ -1,5 +1,115 @@
 # Changelog
 
+## [0.6.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.3...tellus-v0.6.0) - 2026-11-20
+
+### Features
+
+- *(persistence)* [**breaking**] Bound every store call by a timeout ([#409](https://github.com/tellus-rs/tellus/pull/409))
+- *(host)* Make HostConfig deserializable ([#392](https://github.com/tellus-rs/tellus/pull/392))
+- Check more fencing, isolation and extremes in the store contract ([#288](https://github.com/tellus-rs/tellus/pull/288))
+- [**breaking**] Replace the passivate function of Host with Hosted<M> ([#265](https://github.com/tellus-rs/tellus/pull/265))
+- *(cluster)* [**breaking**] Version message payloads for rolling upgrades ([#262](https://github.com/tellus-rs/tellus/pull/262))
+- Add stashing, opt-in per actor via Actor::Stash ([#201](https://github.com/tellus-rs/tellus/pull/201))
+
+### Bug Fixes
+
+- *(cluster)* Drain lanes toward unknown and restarted nodes on leave ([#506](https://github.com/tellus-rs/tellus/pull/506))
+- *(cluster)* Resolve concurrent departures by incarnation ([#453](https://github.com/tellus-rs/tellus/pull/453))
+- *(examples)* Wait for every view before leaving, sort seed addresses ([#454](https://github.com/tellus-rs/tellus/pull/454))
+- *(cluster)* End a QUIC stream at a graceful close between frames ([#451](https://github.com/tellus-rs/tellus/pull/451))
+- *(cluster)* Refuse joins as joining while pinned to a cluster ([#448](https://github.com/tellus-rs/tellus/pull/448))
+- *(cluster)* Await abandoned join attempts before deciding formation ([#450](https://github.com/tellus-rs/tellus/pull/450))
+- *(cluster)* Judge receptionist settled by the current cluster state ([#447](https://github.com/tellus-rs/tellus/pull/447))
+- *(persistence)* Settle stash requests once the events are durable ([#446](https://github.com/tellus-rs/tellus/pull/446))
+- *(persistence)* Stop before recovered when stopped during recovery ([#444](https://github.com/tellus-rs/tellus/pull/444))
+- *(examples)* Wait for the passivation instead of sleeping ([#435](https://github.com/tellus-rs/tellus/pull/435))
+- *(examples)* Bound every wait and check every exit status ([#424](https://github.com/tellus-rs/tellus/pull/424))
+- [**breaking**] Never run init for a child its parent stopped before it ran ([#414](https://github.com/tellus-rs/tellus/pull/414))
+- *(cluster)* [**breaking**] Refuse empty FixedSeeds and state the trait contracts ([#415](https://github.com/tellus-rs/tellus/pull/415))
+- *(cluster)* [**breaking**] Bound bootstrap join attempts, decide on a fresh view ([#410](https://github.com/tellus-rs/tellus/pull/410))
+- *(persistence)* [**breaking**] Refuse a sequence number overflow instead of saturating ([#395](https://github.com/tellus-rs/tellus/pull/395))
+- *(cluster)* [**breaking**] Refuse to leave an endpoint which never formed or joined ([#400](https://github.com/tellus-rs/tellus/pull/400))
+- *(cluster)* [**breaking**] Cap derived deadlines and bound oversize config values ([#397](https://github.com/tellus-rs/tellus/pull/397))
+- *(cluster)* Keep a self-down from settling watchers and asks ([#399](https://github.com/tellus-rs/tellus/pull/399))
+- *(cluster)* [**breaking**] Fail directory reads once this node has left or is down ([#394](https://github.com/tellus-rs/tellus/pull/394))
+- *(cluster)* Send toward a peer at the smaller frame limit of both ([#389](https://github.com/tellus-rs/tellus/pull/389))
+- *(cluster)* Release the reply destinations of a dead-lettered reply ([#388](https://github.com/tellus-rs/tellus/pull/388))
+- *(cluster)* Name the asking incarnation in reply frames ([#383](https://github.com/tellus-rs/tellus/pull/383))
+- *(cluster)* Refuse sends toward a dead incarnation through any lane ([#382](https://github.com/tellus-rs/tellus/pull/382))
+- *(cluster)* [**breaking**] Serialize MemberState in snake_case ([#339](https://github.com/tellus-rs/tellus/pull/339))
+- *(cluster)* [**breaking**] Refuse zero durations which switch off a safeguard ([#332](https://github.com/tellus-rs/tellus/pull/332))
+- *(cluster)* Refuse a send toward another incarnation of this node ([#331](https://github.com/tellus-rs/tellus/pull/331))
+- *(cluster)* Keep a panicking decode from closing the connection ([#327](https://github.com/tellus-rs/tellus/pull/327))
+- *(cluster)* Keep a panicking reply encode from failing the responder ([#316](https://github.com/tellus-rs/tellus/pull/316))
+- *(inspect)* [**breaking**] End event streams and the recorder on a shutdown future ([#307](https://github.com/tellus-rs/tellus/pull/307))
+- [**breaking**] Refuse a NUL in a persistence ID, map positions beyond BIGINT ([#308](https://github.com/tellus-rs/tellus/pull/308))
+- Keep a panicking reply_to conversion from failing the responder ([#306](https://github.com/tellus-rs/tellus/pull/306))
+- *(cluster)* [**breaking**] Return a ClusterStateSubscription from cluster_state ([#304](https://github.com/tellus-rs/tellus/pull/304))
+- Decode long CBOR text and exact JSON floats, refuse non-finite ones ([#303](https://github.com/tellus-rs/tellus/pull/303))
+- *(cluster)* Warn of an overdue departure only if it was awaited ([#287](https://github.com/tellus-rs/tellus/pull/287))
+- *(cluster)* Ask every seed before forming once a pin is released ([#286](https://github.com/tellus-rs/tellus/pull/286))
+- *(cluster)* Hold back joins while this node is leaving ([#285](https://github.com/tellus-rs/tellus/pull/285))
+- *(cluster)* Drop removed reply entries outside the pending lock ([#274](https://github.com/tellus-rs/tellus/pull/274))
+- *(cluster)* Stop a lane from dialing once its endpoint is downed ([#273](https://github.com/tellus-rs/tellus/pull/273))
+
+### Refactor
+
+- Replace Infallible with ! and require Rust 1.100 ([#516](https://github.com/tellus-rs/tellus/pull/516))
+- *(cluster)* [**breaking**] Move test support from cluster-dev to __internal ([#457](https://github.com/tellus-rs/tellus/pull/457))
+- *(cluster)* [**breaking**] Rename bootstrap fields, Formation and codec makers ([#396](https://github.com/tellus-rs/tellus/pull/396))
+
+### Documentation
+
+- Regenerate changelogs with the unified config ([#505](https://github.com/tellus-rs/tellus/pull/505))
+- *(examples)* Call the device manager's message DeviceManagerMessage ([#502](https://github.com/tellus-rs/tellus/pull/502))
+- Correct statements found in review of the 0.6 docs ([#483](https://github.com/tellus-rs/tellus/pull/483))
+- Clarify cluster guarantees and complete the READMEs ([#475](https://github.com/tellus-rs/tellus/pull/475))
+- Fix review findings in READMEs, roadmap, demo and examples ([#477](https://github.com/tellus-rs/tellus/pull/477))
+- Fix the review's core and persistence doc findings ([#476](https://github.com/tellus-rs/tellus/pull/476))
+- *(cluster)* Name every node in FixedSeeds to keep a minority out ([#460](https://github.com/tellus-rs/tellus/pull/460))
+- *(cluster)* State the order of gate and check in read_frames ([#455](https://github.com/tellus-rs/tellus/pull/455))
+- *(examples)* Show pubsub, downing, rolling upgrades and formation ([#431](https://github.com/tellus-rs/tellus/pull/431))
+- *(examples)* Show schema upcasting and event-sourced children ([#429](https://github.com/tellus-rs/tellus/pull/429))
+- *(examples)* Show Host and passivation in a how-to example ([#428](https://github.com/tellus-rs/tellus/pull/428))
+- *(cluster)* Limit the release of a lost frame to one not yet sent ([#406](https://github.com/tellus-rs/tellus/pull/406))
+- *(cluster)* Say what releases a dead-lettered reply's destinations ([#403](https://github.com/tellus-rs/tellus/pull/403))
+- Add release notes for the breaking changes since 0.5.3 ([#321](https://github.com/tellus-rs/tellus/pull/321))
+- State the codecs' limits on nesting and on Some(None) ([#313](https://github.com/tellus-rs/tellus/pull/313))
+- Add a how-to example for retrying failed writes ([#270](https://github.com/tellus-rs/tellus/pull/270))
+- Retry the fourth lookup of the stash how-to instead of sleeping ([#269](https://github.com/tellus-rs/tellus/pull/269))
+- Add a how-to example for stashing ([#255](https://github.com/tellus-rs/tellus/pull/255))
+- State the stash exception to the unwatch contract ([#257](https://github.com/tellus-rs/tellus/pull/257))
+- Mention clustering in the crate description ([#245](https://github.com/tellus-rs/tellus/pull/245))
+- Show the build badge for main only ([#244](https://github.com/tellus-rs/tellus/pull/244))
+
+### Performance
+
+- *(cluster)* [**breaking**] Make the payload codec a closed enum ([#340](https://github.com/tellus-rs/tellus/pull/340))
+- Encode events in a plain loop ([#236](https://github.com/tellus-rs/tellus/pull/236))
+
+### Styling
+
+- Trim example comments, rename the manager's message, per review ([#474](https://github.com/tellus-rs/tellus/pull/474))
+- *(cluster)* Shorten paths and place docs in the remoting test ([#473](https://github.com/tellus-rs/tellus/pull/473))
+- *(cluster)* Order and shorten failure, reachability, bootstrap, QUIC ([#472](https://github.com/tellus-rs/tellus/pull/472))
+- *(cluster)* Order, scope and name the directory and reply code ([#471](https://github.com/tellus-rs/tellus/pull/471))
+- *(cluster)* Order, scope and name the endpoint and membership code ([#468](https://github.com/tellus-rs/tellus/pull/468))
+- *(tests)* Unify paths and helpers' names, regroup the budget test ([#470](https://github.com/tellus-rs/tellus/pull/470))
+- *(persistence)* Order items, narrow fields, shorten paths per review ([#469](https://github.com/tellus-rs/tellus/pull/469))
+- *(examples)* Paths, item order, uniform constants and contexts ([#467](https://github.com/tellus-rs/tellus/pull/467))
+- *(core)* Narrow visibility, order items, trim docs per review ([#464](https://github.com/tellus-rs/tellus/pull/464))
+- *(cluster)* Order, name and shorten the peer and frame code ([#463](https://github.com/tellus-rs/tellus/pull/463))
+
+### Miscellaneous Tasks
+
+- Add the stash bench as a binary of its own ([#252](https://github.com/tellus-rs/tellus/pull/252))
+- Rename docker-compose.yaml to compose.yaml ([#241](https://github.com/tellus-rs/tellus/pull/241))
+
+### Other
+
+- *(persistence)* [**breaking**] Check IDs and read limits at their extremes ([#412](https://github.com/tellus-rs/tellus/pull/412))
+
+
 ## [0.5.3](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.2...tellus-v0.5.3) - 2026-11-01
 
 ### Documentation
