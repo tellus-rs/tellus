@@ -519,7 +519,9 @@ pub enum Lifecycle {
     /// A member of a cluster, of one or of many.
     Formed,
 
-    /// Downed or left, for good: only a restarted process rejoins.
+    /// Downed or left, for good: only a restarted process rejoins. A leaving node is `Downed` once
+    /// [leave](fn@crate::cluster::leave) has finished draining or its `leave_timeout` has passed,
+    /// or as soon as its departure ends without a report.
     Downed,
 }
 
@@ -961,7 +963,7 @@ impl EndpointInner {
         // Decided under the lifecycle lock, else a concurrent down slips in between!
         let mut departed_rx = self.lifecycle.coordinate(|coordinator| {
             match coordinator.lifecycle {
-                Lifecycle::Unformed => return Err(LeaveError::NotAMember),
+                Lifecycle::Unformed => return Err(LeaveError::Unformed),
                 Lifecycle::Downed if self.departure.get().is_none() => {
                     return Err(LeaveError::Downed);
                 }
@@ -3616,10 +3618,7 @@ mod tests {
         let (endpoint, _dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
 
-        assert!(matches!(
-            endpoint.leave().await,
-            Err(LeaveError::NotAMember)
-        ));
+        assert!(matches!(endpoint.leave().await, Err(LeaveError::Unformed)));
         assert_eq!(endpoint.lifecycle(), Lifecycle::Unformed);
         assert!(!endpoint.leaving());
 
@@ -3635,10 +3634,7 @@ mod tests {
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         assert!(endpoint.enter_join());
 
-        assert!(matches!(
-            endpoint.leave().await,
-            Err(LeaveError::NotAMember)
-        ));
+        assert!(matches!(endpoint.leave().await, Err(LeaveError::Unformed)));
         assert_eq!(endpoint.lifecycle(), Lifecycle::Unformed);
         assert!(!endpoint.leaving());
     }
