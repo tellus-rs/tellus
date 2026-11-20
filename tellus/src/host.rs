@@ -2,7 +2,6 @@ use crate::{Actor, ActorContext, ActorId, ActorRef, Control, Incoming, Unstashed
 use std::{
     any::type_name,
     collections::{HashMap, VecDeque, hash_map::Entry as MapEntry},
-    convert::Infallible,
     hash::Hash,
     marker::PhantomData,
     num::NonZeroUsize,
@@ -199,7 +198,7 @@ where
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = State<K, M>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let mut state = State::default();
@@ -363,7 +362,7 @@ impl Actor for Ticker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = AbortSleeping;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let ticker = context.self_ref().clone();

@@ -2,7 +2,6 @@
 //! for the one message it receives and then stops, terminating the actor system.
 
 use anyhow::Context;
-use std::convert::Infallible;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 
 #[tokio::main]
@@ -24,7 +23,7 @@ impl Actor for Greeter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

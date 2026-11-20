@@ -9,7 +9,7 @@
 
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, convert::Infallible, time::Duration};
+use std::{collections::HashMap, time::Duration};
 use tellus::{
     Actor, ActorContext, ActorRef, ActorSystem, Control, Effect, EventSourced, InMemoryStore,
     Incoming, Nothing, Persistence, PersistenceId, ReplyTo, SchemaVersion, Timed, Unstashed,
@@ -93,7 +93,7 @@ impl Actor for Building {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<Command>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -155,7 +155,7 @@ impl EventSourced for Device {
     type Event = Event;
     type State = Vec<f64>;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("device", self.name).expect("the segments are valid")

@@ -2,7 +2,7 @@ use crate::{
     persistence::{persistence_id::PersistenceId, seq_no::SeqNo},
     schema_version::SchemaVersion,
 };
-use std::{borrow::Cow, convert::Infallible, error::Error, num::NonZeroUsize};
+use std::{borrow::Cow, error::Error, num::NonZeroUsize};
 use thiserror::Error;
 use tracing::warn;
 
@@ -109,7 +109,7 @@ where
 pub struct NoSnapshots;
 
 impl SnapshotStore for NoSnapshots {
-    type Error = Infallible;
+    type Error = !;
 
     async fn save(
         &self,

@@ -76,7 +76,7 @@ pub(crate) const TIMER_FAILED_TO_DROP: &str = "timer message failed to drop";
 /// An [Untimed] actor cannot start a timer; its context has no `start_timer`:
 ///
 /// ```compile_fail,E0599
-/// use std::{convert::Infallible, time::Duration};
+/// use std::time::Duration;
 /// use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed};
 ///
 /// struct Quiet;
@@ -86,7 +86,7 @@ pub(crate) const TIMER_FAILED_TO_DROP: &str = "timer message failed to drop";
 ///     type Timers = Untimed;
 ///     type Stash = Unstashed;
 ///     type State = ();
-///     type Error = Infallible;
+///     type Error = !;
 ///
 ///     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
 ///         context.start_timer("t", (), Duration::from_secs(1));

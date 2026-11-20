@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     fmt::Debug,
     num::{NonZeroU32, NonZeroUsize},
     sync::{
@@ -486,7 +485,7 @@ impl Actor for Hoarder {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -527,7 +526,7 @@ impl Actor for Stopper {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -554,7 +553,7 @@ impl Actor for Chain {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = Steps;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -619,7 +618,7 @@ impl Actor for Drainer {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = bool;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,
@@ -728,7 +727,7 @@ impl Actor for Resource {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = State;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(
         &self,

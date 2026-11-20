@@ -1,5 +1,4 @@
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
 use tellus::{
     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, SchemaVersion, Unstashed,
     Untimed, Versioned,
@@ -127,7 +126,7 @@ impl EventSourced for Ledger {
     type Event = Deposited;
     type State = Vec<u64>;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("ledger", "1").expect("the segments are valid")

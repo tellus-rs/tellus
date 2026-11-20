@@ -1,4 +1,4 @@
-use std::{assert_matches, collections::HashMap, convert::Infallible};
+use std::{assert_matches, collections::HashMap};
 use tellus::{
     Actor, ActorContext, ActorRef, Control, Incoming, ReplyTo, Unstashed, Untimed,
     testing::TestContext,
@@ -83,7 +83,7 @@ impl Actor for Group {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -131,7 +131,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<f64>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(None)

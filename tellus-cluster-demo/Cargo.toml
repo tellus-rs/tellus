@@ -3,6 +3,7 @@ name          = "tellus-cluster-demo"
 description   = "A five-node tellus cluster under continuous chaos, managed by Docker Compose or in kind."
 version       = "0.1.0"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 repository    = { workspace = true }
 documentation = { workspace = true }

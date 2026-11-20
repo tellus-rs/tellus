@@ -2,7 +2,6 @@ mod logs;
 
 use crate::logs::Logs;
 use std::{
-    convert::Infallible,
     hint,
     num::NonZeroUsize,
     thread,
@@ -296,7 +295,7 @@ impl Actor for Root {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ActorRef<Stop>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let child = context.spawn(Target);
@@ -343,7 +342,7 @@ impl Actor for Counter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let reporter = context.spawn(Reporter(context.self_ref().clone()));
@@ -379,7 +378,7 @@ impl Actor for Reporter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         for _ in 0..REPORTS {
@@ -412,7 +411,7 @@ impl Actor for MultiWatchRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = MultiWatch;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -498,7 +497,7 @@ impl Actor for ReportingWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.target);
@@ -526,7 +525,7 @@ impl Actor for DoubleWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = DoubleWatch;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -592,7 +591,7 @@ impl Actor for UnwatchingRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = (ActorRef<Stop>, Option<ActorId>);
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let guardian = context.spawn(Guardian(context.self_ref().clone()));
@@ -644,7 +643,7 @@ impl Actor for Guardian {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.0.tell(context.spawn(Target));
@@ -674,7 +673,7 @@ impl Actor for BlockedUnwatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ActorRef<Stop>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -730,7 +729,7 @@ impl Actor for BlockedFloodWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = (ActorRef<Stop>, u32);
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -779,7 +778,7 @@ impl Actor for Observer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.target);
@@ -805,7 +804,7 @@ impl Actor for RewatchingRoot {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -839,7 +838,7 @@ impl Actor for Coordinator {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Round;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let target = context.spawn(Target);
@@ -924,7 +923,7 @@ impl Actor for Target {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -950,7 +949,7 @@ impl Actor for Deserter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -981,7 +980,7 @@ impl Actor for PreWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.target);
@@ -1011,7 +1010,7 @@ impl Actor for LateWatcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

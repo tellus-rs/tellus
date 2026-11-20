@@ -2,7 +2,6 @@ mod logs;
 
 use crate::logs::Logs;
 use std::{
-    convert::Infallible,
     future::Future,
     num::{NonZeroU32, NonZeroUsize},
     pin::pin,
@@ -406,7 +405,7 @@ impl Actor for Responder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -461,7 +460,7 @@ impl Actor for BlockedResponder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -511,7 +510,7 @@ impl Actor for Asker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let responder = context.spawn(Responder);
@@ -553,7 +552,7 @@ impl Actor for Coordinator {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ActorRef<KeeperMessage>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let keeper = context.spawn(Keeper);
@@ -599,7 +598,7 @@ impl Actor for ShortAsker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         self.0.tell(KeeperMessage::Keep(context.reply_to(|_| ())));
@@ -626,7 +625,7 @@ impl Actor for PanickingAsker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let keeper = context.spawn(Keeper);
@@ -661,7 +660,7 @@ impl Actor for Keeper {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Option<ReplyTo<u64>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(None)
@@ -713,7 +712,7 @@ impl Actor for FragileResponder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -766,7 +765,7 @@ impl Actor for BlockedAsker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let _ = self

@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     sync::{
         Arc, Mutex,
         atomic::{AtomicUsize, Ordering::SeqCst},
@@ -159,7 +158,7 @@ impl Actor for Busy {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.self_ref().tell(());
@@ -202,7 +201,7 @@ impl Actor for FairLoop {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.self_ref().tell(FairMessage::Tick);

@@ -3,6 +3,7 @@ name          = "tellus-cluster-inspect"
 description   = "An axum router observing a tellus cluster node: a state snapshot and a resumable stream of every change."
 version       = "0.1.4"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 readme        = "README.md"
 homepage      = { workspace = true }

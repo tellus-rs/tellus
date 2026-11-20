@@ -91,7 +91,6 @@ mod tests {
         Untimed, Versioned, persistence::effect::Effect,
     };
     use serde::{Deserialize, Serialize};
-    use std::convert::Infallible;
 
     /// Deliberately not [Debug]: the [Effect] output must not require it of the event type.
     #[derive(Serialize, Deserialize)]
@@ -111,7 +110,7 @@ mod tests {
         type Event = Increased;
         type State = ();
         type Snapshot = Nothing;
-        type Error = Infallible;
+        type Error = !;
 
         fn persistence_id(&self) -> PersistenceId {
             PersistenceId::new("counter", "1").expect("the segments are valid")

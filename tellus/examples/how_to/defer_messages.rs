@@ -3,7 +3,7 @@
 //! answers them in order once the table is in; a lookup the full stash hands back gets `Busy`.
 
 use anyhow::Context;
-use std::{collections::HashMap, convert::Infallible, num::NonZeroUsize, time::Duration};
+use std::{collections::HashMap, num::NonZeroUsize, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorRef, ActorSystem, AskError, Control, Incoming,
     MailboxCapacity, ReplyTo, Stashed, Untimed,
@@ -57,7 +57,7 @@ impl Actor for Directory {
     type Timers = Untimed;
     type Stash = Stashed;
     type State = State;
-    type Error = Infallible;
+    type Error = !;
     // ANCHOR_END: types
 
     // ANCHOR: init

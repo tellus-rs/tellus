@@ -3,6 +3,7 @@ name          = "tellus-cluster-demo-tui"
 description   = "A terminal observer for the tellus cluster demo, fed by the nodes' event streams."
 version       = "0.1.0"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 repository    = { workspace = true }
 documentation = { workspace = true }

@@ -25,7 +25,6 @@ use configured::{Configured, LoadOptions};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{BTreeMap, BTreeSet},
-    convert::Infallible,
     future,
     net::{Ipv4Addr, SocketAddr},
     num::NonZeroUsize,
@@ -255,7 +254,7 @@ impl Actor for Worker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         subscribe_listener(context, &self.heard);
@@ -380,7 +379,7 @@ impl Actor for LegacyWorker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         subscribe_listener(context, &self.heard);
@@ -461,7 +460,7 @@ impl Actor for Listener {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

@@ -3,6 +3,7 @@ name          = "tellus-persistence-postgres"
 description   = "PostgreSQL event and snapshot stores for tellus persistence"
 version       = "0.2.14"
 edition       = { workspace = true }
+rust-version  = { workspace = true }
 license       = { workspace = true }
 readme        = "README.md"
 homepage      = { workspace = true }

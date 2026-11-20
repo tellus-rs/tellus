@@ -248,7 +248,7 @@ async fn poll<T, W>(
 mod tests {
     use crate::sources::{Input, MIN_BACKOFF, Position, StreamInput, VerifierInput, follow};
     use futures_util::stream;
-    use std::{convert::Infallible, time::Duration};
+    use std::time::Duration;
     use tellus_cluster_demo::VerifierEvent;
     use tellus_cluster_inspect::events::Cursor;
     use tokio::sync::mpsc;
@@ -273,7 +273,7 @@ mod tests {
         let mut position = position();
 
         let reason = follow(
-            stream::pending::<Result<Vec<u8>, Infallible>>(),
+            stream::pending::<Result<Vec<u8>, !>>(),
             SILENCE,
             &mut position,
             &tx,
@@ -290,7 +290,7 @@ mod tests {
     async fn an_unreadable_event_is_skipped_and_acknowledged() {
         let (tx, mut rx) = mpsc::channel(8);
         let mut position = position();
-        let unreadable = Ok::<_, Infallible>(b"data: {\"at\":1}\nid: 7:1\n\n".to_vec());
+        let unreadable = Ok::<_, !>(b"data: {\"at\":1}\nid: 7:1\n\n".to_vec());
 
         let reason = follow(
             stream::iter([unreadable]),
@@ -310,7 +310,7 @@ mod tests {
         assert_eq!(position.last_id.as_deref(), Some("7:1"));
         assert_eq!(position.backoff, Duration::from_secs(4));
 
-        let readable = Ok::<_, Infallible>(
+        let readable = Ok::<_, !>(
             b"data: {\"at\":2,\"event\":{\"kind\":\"chaos\",\"value\":\"quiet\"}}\nid: 7:2\n\n"
                 .to_vec(),
         );

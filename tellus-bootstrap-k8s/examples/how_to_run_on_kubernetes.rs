@@ -9,7 +9,6 @@
 use anyhow::Context;
 use axum::{Router, extract::State, http::StatusCode, routing::get};
 use std::{
-    convert::Infallible,
     env,
     net::{Ipv4Addr, SocketAddr},
     num::{NonZeroU16, NonZeroUsize},
@@ -163,7 +162,7 @@ impl Actor for Idle {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

@@ -77,7 +77,6 @@ A minimal actor system with a single actor which handles one message and stops:
 
 ```rust
 use anyhow::Context;
-use std::convert::Infallible;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 
 #[tokio::main]
@@ -99,7 +98,7 @@ impl Actor for Greeter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -148,9 +147,9 @@ incoming message or signal and designates the state for the next one: a state ma
 mutation. For stateless actors the state is `()`; actors which never receive messages (pure
 supervisors, for example) use the uninhabited `Nothing` as message type.
 
-The `Error` associated type makes a failure an ordinary return value (`Infallible` for actors
-that cannot fail). Inside `receive`, use `?` to escalate a failure to supervision and an explicit
-`match` to handle it as part of the domain.
+The `Error` associated type makes a failure an ordinary return value (`!`, the never type, for
+actors that cannot fail). Inside `receive`, use `?` to escalate a failure to supervision and an
+explicit `match` to handle it as part of the domain.
 
 `receive` is synchronous and runs on a Tokio worker. An actor cannot be stopped while `receive` is
 running, so a `receive` which never completes keeps all its ancestors from terminating. For

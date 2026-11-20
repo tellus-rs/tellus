@@ -1,5 +1,4 @@
 use std::{
-    convert::Infallible,
     num::NonZeroUsize,
     sync::{Mutex, mpsc as std_mpsc},
     time::Duration,
@@ -333,7 +332,7 @@ impl Actor for Summer {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = u32;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(0)
@@ -365,7 +364,7 @@ impl Actor for Chatter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -394,7 +393,7 @@ impl Actor for BlockingChild {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = Barrier;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(self
@@ -440,7 +439,7 @@ impl Actor for Reporter {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -484,7 +483,7 @@ impl Actor for Notifier {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = NotifyOnDrop;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         let _ = self.dropped_tx.send(Event::Initialized);

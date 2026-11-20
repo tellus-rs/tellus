@@ -2,7 +2,7 @@
 //! it is calibrated. Its state is an enum with one variant per state of the machine.
 
 use anyhow::Context;
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, ReplyTo, Unstashed, Untimed};
 
 #[tokio::main]
@@ -39,7 +39,7 @@ impl Actor for Device {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = State;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(State::Uncalibrated)

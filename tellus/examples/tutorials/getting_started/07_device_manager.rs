@@ -7,7 +7,7 @@
 //! `RUST_LOG=tellus=debug cargo run --quiet -p tellus --example getting_started_07_device_manager`.
 
 use anyhow::Context;
-use std::{collections::HashMap, convert::Infallible, io, num::NonZeroU32, time::Duration};
+use std::{collections::HashMap, io, num::NonZeroU32, time::Duration};
 use tellus::{
     Actor, ActorConfig, ActorContext, ActorId, ActorRef, ActorSystem, Control, Incoming, ReplyTo,
     RestartPolicy, SupervisionStrategy, Unstashed, Untimed,
@@ -87,7 +87,7 @@ impl Actor for DeviceManager {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<GroupMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -169,7 +169,7 @@ impl Actor for Group {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = HashMap<&'static str, ActorRef<DeviceMessage>>;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(HashMap::new())
@@ -242,7 +242,7 @@ impl Actor for Query {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = QueryState;
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(QueryState::Starting)
@@ -312,7 +312,7 @@ impl Query {
         sum: f64,
         count: u32,
         reply_to: ReplyTo<Option<f64>>,
-    ) -> Result<Control<QueryState>, Infallible> {
+    ) -> Result<Control<QueryState>, !> {
         if pending.is_empty() {
             reply_to.reply((count > 0).then(|| sum / f64::from(count)));
             Ok(Control::Stop)

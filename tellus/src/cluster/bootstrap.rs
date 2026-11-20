@@ -14,7 +14,6 @@ use crate::{
 use derive_more::Debug;
 use std::{
     collections::BTreeSet,
-    convert::Infallible,
     error::Error,
     net::SocketAddr,
     num::NonZeroUsize,
@@ -94,9 +93,9 @@ impl TryFrom<Vec<SocketAddr>> for FixedSeeds {
 }
 
 impl SeedDiscovery for FixedSeeds {
-    type Error = Infallible;
+    type Error = !;
 
-    async fn resolve(&mut self) -> Result<Vec<SocketAddr>, Infallible> {
+    async fn resolve(&mut self) -> Result<Vec<SocketAddr>, !> {
         Ok(self.0.clone())
     }
 }
@@ -702,7 +701,6 @@ mod tests {
     };
     use std::{
         collections::BTreeSet,
-        convert::Infallible,
         net::SocketAddr,
         sync::{Arc, Mutex},
         time::{Duration, Instant},
@@ -1331,9 +1329,9 @@ mod tests {
     }
 
     impl SeedDiscovery for SharedSeeds {
-        type Error = Infallible;
+        type Error = !;
 
-        async fn resolve(&mut self) -> Result<Vec<SocketAddr>, Infallible> {
+        async fn resolve(&mut self) -> Result<Vec<SocketAddr>, !> {
             Ok(self.0.lock().expect("not poisoned").clone())
         }
     }

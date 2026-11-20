@@ -1,4 +1,4 @@
-use std::{convert::Infallible, time::Duration};
+use std::time::Duration;
 use tellus::{Actor, ActorContext, ActorSystem, Control, Incoming, Unstashed, Untimed};
 use tokio::{sync::mpsc, time::timeout};
 
@@ -39,7 +39,7 @@ impl Actor for SelfFlooder {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())

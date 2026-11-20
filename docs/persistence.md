@@ -302,7 +302,6 @@ read back with `take_incoming`.
 
 ```rust
 use serde::{Deserialize, Serialize};
-use std::convert::Infallible;
 use tellus::{
     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo,
     SchemaVersion, Unstashed, Untimed, Versioned,
@@ -331,7 +330,7 @@ impl EventSourced for Counter {
     type Event = Increased;
     type State = u64;
     type Snapshot = Nothing;
-    type Error = Infallible;
+    type Error = !;
 
     fn persistence_id(&self) -> PersistenceId {
         PersistenceId::new("counter", "1").expect("the segments are valid")

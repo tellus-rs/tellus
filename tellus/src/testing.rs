@@ -44,7 +44,6 @@ use tokio::time::Instant;
 /// # Testing
 ///
 /// ```
-/// use std::convert::Infallible;
 /// use tellus::{Actor, ActorContext, Control, Incoming, Unstashed, Untimed, testing::TestContext};
 ///
 /// struct Countdown;
@@ -54,7 +53,7 @@ use tokio::time::Instant;
 ///     type Timers = Untimed;
 ///     type Stash = Unstashed;
 ///     type State = u32;
-///     type Error = Infallible;
+///     type Error = !;
 ///
 ///     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
 ///         Ok(0)
@@ -322,7 +321,6 @@ pub struct Settlement<S> {
 ///
 /// ```
 /// use serde::{Deserialize, Serialize};
-/// use std::convert::Infallible;
 /// use tellus::{
 ///     ActorContext, Effect, EventSourced, Incoming, Nothing, PersistenceId, ReplyTo,
 ///     SchemaVersion, Unstashed, Untimed, Versioned,
@@ -351,7 +349,7 @@ pub struct Settlement<S> {
 ///     type Event = Increased;
 ///     type State = u64;
 ///     type Snapshot = Nothing;
-///     type Error = Infallible;
+///     type Error = !;
 ///
 ///     fn persistence_id(&self) -> PersistenceId {
 ///         PersistenceId::new("counter", "1").expect("the segments are valid")

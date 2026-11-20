@@ -30,7 +30,6 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::{
-    convert::Infallible,
     env, io,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::Arc,
@@ -133,7 +132,7 @@ impl Actor for Worker {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
@@ -283,7 +282,7 @@ impl Actor for Watcher {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, context: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         context.watch(&self.worker);

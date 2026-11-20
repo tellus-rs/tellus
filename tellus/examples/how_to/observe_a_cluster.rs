@@ -8,7 +8,6 @@
 
 use anyhow::Context;
 use std::{
-    convert::Infallible,
     env, io,
     net::{Ipv4Addr, SocketAddr, UdpSocket},
     sync::Arc,
@@ -189,7 +188,7 @@ impl Actor for Idle {
     type Timers = Untimed;
     type Stash = Unstashed;
     type State = ();
-    type Error = Infallible;
+    type Error = !;
 
     fn init(&self, _: &ActorContext<Self::Message>) -> Result<Self::State, Self::Error> {
         Ok(())
