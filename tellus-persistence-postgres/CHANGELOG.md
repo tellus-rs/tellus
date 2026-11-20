@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.3.0](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.14...tellus-persistence-postgres-v0.3.0) - 2026-11-20
+
+### Features
+
+- *(persistence)* [**breaking**] Bound every store call by a timeout ([#409](https://github.com/tellus-rs/tellus/pull/409))
+- Add stashing, opt-in per actor via Actor::Stash ([#201](https://github.com/tellus-rs/tellus/pull/201))
+
+### Bug Fixes
+
+- *(postgres)* [**breaking**] Rename the store's tables so they cannot collide ([#328](https://github.com/tellus-rs/tellus/pull/328))
+- [**breaking**] Refuse a NUL in a persistence ID, map positions beyond BIGINT ([#308](https://github.com/tellus-rs/tellus/pull/308))
+- Record the PostgreSQL store's migrations in a table of its own ([#305](https://github.com/tellus-rs/tellus/pull/305))
+
+### Refactor
+
+- Replace Infallible with ! and require Rust 1.100 ([#516](https://github.com/tellus-rs/tellus/pull/516))
+
+### Documentation
+
+- *(postgres)* Count the statement timeout twice in the pool bounds ([#507](https://github.com/tellus-rs/tellus/pull/507))
+- Regenerate changelogs with the unified config ([#505](https://github.com/tellus-rs/tellus/pull/505))
+- Qualify the replay claim in the postgres readme and the roadmap ([#501](https://github.com/tellus-rs/tellus/pull/501))
+- Clarify cluster guarantees and complete the READMEs ([#475](https://github.com/tellus-rs/tellus/pull/475))
+- Fix review findings in READMEs, roadmap, demo and examples ([#477](https://github.com/tellus-rs/tellus/pull/477))
+- Fix the review's core and persistence doc findings ([#476](https://github.com/tellus-rs/tellus/pull/476))
+- Add release notes for the breaking changes since 0.5.3 ([#321](https://github.com/tellus-rs/tellus/pull/321))
+- Give the PostgreSQL store's schema as the supported definition ([#315](https://github.com/tellus-rs/tellus/pull/315))
+
+### Styling
+
+- Trim example comments, rename the manager's message, per review ([#474](https://github.com/tellus-rs/tellus/pull/474))
+- *(persistence)* Order items, narrow fields, shorten paths per review ([#469](https://github.com/tellus-rs/tellus/pull/469))
+
+### Miscellaneous Tasks
+
+- Rename docker-compose.yaml to compose.yaml ([#241](https://github.com/tellus-rs/tellus/pull/241))
+
+
 ## [0.2.14](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.13...tellus-persistence-postgres-v0.2.14) - 2026-11-01
 
 ### Documentation
