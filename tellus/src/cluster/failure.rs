@@ -269,7 +269,7 @@ impl PhiAccrual {
         max_sample_size: usize,
     ) -> Result<Self, InvalidPhiAccrual> {
         if max_sample_size < Self::MIN_MAX_SAMPLE_SIZE {
-            return Err(InvalidPhiAccrual::MaxSampleSize(max_sample_size));
+            return Err(InvalidPhiAccrual::MaxSampleSizeTooSmall(max_sample_size));
         }
         if max_sample_size > Self::MAX_MAX_SAMPLE_SIZE {
             return Err(InvalidPhiAccrual::MaxSampleSizeTooLarge(max_sample_size));
@@ -291,7 +291,7 @@ impl PhiAccrual {
         min_std_deviation: Duration,
     ) -> Result<Self, InvalidPhiAccrual> {
         if min_std_deviation.is_zero() {
-            return Err(InvalidPhiAccrual::MinStdDeviation);
+            return Err(InvalidPhiAccrual::ZeroMinStdDeviation);
         }
 
         self.min_std_deviation = min_std_deviation;
@@ -317,7 +317,7 @@ impl PhiAccrual {
         warmup_deadline: Duration,
     ) -> Result<Self, InvalidPhiAccrual> {
         if warmup_deadline.is_zero() {
-            return Err(InvalidPhiAccrual::WarmupDeadline);
+            return Err(InvalidPhiAccrual::ZeroWarmupDeadline);
         }
 
         self.warmup_deadline = warmup_deadline;
@@ -385,7 +385,7 @@ pub enum InvalidPhiAccrual {
 
     /// The sliding window is below [PhiAccrual::MIN_MAX_SAMPLE_SIZE].
     #[error("max sample size {0} below 2")]
-    MaxSampleSize(usize),
+    MaxSampleSizeTooSmall(usize),
 
     /// The sliding window is above [PhiAccrual::MAX_MAX_SAMPLE_SIZE].
     #[error("max sample size {0} above 10000")]
@@ -393,11 +393,11 @@ pub enum InvalidPhiAccrual {
 
     /// The minimum standard deviation is zero.
     #[error("min std deviation is zero")]
-    MinStdDeviation,
+    ZeroMinStdDeviation,
 
     /// The warmup deadline is zero.
     #[error("warmup deadline is zero")]
-    WarmupDeadline,
+    ZeroWarmupDeadline,
 }
 
 #[cfg(feature = "serde")]
@@ -780,11 +780,11 @@ mod tests {
     fn an_invalid_tuning_is_refused() {
         assert!(matches!(
             PhiAccrual::default().with_max_sample_size(1),
-            Err(InvalidPhiAccrual::MaxSampleSize(1))
+            Err(InvalidPhiAccrual::MaxSampleSizeTooSmall(1))
         ));
         assert!(matches!(
             PhiAccrual::default().with_max_sample_size(0),
-            Err(InvalidPhiAccrual::MaxSampleSize(0))
+            Err(InvalidPhiAccrual::MaxSampleSizeTooSmall(0))
         ));
         assert!(PhiAccrual::default().with_max_sample_size(2).is_ok());
         assert!(matches!(
@@ -818,12 +818,12 @@ mod tests {
 
         assert!(matches!(
             PhiAccrual::default().with_min_std_deviation(Duration::ZERO),
-            Err(InvalidPhiAccrual::MinStdDeviation)
+            Err(InvalidPhiAccrual::ZeroMinStdDeviation)
         ));
 
         assert!(matches!(
             PhiAccrual::default().with_warmup_deadline(Duration::ZERO),
-            Err(InvalidPhiAccrual::WarmupDeadline)
+            Err(InvalidPhiAccrual::ZeroWarmupDeadline)
         ));
     }
 

@@ -70,11 +70,12 @@ pub enum LeaveError {
     #[error("remoting endpoint not started")]
     EndpointNotStarted,
 
-    /// This node has neither formed nor joined a cluster, a join in progress included, so there is
-    /// no cluster to leave. The endpoint is left as it was and can still
-    /// [form](crate::cluster::form) or [join](crate::cluster::join) one.
+    /// This node is [Unformed](crate::cluster::Lifecycle::Unformed): it has neither formed nor
+    /// joined a cluster, a join in progress included, so there is no cluster to leave. The
+    /// endpoint is left as it was and can still [form](crate::cluster::form) or
+    /// [join](crate::cluster::join) one.
     #[error("this node is a member of no cluster")]
-    NotAMember,
+    Unformed,
 
     /// This node was downed before it began to leave, so there is no departure to announce.
     #[error("this node has been downed")]
@@ -142,7 +143,7 @@ where
 /// as does leaving again afterward.
 ///
 /// An endpoint which has neither formed nor joined a cluster has nothing to leave, so leaving it
-/// fails as [NotAMember](LeaveError::NotAMember) and changes nothing: it can still
+/// fails as [Unformed](LeaveError::Unformed) and changes nothing: it can still
 /// [form](crate::cluster::form) or [join](crate::cluster::join) a cluster. That holds while a join
 /// is in progress, too, which may still make this node a member afterward.
 ///
