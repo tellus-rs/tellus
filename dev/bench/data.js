@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795170532499,
+  "lastUpdate": 1795187110635,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -24899,6 +24899,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 30697861,
             "range": "± 802210",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5549dec20decfb7d49ae71732ced373828989216",
+          "message": "Merge pull request #519 from tellus-rs/test/verifier-real-clock\n\ntest(demo): drop start_paused where a verifier test asks a real server",
+          "timestamp": "2026-11-20T14:56:45Z",
+          "tree_id": "dbabb49d3ff5ca9ccbae38086569d377d4f6c6d9",
+          "url": "https://github.com/tellus-rs/tellus/commit/5549dec20decfb7d49ae71732ced373828989216"
+        },
+        "date": 1795187109415,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 20910401,
+            "range": "± 4289065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 25336134,
+            "range": "± 6329689",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 707417,
+            "range": "± 6561",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 803289,
+            "range": "± 9105",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 10778368,
+            "range": "± 464133",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 9201413,
+            "range": "± 582480",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 23172219,
+            "range": "± 326671",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 24402652,
+            "range": "± 139368",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 23116284,
+            "range": "± 252537",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 24163372,
+            "range": "± 286393",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 23909129,
+            "range": "± 563811",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 26310894,
+            "range": "± 352263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 31183729,
+            "range": "± 237773",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 23533576,
+            "range": "± 458982",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 26368897,
+            "range": "± 408222",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 31176676,
+            "range": "± 304951",
             "unit": "ns/iter"
           }
         ]
