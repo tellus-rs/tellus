@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795187113454,
+  "lastUpdate": 1795187114850,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -42255,6 +42255,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 6287415,
             "range": "± 361250",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "sean.kwak.1988@gmail.com",
+            "name": "Sean Kwak",
+            "username": "cosmir17"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "5549dec20decfb7d49ae71732ced373828989216",
+          "message": "Merge pull request #519 from tellus-rs/test/verifier-real-clock\n\ntest(demo): drop start_paused where a verifier test asks a real server",
+          "timestamp": "2026-11-20T14:56:45Z",
+          "tree_id": "dbabb49d3ff5ca9ccbae38086569d377d4f6c6d9",
+          "url": "https://github.com/tellus-rs/tellus/commit/5549dec20decfb7d49ae71732ced373828989216"
+        },
+        "date": 1795187114614,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 28391561,
+            "range": "± 368685",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27441322,
+            "range": "± 539991",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4404347,
+            "range": "± 81328",
             "unit": "ns/iter"
           }
         ]
