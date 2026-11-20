@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795168889005,
+  "lastUpdate": 1795168890804,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -41835,6 +41835,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5383864,
             "range": "± 235529",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff8ac5c574ef08b7c0a5e6a55a6965f66ef6481c",
+          "message": "Merge pull request #516 from tellus-rs/refactor/never-type\n\nrefactor: replace Infallible with ! and require Rust 1.100",
+          "timestamp": "2026-11-20T11:53:25+02:00",
+          "tree_id": "b76015c502a3ae57869936f3e6331513303fea88",
+          "url": "https://github.com/tellus-rs/tellus/commit/ff8ac5c574ef08b7c0a5e6a55a6965f66ef6481c"
+        },
+        "date": 1795168890325,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 20899551,
+            "range": "± 629176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 20991994,
+            "range": "± 558967",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 3956892,
+            "range": "± 203018",
             "unit": "ns/iter"
           }
         ]
