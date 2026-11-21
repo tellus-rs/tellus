@@ -120,7 +120,11 @@ pub enum ReceptionistError {
 
     /// This node's own member entry is Left or Down: it has left the cluster, or it was downed
     /// or downed itself. The directory lists the registrations of Up members only, so it would
-    /// answer without this node's own.
+    /// answer without this node's own. This holds from the first step of
+    /// [leave](crate::cluster::leave), while [lifecycle](crate::cluster::lifecycle) still answers
+    /// [Formed](crate::cluster::Lifecycle::Formed) until `leave` has finished draining or its
+    /// `leave_timeout` has passed. A departure which ends without a report, e.g. since its task
+    /// panicked, makes it answer [Downed](crate::cluster::Lifecycle::Downed) as soon as it ends.
     #[error("this node has left the cluster or been downed")]
     NoLongerMember,
 }
