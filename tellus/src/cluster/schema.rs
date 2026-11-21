@@ -80,9 +80,8 @@ where
         if schema_version == Self::VERSION {
             codec.decode(payload)
         } else {
-            Err(CodecError::make_decoding(UnsupportedSchemaVersion::new::<
-                Self,
-            >(schema_version)))
+            let error = UnsupportedSchemaVersion::new::<Self>(schema_version);
+            Err(CodecError::make_decoding(error))
         }
     }
 }
