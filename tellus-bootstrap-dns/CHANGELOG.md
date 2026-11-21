@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.2.0...tellus-bootstrap-dns-v0.2.1) - 2026-11-21
+
+### Miscellaneous Tasks
+
+- Updated the following local packages: tellus
+
+
 ## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-dns-v0.1.4...tellus-bootstrap-dns-v0.2.0) - 2026-11-20
 
 ### Bug Fixes

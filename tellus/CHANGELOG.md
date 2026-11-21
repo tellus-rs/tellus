@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/tellus-rs/tellus/compare/tellus-v0.6.0...tellus-v0.6.1) - 2026-11-21
+
+### Styling
+
+- *(cluster)* Tidy up Schema::decode ([#524](https://github.com/tellus-rs/tellus/pull/524))
+
+
 ## [0.6.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.3...tellus-v0.6.0) - 2026-11-20
 
 ### Features
