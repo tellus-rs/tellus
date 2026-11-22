@@ -409,9 +409,13 @@ dialed included. Sends are refused right after it, so it cannot grow a queue the
 gossip would. A send racing the leave on another thread may still be queued behind it, and it is
 drained with the rest. Each lane's writers write out what is queued, the frame a writer holds
 included, and finish every data stream. Then the control stream carries a `Drained` marker as its
-final frame, naming the number of data streams this node opened on that connection. The peer answers
-with a `DrainAck` once exactly that many data streams have ended cleanly and every frame they
-carried was dispatched. This node then counts the peer as acknowledged and closes the connection. An
+final frame, naming the number of data streams this node opened on that connection.
+Directly in front of the marker, on the same control stream, this node writes its own
+entry as Left. It does so on every connection which carries a marker, also on one toward a
+member which has left or toward a node not known here, neither of which the announcement
+reaches. The peer answers with a `DrainAck` once exactly that many data streams have ended
+cleanly and every frame they carried was dispatched, provided it still defers the
+departure. This node then counts the peer as acknowledged and closes the connection. An
 acknowledgment proves that every frame queued for the peer reached the framework's delivery path
 there, a local mailbox or a logged dead letter. It does not prove that any actor handled them. The
 whole exchange is bounded by `leave_timeout`: one deadline for every lane, not restarted between the

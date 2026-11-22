@@ -8,7 +8,7 @@ use crate::{
             RefusalReason,
         },
         lanes::{Drain, Generation},
-        membership::{self, JoinAdmission},
+        membership::{self, JoinAdmission, Member, MemberState},
         node::{ClusterId, NodeId},
         receptionist::{self, Assembler, Snapshot},
         reply,
@@ -311,8 +311,9 @@ struct Greeting {
     max_frame_size: usize,
 }
 
-/// Whether this node is leaving, and the peer's answer to the drain marker of its departure.
+/// This node, whether it is leaving, and the peer's answer to the drain marker of its departure.
 struct LeaveSignals {
+    node: NodeId,
     leaving: &'static AtomicBool,
     drain_ack_rx: oneshot::Receiver<()>,
 }
@@ -876,6 +877,7 @@ where
                     frame_limit,
                     snapshot_rx.clone(),
                     LeaveSignals {
+                        node: endpoint.node(),
                         leaving: endpoint.leaving_flag(),
                         drain_ack_rx,
                     },
@@ -1064,9 +1066,9 @@ async fn no_member_up_while_leaving(endpoint: &EndpointInner, addr: SocketAddr) 
     }
 }
 
-/// Leaving, every data stream is finished first, then the control stream carries the drain
-/// marker, and the lane is acknowledged only once the peer answers the marker. `interrupted`
-/// ends the writing with its end, once every writer task has finished.
+/// Leaving, every data stream is finished first, then the control stream carries this node's
+/// departure and the drain marker, and the lane is acknowledged only once the peer answers the
+/// marker. `interrupted` ends the writing with its end, once every writer task has finished.
 #[expect(clippy::too_many_arguments)]
 async fn write_streams<S, I>(
     frame_senders: Vec<S>,
@@ -1083,6 +1085,7 @@ where
     I: Future<Output = WriterEnd>,
 {
     let LeaveSignals {
+        node,
         leaving,
         drain_ack_rx,
     } = leave;
@@ -1123,7 +1126,7 @@ where
     }
 
     let end = select! {
-        end = drain_writers(&mut writers, addr, leaving, data_streams, drain_ack_rx) => end,
+        end = drain_writers(&mut writers, addr, node, leaving, data_streams, drain_ack_rx) => end,
 
         end = interrupted => end,
     };
@@ -1135,6 +1138,7 @@ where
 async fn drain_writers<S>(
     writers: &mut JoinSet<Result<Option<S>, WriterEnd>>,
     addr: SocketAddr,
+    node: NodeId,
     leaving: &AtomicBool,
     data_streams: usize,
     drain_ack_rx: oneshot::Receiver<()>,
@@ -1178,6 +1182,15 @@ where
             return WriterEnd::Unacknowledged;
         }
     };
+    // The departure right before the marker, else a peer holding this node Up refuses the marker!
+    let departure = Frame::Gossip {
+        members: vec![Member::new(node, MemberState::Left)],
+        more: false,
+    };
+    if let Err(error) = send_frame(&mut control_sender, &departure).await {
+        warn!(peer_addr = %addr, %error, "cannot announce the departure in front of the drain marker");
+        return WriterEnd::Unacknowledged;
+    }
     if let Err(error) = send_frame(&mut control_sender, &Frame::Drained { data_streams }).await {
         warn!(peer_addr = %addr, %error, "cannot send the drain marker");
         return WriterEnd::Unacknowledged;
@@ -2480,11 +2493,15 @@ mod tests {
         NodeId::new("127.0.0.1:1234".parse().expect("valid address"))
     }
 
-    fn leave_signals(leaving: &'static AtomicBool) -> (oneshot::Sender<()>, LeaveSignals) {
+    fn leave_signals(
+        node: NodeId,
+        leaving: &'static AtomicBool,
+    ) -> (oneshot::Sender<()>, LeaveSignals) {
         let (drain_ack_tx, drain_ack_rx) = oneshot::channel();
         (
             drain_ack_tx,
             LeaveSignals {
+                node,
                 leaving,
                 drain_ack_rx,
             },
@@ -2800,19 +2817,19 @@ mod tests {
         );
     }
 
-    /// Leaving, every data stream is finished before the control stream carries the drain
-    /// marker, its last frame, which names the number of data streams. Only the peer's answer to
-    /// the marker makes the lane acknowledged: without one it is not, and a data stream which
-    /// cannot be finished means no marker is sent at all.
+    /// Leaving, every data stream is finished before the control stream carries this node's
+    /// departure and then the drain marker, its last frame, which names the number of data
+    /// streams. Only the peer's answer to the marker makes the lane acknowledged: without one it
+    /// is not, and a data stream which cannot be finished means no marker is sent at all.
     #[tokio::test]
     async fn a_lane_drained_for_a_leave_is_acknowledged_only_by_the_peer() {
         let gossip = || Frame::Gossip {
             members: Vec::new(),
             more: false,
         };
-        let drained = Frame::Drained { data_streams: 2 }
-            .encode_into(Vec::new())
-            .expect("frame encodes");
+        let node = NodeId::new(addr(1));
+        let departure = encoded(&departure(node));
+        let drained = encoded(&Frame::Drained { data_streams: 2 });
 
         for (answered, finishes, acknowledged) in [
             (true, true, true),
@@ -2825,7 +2842,7 @@ mod tests {
             let (other_tx, other_rx) = flume::unbounded::<Frame<'static>>();
             drop((control_tx, data_tx, other_tx));
             let receivers = [control_rx, data_rx, other_rx];
-            let (drain_ack_tx, leave) = leave_signals(&LEAVING);
+            let (drain_ack_tx, leave) = leave_signals(node, &LEAVING);
             if answered {
                 drain_ack_tx.send(()).expect("the writers await the answer");
             } else {
@@ -2862,10 +2879,18 @@ mod tests {
             let finished = sent.iter().filter(|frame| frame.is_empty()).count();
             if finishes {
                 assert_eq!(finished, 2, "only the data streams are finished: {sent:?}");
-                assert_eq!(sent.last(), Some(&drained), "the marker comes last");
-                assert_eq!(sent.len(), 4);
+                assert_eq!(
+                    sent[sent.len().saturating_sub(2)..],
+                    [departure.clone(), drained.clone()],
+                    "the departure directly precedes the marker, which comes last"
+                );
+                assert_eq!(sent.len(), 5);
             } else {
                 assert_eq!(finished, 1);
+                assert!(
+                    !sent.contains(&departure),
+                    "no departure after a failed stream"
+                );
                 assert!(!sent.contains(&drained), "no marker after a failed stream");
             }
         }
@@ -2907,7 +2932,7 @@ mod tests {
             "127.0.0.1:1234".parse().expect("valid address"),
             1024,
             tokio::sync::watch::channel(None).1,
-            leave_signals(&NOT_LEAVING).1,
+            leave_signals(NodeId::new(addr(1)), &NOT_LEAVING).1,
             pending(),
         )
         .await;
@@ -5252,6 +5277,10 @@ mod tests {
         }
     }
 
+    fn encoded(frame: &Frame<'_>) -> Vec<u8> {
+        frame.encode_into(Vec::new()).expect("frame encodes")
+    }
+
     /// A departure learned from the leaver itself defers its death while its connection is open.
     /// A message and a real terminated signal arriving on a data stream after it are delivered,
     /// and the synthesized signals only follow once the connection is closed.
@@ -6041,13 +6070,24 @@ mod tests {
 
     impl LeavingLane {
         async fn connected(data_streams: usize) -> LeavingLane {
+            LeavingLane::connected_to(data_streams, true).await
+        }
+
+        /// The lane goes to a node not known here, opened by an optimistic send.
+        async fn connected_to_unknown(data_streams: usize) -> LeavingLane {
+            LeavingLane::connected_to(data_streams, false).await
+        }
+
+        async fn connected_to(data_streams: usize, member_up: bool) -> LeavingLane {
             let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests_with_data_streams(
                 EndpointConfig::new(addr(1)),
                 data_streams,
             );
             endpoint.form_cluster().expect("an unformed endpoint forms");
             let member = NodeId::new(addr(2));
-            endpoint.update(|membership, _| membership.add_up(member));
+            if member_up {
+                endpoint.update(|membership, _| membership.add_up(member));
+            }
             let (dial_tx, mut dials) = unbounded_channel();
             task::spawn(dial_loop(
                 Arc::new(ScriptedTransport(dial_tx)),
@@ -6113,6 +6153,179 @@ mod tests {
             .await
             .expect("the drain marker arrives in time")
         }
+
+        /// The control frames this endpoint writes, encoded, up to and including the drain marker.
+        async fn frames_until_drained(&mut self) -> Vec<Vec<u8>> {
+            timeout(Duration::from_secs(5), async {
+                let mut frames = Vec::new();
+                loop {
+                    let bytes = self.acceptor.joiner_bytes().await;
+                    let drained = matches!(
+                        Frame::from_bytes(&bytes).expect("frame decodes"),
+                        Frame::Drained { .. }
+                    );
+                    frames.push(bytes);
+                    if drained {
+                        return frames;
+                    }
+                }
+            })
+            .await
+            .expect("the drain marker arrives in time")
+        }
+    }
+
+    /// A lane toward a member which is Left here, as one is for nodes leaving together, carries
+    /// this node's departure directly in front of the drain marker, so the member defers the
+    /// departure before it reads the marker.
+    #[tokio::test]
+    async fn a_drain_toward_a_left_member_is_preceded_by_the_departure() {
+        let mut lane = LeavingLane::connected(0).await;
+        let endpoint = lane.endpoint;
+        let member = endpoint.membership().up_peers()[0];
+        membership::on_gossip(endpoint, &[Member::new(member, MemberState::Left)]);
+        let leaving = task::spawn(endpoint.leave());
+
+        let frames = lane.frames_until_drained().await;
+        assert_eq!(
+            frames[frames.len().saturating_sub(2)..],
+            [
+                encoded(&departure(endpoint.node())),
+                encoded(&Frame::Drained { data_streams: 0 })
+            ]
+        );
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let report = timeout(Duration::from_secs(5), leaving)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(report.acknowledged(), [member.addr()]);
+    }
+
+    /// A lane toward a node not known here carries this node's departure directly in front of
+    /// the drain marker as well, although no announcement went to that node.
+    #[tokio::test]
+    async fn a_drain_toward_a_node_not_known_here_is_preceded_by_the_departure() {
+        let mut lane = LeavingLane::connected_to_unknown(0).await;
+        let endpoint = lane.endpoint;
+        let leaving = task::spawn(endpoint.leave());
+
+        let frames = lane.frames_until_drained().await;
+        assert_eq!(
+            frames[frames.len().saturating_sub(2)..],
+            [
+                encoded(&departure(endpoint.node())),
+                encoded(&Frame::Drained { data_streams: 0 })
+            ]
+        );
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let report = timeout(Duration::from_secs(5), leaving)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(report.acknowledged(), [addr(2)]);
+    }
+
+    /// Two endpoints, the leaver's lane read by the member's own acceptor. The leaver holds the
+    /// member as Left while the member still holds the leaver as Up, as for nodes leaving
+    /// together. The member delivers what the leaver queued for it before the leave, ahead of the
+    /// leaver's death, and acknowledges the drain.
+    #[tokio::test]
+    async fn a_member_holding_the_leaver_up_acknowledges_its_drain() {
+        let (leaver, lane_dials, _join_requests) =
+            EndpointInner::for_tests_with_data_streams(EndpointConfig::new(addr(1)), 1);
+        leaver.form_cluster().expect("an unformed endpoint forms");
+        let (member, _member_lane_dials, _member_join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(2)));
+        member.commit_cluster(leaver.committed_cluster().expect("a formed cluster"));
+        leaver.update(|membership, _| membership.add_up(member.node()));
+        member.update(|membership, _| membership.add_up(leaver.node()));
+        let mut recipient = Recipient::watching(member, leaver.node(), ActorId::new());
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            leaver,
+        ));
+
+        leaver
+            .send(member.node(), message(leaver, recipient.id(), 7))
+            .expect("the lane opens");
+        let dial = timeout(Duration::from_secs(5), dials.recv())
+            .await
+            .expect("the lane dials in time")
+            .expect("the lane dials");
+        let (to_member, from_leaver) = unbounded_channel();
+        let (to_leaver, from_member) = unbounded_channel();
+        let (opened_tx, mut opened) = unbounded_channel();
+        let (accepted_tx, accepted) = unbounded_channel();
+        task::spawn(run_accepted(
+            StreamingConnection {
+                control: Mutex::new(Some((
+                    ChannelSender(to_leaver),
+                    ChannelReceiver {
+                        frames: from_leaver,
+                        current: Vec::new(),
+                    },
+                ))),
+                data: tokio::sync::Mutex::new(accepted),
+            },
+            member,
+        ));
+        let connected = ConnectedControl {
+            connection: ScriptedConnection(opened_tx),
+            control_tx: ChannelSender(to_member),
+            control_rx: ChannelReceiver {
+                frames: from_member,
+                current: Vec::new(),
+            },
+        };
+        assert!(
+            dial.answer.send(connected).is_ok(),
+            "the lane awaits the dial"
+        );
+        let mut held = timeout(Duration::from_secs(5), opened.recv())
+            .await
+            .expect("the data stream opens in time")
+            .expect("the data stream opens");
+        eventually(|| leaver.lane_connected(member.node().addr()) == Some(true)).await;
+
+        let (release_tx, release_rx) = oneshot::channel::<()>();
+        let (forwarded_tx, forwarded) = unbounded_channel();
+        accepted_tx
+            .send(ChannelReceiver {
+                frames: forwarded,
+                current: Vec::new(),
+            })
+            .expect("the member accepts streams");
+        drop(accepted_tx);
+        task::spawn(async move {
+            if release_rx.await.is_ok() {
+                while let Some(frame) = held.frames.recv().await {
+                    if forwarded_tx.send(frame).is_err() {
+                        break;
+                    }
+                }
+            }
+        });
+
+        membership::on_gossip(leaver, &[Member::new(member.node(), MemberState::Left)]);
+        let leaving = task::spawn(leaver.leave());
+        eventually(|| leaver.leaving()).await;
+        release_tx.send(()).expect("the barrier is held");
+
+        let report = timeout(Duration::from_secs(5), leaving)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(report.acknowledged(), [member.node().addr()]);
+        recipient.receive(2).await;
+        assert_eq!(recipient.received(), [Some(7), None]);
     }
 
     /// A leaving endpoint finishes every data stream, announces their number in the drain marker
