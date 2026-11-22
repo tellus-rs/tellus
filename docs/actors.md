@@ -393,6 +393,11 @@ into a `MailboxHandle` (the sending half, cloned into every `ActorRef`) and a `M
 receiving half, owned by the actor's run loop). Messages from one sender are received in the order
 they were sent.
 
+The channel ([`channel.rs`](../tellus/src/channel.rs)) is a queue behind one lock with a single
+waker slot. A sender appends under the lock and wakes the receiver only after releasing it. Once
+the receiver's own batch has run empty, it swaps the whole queue for that empty batch under the
+lock, so a backlog costs one lock acquisition per batch instead of one per item.
+
 The underlying channel is always unbounded; a bounded mailbox is enforced by a lock-free reservation
 counter ([`quota.rs`](../tellus/src/quota.rs)) in front of it: a message reserves capacity before it
 is enqueued and releases it when it is received. A terminated signal enqueues into the same FIFO
@@ -405,11 +410,11 @@ timers above), and neither are stashed items (see stashing above). An actor whic
 database or a socket can flush once its mailbox has run empty, and one which is overloaded can shed
 load, both as part of its own protocol. For the actor itself the value is a lower bound, since only
 the actor removes items. The run loop drops the terminated signals of unwatched actors before
-`receive` sees them, so the count can exceed what `receive` will get by that many. `queued` takes
-the channel's length under its lock, which every send and receive takes as well, so nothing is paid
-until it is called. The depth is deliberately not on `ActorRef`: for a remote reference it would
-need a round trip, so other actors ask through the actor's protocol. Nor is it flow control, since
-senders do not see it; for that, bound the mailbox.
+`receive` sees them, so the count can exceed what `receive` will get by that many. `queued` reads
+the length of the shared queue under its lock and adds the items left in the receiver's batch, which
+the receiver records with every receive. The depth is deliberately not on `ActorRef`: for a remote
+reference it would need a round trip, so other actors ask through the actor's protocol. Nor is it
+flow control, since senders do not see it; for that, bound the mailbox.
 
 The mailbox also owns watcher registration ([`watch.rs`](../tellus/src/watch.rs)): watchers are
 collected in a map keyed by watcher ID which termination takes and closes atomically. A watcher
@@ -451,10 +456,10 @@ separate field, so a wrapped cause stays queryable instead of being flattened in
 biased select ensures a stop signal is honored before further queued messages once the parent is
 stopping, and a due timer is fired before the next item is taken. For both, one item can go first
 when the cooperative budget runs out. Before each wait, the loop consumes one unit of Tokio's
-cooperative budget (`consume_budget`). Flume is not part of that budget, so without this a mailbox
-which never runs empty would keep the actor's task ready forever. Once the budget is used up, the
-actor yields its worker. Other tasks, timers and its own stop signal then get to run, also on a
-current-thread runtime.
+cooperative budget (`consume_budget`). The mailbox's receive is not part of that budget, so without
+this a mailbox which never runs empty would keep the actor's task ready forever. Once the budget is
+used up, the actor yields its worker. Other tasks, timers and its own stop signal then get to run,
+also on a current-thread runtime.
 
 ## Stopping and termination
 
@@ -493,13 +498,16 @@ Whether a child has run before its parent stops it is up to the scheduler. On a 
 runtime, a child spawned in the `receive` which stops its parent has not. On a multi-thread runtime,
 another worker may already have run its `init`.
 
-The mailbox is drained and disconnected right after the state is dropped and before the children are
-stopped, so senders observe the termination while the children still stop. The destructors of the
-drained messages run as part of the sequence. A queued request's reply channel, for example, hence
-resolves its ask as `NoReply` instead of pending forever. The messages of the actor's timers are
-dropped right after the drained ones, so a `ReplyTo` inside one resolves its ask as `NoReply` too. A
-send racing with the drain can still slip past it; such a message is retained until its last sender
-is dropped, which is why the `NoReply` detection is best-effort.
+The mailbox is closed and drained in one step right after the state is dropped and before the
+children are stopped, so senders observe the termination while the children still stop. A send
+accepted before the closure is drained with the queue, and a local send which observes the closure
+is refused as `ActorTerminated`. A request from another node is refused only once it arrives, so its
+ask ends as `NoReply` or `Timeout` instead (see [cluster.md](cluster.md)). The destructors of the
+drained messages run as part of the sequence, outside the mailbox's lock. A request still queued at
+closure is hence detached at closure and dropped during termination, which resolves its ask as
+`NoReply` instead of pending forever. The ask's deadline can still expire before its reply channel
+closes. The messages of the actor's timers are dropped right after the drained ones, so a `ReplyTo`
+inside one resolves its ask as `NoReply` too.
 
 The root actor has no parent, so `ActorSystem::stop` is that channel from the outside: it sends on
 the very sender which keeps the root alive, shared between the system and the root's watcher
@@ -775,12 +783,12 @@ has to wait for the actor, since `tell` returns before the message is handled.
   are logged, not returned.
 - Messages from one sender arrive in send order; terminated signals are ordered behind the
   watched actor's delivered messages and prove its destructors have run.
-- A message sent concurrently with the termination can slip in after the mailbox was drained.
-  It is never received and, unlike other dead letters, not logged. It and the resources it
-  captures are retained while any `ActorRef` to the terminated actor lives. An `ask` whose request
-  is such a message may time out; dropping the remaining references before its deadline can still
-  resolve it as `NoReply`. The terminated signal's guarantee, covering the actor's state, its actor
-  value and its descendants, is unaffected.
+- Termination closes the mailbox. A message still queued at closure is detached at closure and
+  dropped during termination, outside the mailbox's lock, so an `ask` whose request it is can still
+  reach its deadline before its reply channel closes. A local send which observes the closure is
+  refused: `tell` logs it as a dead letter and `ask` returns `ActorTerminated`. A request from
+  another node is refused only once it arrives, so its ask ends as `NoReply` or `Timeout`. A bounded
+  mailbox can still refuse a send as full before it closes.
 - `receive` is synchronous and cannot await; long-running or blocking work runs in a future
   piped to the actor via `pipe_to_self`, whose output arrives as a message, at most once, and is
   not refused by a full bounded mailbox.

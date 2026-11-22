@@ -33,3 +33,8 @@ message = "the steady-state messaging path must not allocate per message"
 match   = "tellus::quota::reserve"
 alloc   = { total = "0 B" }
 message = "the steady-state messaging path must not allocate per message"
+
+[[functions.budgets]]
+match   = "tellus::mailbox::recv"
+alloc   = { total = "0 B" }
+message = "the steady-state messaging path must not allocate per message"

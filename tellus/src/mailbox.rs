@@ -1,17 +1,15 @@
 use crate::{
     Incoming, MailboxCapacity,
+    channel::{self, Receiver, Sender},
     quota::{CountedSendError, CountedSender, Full, Quota},
     watch::{ActorTerminated, TerminatedHandler, WatcherRegistration, WatcherRegistry},
 };
-use flume::Receiver;
-#[cfg(feature = "test-util")]
-use flume::TryRecvError;
 use std::sync::Arc;
 use thiserror::Error;
 
 /// Sending mailbox half.
 pub(crate) struct MailboxHandle<M> {
-    incoming_tx: CountedSender<Incoming<M>>,
+    incoming_tx: CountedSender<Incoming<M>, Sender<Incoming<M>>>,
     watcher_registry: WatcherRegistry,
 }
 
@@ -68,7 +66,7 @@ impl<M> Mailbox<M> {
     /// `&mut self` to enforce one consumer per mailbox.
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) async fn recv(&mut self) -> Option<Incoming<M>> {
-        let incoming = self.incoming_rx.recv_async().await.ok()?;
+        let incoming = self.incoming_rx.recv().await?;
         if matches!(incoming, Incoming::Message(_)) {
             self.quota.unreserve();
         }
@@ -77,16 +75,11 @@ impl<M> Mailbox<M> {
 
     #[cfg(feature = "test-util")]
     pub(crate) fn try_recv(&mut self) -> Option<Incoming<M>> {
-        match self.incoming_rx.try_recv() {
-            Ok(incoming) => {
-                if matches!(incoming, Incoming::Message(_)) {
-                    self.quota.unreserve();
-                }
-                Some(incoming)
-            }
-
-            Err(TryRecvError::Empty | TryRecvError::Disconnected) => None,
+        let incoming = self.incoming_rx.try_recv()?;
+        if matches!(incoming, Incoming::Message(_)) {
+            self.quota.unreserve();
         }
+        Some(incoming)
     }
 
     pub(crate) fn split(self) -> (Receiver<Incoming<M>>, WatcherRegistration) {
@@ -113,7 +106,7 @@ impl From<CountedSendError> for SendError {
 }
 
 pub(crate) fn make_mailbox<M>(mailbox_capacity: MailboxCapacity) -> (MailboxHandle<M>, Mailbox<M>) {
-    let (incoming_tx, incoming_rx) = flume::unbounded();
+    let (incoming_tx, incoming_rx) = channel::make_channel();
 
     let quota = match mailbox_capacity {
         MailboxCapacity::Unbounded => Quota::unbounded(),

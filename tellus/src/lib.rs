@@ -94,6 +94,7 @@ mod actor_id;
 mod actor_ref;
 mod actor_system;
 mod backoff;
+mod channel;
 mod host;
 mod mailbox;
 #[cfg(feature = "persistence")]

@@ -16,8 +16,6 @@ judged             = true
 min_percent_change = 2
 metrics            = [ "avg", "total" ]
 min_calls          = 1
-# recv allocates a waker per empty wait, and thread scheduling decides how many!
-ignore = [ "tellus::mailbox::recv" ]
 
 [functions.icount]
 judged             = true
@@ -38,5 +36,10 @@ message = "the steady-state messaging path must not allocate per message"
 
 [[functions.budgets]]
 match   = "tellus::actor_context::receive_incoming"
+alloc   = { total = "0 B" }
+message = "the steady-state messaging path must not allocate per message"
+
+[[functions.budgets]]
+match   = "tellus::mailbox::recv"
 alloc   = { total = "0 B" }
 message = "the steady-state messaging path must not allocate per message"

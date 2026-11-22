@@ -543,7 +543,7 @@ mod tests {
         mailbox
             .split()
             .0
-            .drain()
+            .close_and_drain()
             .filter_map(|incoming| match incoming {
                 Incoming::Message(message) => Some(message),
                 Incoming::Terminated(_) => None,

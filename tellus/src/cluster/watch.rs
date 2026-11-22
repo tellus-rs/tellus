@@ -550,11 +550,11 @@ mod tests {
         let target = ActorId::new();
         for peer in [down, left] {
             let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
-            let (incoming_rx, _watcher_registration) = mailbox.split();
+            let (mut incoming_rx, _watcher_registration) = mailbox.split();
             let watcher = Watcher::new(ActorId::new(), mailbox_handle.terminated_handler());
             endpoint::with_current(endpoint, || watch_remote(peer, target, watcher));
             assert!(
-                matches!(incoming_rx.try_recv(), Ok(Incoming::Terminated(id)) if id == target),
+                matches!(incoming_rx.try_recv(), Some(Incoming::Terminated(id)) if id == target),
                 "a watch on {peer} did not fire at once"
             );
         }

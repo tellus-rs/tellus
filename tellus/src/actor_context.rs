@@ -466,7 +466,7 @@ macro_rules! next_unstashed {
 macro_rules! next_incoming {
     ($stash:ident, $actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
-            // Flume's receive future does not consume Tokio's cooperative budget!
+            // The mailbox's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
 
             crate::actor_context::next_unstashed!(
@@ -512,7 +512,7 @@ macro_rules! next_incoming {
 macro_rules! next_incoming_timed {
     ($stash:ident, $actor_id:expr, $mailbox:expr, $context:expr, $stopped_by_parent:expr) => {
         'next_incoming: loop {
-            // Flume's receive future does not consume Tokio's cooperative budget!
+            // The mailbox's receive future does not consume Tokio's cooperative budget!
             consume_budget().await;
 
             crate::actor_context::next_unstashed!(
@@ -938,8 +938,7 @@ pub(crate) async fn terminate<A, M, T, S>(
     let actor_id = context.self_ref().actor_id();
 
     let (incoming_rx, watcher_registration) = mailbox.split();
-    let drained = incoming_rx.drain().collect::<Vec<_>>();
-    drop_containing_panic(actor_id, "mailbox failed to drop", incoming_rx);
+    let drained = incoming_rx.close_and_drain();
     for incoming in drained {
         drop_containing_panic(actor_id, "queued message failed to drop", incoming);
     }
