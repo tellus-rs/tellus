@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795438239537,
+  "lastUpdate": 1795438241112,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -42885,6 +42885,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5976542,
             "range": "± 361151",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "44011fe294e4d412befe3d004db56e34c0e6d071",
+          "message": "Merge pull request #520 from tellus-rs/refactor/api-names-493\n\nrefactor(cluster)!: rename four error variants",
+          "timestamp": "2026-11-23T14:42:32+02:00",
+          "tree_id": "206a08779b4b80c7f45334ae46a6ca41f14e8b20",
+          "url": "https://github.com/tellus-rs/tellus/commit/44011fe294e4d412befe3d004db56e34c0e6d071"
+        },
+        "date": 1795438240823,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 27712526,
+            "range": "± 1714219",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27703158,
+            "range": "± 1437343",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5933094,
+            "range": "± 341754",
             "unit": "ns/iter"
           }
         ]
