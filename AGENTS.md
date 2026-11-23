@@ -155,14 +155,15 @@ Benchmarks:
   per section) which the action leaves alone once it exists.
 - `Stack sweep` (`.github/workflows/stack-sweep.yml`): the performance gate, with its protocol in
   `.github/stack-sweep/README.md`. The label `sweep` on a pull request sweeps the messaging bench,
-  `sweep-persistence` the persistence bench and `sweep-stash` the stash bench, of its head against
-  its parent; `gh workflow run stack-sweep.yml -f base=<parent> -f candidate=<commit> [-f
-  bench=persistence|stash]` does the same by hand, and `-f null_run=true` without a candidate
-  sweeps the base against itself. It runs the bench at 16 worker-stack positions on `ubuntu-latest`
+  `sweep-persistence` the persistence bench, `sweep-stash` the stash bench and `sweep-cluster` the
+  cluster bench (the bench role of `cluster.rs`, every row of one run recorded in nanoseconds per
+  unit), of its head against its parent; `gh workflow run stack-sweep.yml -f base=<parent> -f
+  candidate=<commit> [-f bench=persistence|stash|cluster]` does the same by hand, and `-f
+  null_run=true` without a candidate sweeps the base against itself. It runs the bench at 16 worker-stack positions on `ubuntu-latest`
   and `ubuntu-24.04-arm`, 4 jobs each with an A/A control. Where a worker stack lies moves single
   rows by tens of percent either way (`docs/investigations/actor-id-alignment/`), so a regression
   from one stack position, the PR comparison included, needs this before it counts. The rows are
-  every benchmark the base's bench lists. A `Report` job applies `report.py`'s fixed limits (below
+  every benchmark the base's bench lists, or for the cluster bench every row its run prints. A `Report` job applies `report.py`'s fixed limits (below
   +3% passes, above +5% fails, borderline rows get a second run whose ID is passed as well) and
   fails if a row fails. The scripts which measure and judge come from the base, never from the
   candidate. `test_sweep.py` and `test_report.py` pin them, and CI runs both.
@@ -171,7 +172,8 @@ Benchmarks:
   rules.
 - `just bench-cluster`: the remoting throughput and latency numbers (pipelined and serial tells and
   asks, a bulk transfer), run by the `cluster.rs` test in its bench role across spawned processes;
-  not part of CI, for comparing before and after a change to `tellus/src/cluster`.
+  not part of the per-PR CI, but swept by the label `sweep-cluster` for a change to
+  `tellus/src/cluster`.
 - `just bench-gossip <size>`: the gossip bytes per second of an idle cluster of `size` nodes
   (default 5), this process and `size - 1` spawned ones, after a warm-up, from the `__internal` counter `cluster::gossip_bytes`;
   not part of CI.
