@@ -45,7 +45,6 @@ test-util             = [  ]
 [dependencies]
 ciborium        = { workspace = true, optional = true }
 derive_more     = { workspace = true, features = [ "debug", "display", "into" ] }
-flume           = { workspace = true, features = [ "async" ] }
 hotpath         = { workspace = true, optional = true }
 humantime-serde = { workspace = true, optional = true }
 postcard        = { workspace = true, features = [ "use-std" ], optional = true }

@@ -4471,7 +4471,6 @@ dependencies = [
  "config",
  "criterion",
  "derive_more",
- "flume",
  "hotpath",
  "humantime-serde",
  "postcard",
