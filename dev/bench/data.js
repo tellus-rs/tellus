@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795439204542,
+  "lastUpdate": 1795439206732,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37501,6 +37501,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 138335,
             "range": "± 3825",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2fc407b7320cf8c9441782939238902d9dc55b2a",
+          "message": "Merge pull request #526 from tellus-rs/fix/drain-marker-announces-departure\n\nfix(cluster): announce the departure in front of every drain marker",
+          "timestamp": "2026-11-23T14:59:03+02:00",
+          "tree_id": "836cd10ad9b2e5d2ef6d0d83d49c566861922ef8",
+          "url": "https://github.com/tellus-rs/tellus/commit/2fc407b7320cf8c9441782939238902d9dc55b2a"
+        },
+        "date": 1795439206100,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2639406,
+            "range": "± 106252",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2551718,
+            "range": "± 181216",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 673201,
+            "range": "± 11137",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 85257,
+            "range": "± 2392",
             "unit": "ns/iter"
           }
         ]
