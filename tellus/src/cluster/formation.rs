@@ -228,7 +228,8 @@ impl FormationProvider for Majority {
 /// a fresh `after`. A lowest address which is gone, but still resolved by discovery, no longer
 /// blocks a cold start forever. The price is uniqueness: a lowest address which is merely
 /// unreachable from this node, not gone, may form a cluster of its own beside the one this node
-/// forms. The two clusters never merge. Every member reports the other one in
+/// forms. A lowest address which is a member of a cluster already, but unreachable, is passed
+/// over just the same. The two clusters never merge. Every member reports the other one in
 /// [foreign_clusters](crate::cluster::ClusterState::foreign_clusters) as soon as bootstrap's probe
 /// reaches it, see docs/cluster.md. The default remains [Majority].
 #[derive(Debug, Clone)]
