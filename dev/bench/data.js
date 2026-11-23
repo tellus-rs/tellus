@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795445798595,
+  "lastUpdate": 1795445801383,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37669,6 +37669,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 85257,
             "range": "± 2392",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cc0e609a5e4303b0692fb3c54026e82e80108595",
+          "message": "Merge pull request #532 from tellus-rs/docs/fallback-passes-over-a-member\n\ndocs(cluster): say the fallback passes over a lowest member too",
+          "timestamp": "2026-11-23T16:49:03+02:00",
+          "tree_id": "f9195df8f853eedd62b217dbd086308bbc25a917",
+          "url": "https://github.com/tellus-rs/tellus/commit/cc0e609a5e4303b0692fb3c54026e82e80108595"
+        },
+        "date": 1795445800838,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3399480,
+            "range": "± 130054",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3236788,
+            "range": "± 141493",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 857632,
+            "range": "± 4988",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105759,
+            "range": "± 2462",
             "unit": "ns/iter"
           }
         ]
