@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795437233037,
+  "lastUpdate": 1795437234716,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -42675,6 +42675,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5134946,
             "range": "± 422314",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "15a801988bbc2b80c696c4a2ef21f5377ad3ca3b",
+          "message": "Merge pull request #529 from tellus-rs/perf/mailbox-channel\n\nperf: own mailbox channel with batched receiving",
+          "timestamp": "2026-11-23T14:25:43+02:00",
+          "tree_id": "5b3bfd38c00113c5c9c6272e20396a7cd8b384b3",
+          "url": "https://github.com/tellus-rs/tellus/commit/15a801988bbc2b80c696c4a2ef21f5377ad3ca3b"
+        },
+        "date": 1795437234418,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 28935145,
+            "range": "± 1840922",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27529386,
+            "range": "± 2051056",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5976542,
+            "range": "± 361151",
             "unit": "ns/iter"
           }
         ]
