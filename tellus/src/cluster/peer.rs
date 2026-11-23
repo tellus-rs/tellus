@@ -1,5 +1,6 @@
 use crate::{
     ActorId,
+    channel::Receiver,
     cluster::{
         endpoint::{ConnectionDirection, EndpointInner, InboundSlot, MemberAdmission},
         failure::PeerLiveness,
@@ -20,7 +21,6 @@ use crate::{
     },
     quota::Quota,
 };
-use flume::Receiver;
 use semver::Version;
 use std::{
     error::Error,
@@ -55,6 +55,8 @@ const BATCH_FRAMES: usize = 64;
 const BATCH_LEN: usize = 64 * 1_024;
 
 const MAX_SNAPSHOT_MEMBERS: usize = 1 << 16;
+
+type OutboundRx = Arc<tokio::sync::Mutex<Receiver<Frame<'static>>>>;
 
 /// Every dead letter this module logs, so a test can prove one happened.
 #[cfg(test)]
@@ -241,24 +243,24 @@ where
 
 pub(crate) async fn dial_loop<T>(
     transport: Arc<T>,
-    dial_request_rx: Receiver<DialRequest>,
+    mut dial_request_rx: Receiver<DialRequest>,
     endpoint: &'static EndpointInner,
 ) where
     T: Transport,
 {
-    while let Ok(request) = dial_request_rx.recv_async().await {
+    while let Some(request) = dial_request_rx.recv().await {
         task::spawn(run_peer(transport.clone(), request, endpoint));
     }
 }
 
 pub(crate) async fn join_loop<T>(
     transport: Arc<T>,
-    join_request_rx: Receiver<JoinRequest>,
+    mut join_request_rx: Receiver<JoinRequest>,
     endpoint: &'static EndpointInner,
 ) where
     T: Transport,
 {
-    while let Ok(request) = join_request_rx.recv_async().await {
+    while let Some(request) = join_request_rx.recv().await {
         let addr = request.addr;
         let admission_possible = Arc::new(AtomicBool::new(false));
         let join = run_join(
@@ -279,12 +281,12 @@ pub(crate) async fn join_loop<T>(
 
 pub(crate) async fn probe_loop<T>(
     transport: Arc<T>,
-    probe_request_rx: Receiver<ProbeRequest>,
+    mut probe_request_rx: Receiver<ProbeRequest>,
     endpoint: &'static EndpointInner,
 ) where
     T: Transport,
 {
-    while let Ok(request) = probe_request_rx.recv_async().await {
+    while let Some(request) = probe_request_rx.recv().await {
         task::spawn(run_probe(transport.clone(), request, endpoint));
     }
 }
@@ -779,7 +781,10 @@ where
     } = request;
     let streams = data_rx.len();
     let mut drain = Drain::Unacknowledged;
-    let outbound_rx = iter::once(control_rx).chain(data_rx).collect::<Vec<_>>();
+    let outbound_rx = iter::once(control_rx)
+        .chain(data_rx)
+        .map(|outbound_rx| Arc::new(tokio::sync::Mutex::new(outbound_rx)))
+        .collect::<Vec<_>>();
     let mut sever_rx = endpoint.sever_rx();
     let mut attempts = 0u32;
 
@@ -961,7 +966,7 @@ where
         watch::fail_watchers_at(endpoint, addr);
     }
     for outbound_rx in outbound_rx {
-        drain_dead_letters(outbound_rx, addr).await;
+        drain_dead_letters(outbound_rx, addr);
     }
     let _ = done_tx.send(drain);
 }
@@ -1072,7 +1077,7 @@ async fn no_member_up_while_leaving(endpoint: &EndpointInner, addr: SocketAddr) 
 #[expect(clippy::too_many_arguments)]
 async fn write_streams<S, I>(
     frame_senders: Vec<S>,
-    outbound_rx: &[Receiver<Frame<'static>>],
+    outbound_rx: &[OutboundRx],
     quota: &Quota,
     addr: SocketAddr,
     max_frame_size: usize,
@@ -1210,7 +1215,7 @@ where
 /// slot.
 async fn write_frames<S>(
     mut frame_sender: S,
-    outbound_rx: Receiver<Frame<'static>>,
+    outbound_rx: OutboundRx,
     quota: Quota,
     addr: SocketAddr,
     max_frame_size: usize,
@@ -1219,6 +1224,7 @@ async fn write_frames<S>(
 where
     S: FrameSender,
 {
+    let mut outbound_rx = outbound_rx.lock_owned().await;
     let mut buffer = Vec::new();
     let mut encoded = Vec::<Vec<u8>>::new();
     let mut in_flight_batch = Vec::new();
@@ -1234,7 +1240,7 @@ where
 
     loop {
         let frame = select! {
-            frame = outbound_rx.recv_async() => frame,
+            frame = outbound_rx.recv() => frame,
 
             snapshot = snapshot_changed(&mut snapshot_rx) => {
                 if let Some(snapshot) = snapshot {
@@ -1250,7 +1256,7 @@ where
                 continue;
             }
         };
-        let Ok(frame) = frame else {
+        let Some(frame) = frame else {
             return Ok(frame_sender);
         };
         let mut next = Some(frame);
@@ -1284,7 +1290,7 @@ where
             }
 
             if used < BATCH_FRAMES && batched_len < BATCH_LEN {
-                next = outbound_rx.try_recv().ok();
+                next = outbound_rx.try_recv();
             }
         }
         if used == 0 {
@@ -1959,8 +1965,13 @@ where
     })
 }
 
-async fn drain_dead_letters(outbound_rx: Receiver<Frame<'static>>, addr: SocketAddr) {
-    while let Ok(frame) = outbound_rx.recv_async().await {
+fn drain_dead_letters(outbound_rx: OutboundRx, addr: SocketAddr) {
+    let Some(outbound_rx) = Arc::into_inner(outbound_rx) else {
+        error!(peer_addr = %addr, "a stream writer outlived its lane");
+        debug_assert!(false, "a stream writer outlived its lane");
+        return;
+    };
+    for frame in outbound_rx.into_inner().close_and_drain() {
         dead_letter(frame, addr, "node unreachable");
     }
 }
@@ -2053,6 +2064,7 @@ mod tests {
     use crate::{
         ActorId, Backoff, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
+        channel,
         cluster::{
             bootstrap::{self, BootstrapConfig, FixedSeeds, SeedDiscovery},
             codec::{Codec, CodecError},
@@ -2774,7 +2786,7 @@ mod tests {
     /// connection, and the frames behind it still ride the stream.
     #[tokio::test]
     async fn an_oversize_frame_dies_in_the_writer() {
-        let (outbound_tx, outbound_rx) = flume::unbounded();
+        let (outbound_tx, outbound_rx) = channel::make_channel();
         outbound_tx
             .send(Frame::Message {
                 target: ActorId::new(),
@@ -2795,7 +2807,7 @@ mod tests {
         let addr = "127.0.0.1:1234".parse().expect("valid address");
         let end = write_frames(
             RecordingSender(sent_tx),
-            outbound_rx,
+            Arc::new(tokio::sync::Mutex::new(outbound_rx)),
             Quota::unbounded(),
             addr,
             32,
@@ -2836,12 +2848,13 @@ mod tests {
             (false, true, false),
             (true, false, false),
         ] {
-            let (control_tx, control_rx) = flume::unbounded();
+            let (control_tx, control_rx) = channel::make_channel();
             control_tx.send(gossip()).expect("the queue is open");
-            let (data_tx, data_rx) = flume::unbounded::<Frame<'static>>();
-            let (other_tx, other_rx) = flume::unbounded::<Frame<'static>>();
+            let (data_tx, data_rx) = channel::make_channel::<Frame<'static>>();
+            let (other_tx, other_rx) = channel::make_channel::<Frame<'static>>();
             drop((control_tx, data_tx, other_tx));
-            let receivers = [control_rx, data_rx, other_rx];
+            let receivers =
+                [control_rx, data_rx, other_rx].map(|rx| Arc::new(tokio::sync::Mutex::new(rx)));
             let (drain_ack_tx, leave) = leave_signals(node, &LEAVING);
             if answered {
                 drain_ack_tx.send(()).expect("the writers await the answer");
@@ -2903,7 +2916,7 @@ mod tests {
     async fn aborting_a_sibling_writer_dead_letters_its_in_flight_frame() {
         let target = ActorId::new();
         lock(&DEAD_LETTERS).remove(&target);
-        let (blocked_tx, blocked_rx) = flume::unbounded();
+        let (blocked_tx, blocked_rx) = channel::make_channel();
         blocked_tx
             .send(Frame::Message {
                 target,
@@ -2912,7 +2925,7 @@ mod tests {
                 payload: Cow::Borrowed(&[]),
             })
             .expect("blocked queue is open");
-        let (failed_tx, failed_rx) = flume::unbounded();
+        let (failed_tx, failed_rx) = channel::make_channel();
         failed_tx
             .send(Frame::Gossip {
                 members: Vec::new(),
@@ -2920,7 +2933,7 @@ mod tests {
             })
             .expect("failed queue is open");
         let started = Arc::new(Notify::new());
-        let receivers = [blocked_rx, failed_rx];
+        let receivers = [blocked_rx, failed_rx].map(|rx| Arc::new(tokio::sync::Mutex::new(rx)));
 
         let end = write_streams(
             vec![
@@ -2944,7 +2957,7 @@ mod tests {
     /// one, contiguously and before the queue, and a written snapshot is not written again.
     #[tokio::test]
     async fn a_slot_coalesces_snapshots_for_a_slow_writer() {
-        let (control_tx, control_rx) = flume::unbounded();
+        let (control_tx, control_rx) = channel::make_channel();
         control_tx
             .send(Frame::Gossip {
                 members: Vec::new(),
@@ -2968,7 +2981,7 @@ mod tests {
 
         let writer = task::spawn(write_frames(
             ChannelSender(recorded_tx),
-            control_rx,
+            Arc::new(tokio::sync::Mutex::new(control_rx)),
             Quota::unbounded(),
             "127.0.0.1:1234".parse().expect("valid address"),
             1024,
@@ -3033,7 +3046,7 @@ mod tests {
     #[tokio::test]
     async fn a_writer_keeps_every_frame_within_the_peers_frame_size() {
         let peer_limit = 256;
-        let (control_tx, control_rx) = flume::unbounded();
+        let (control_tx, control_rx) = channel::make_channel();
         control_tx
             .send(Frame::Message {
                 target: ActorId::new(),
@@ -3070,7 +3083,7 @@ mod tests {
 
         let writer = task::spawn(write_frames(
             ChannelSender(recorded_tx),
-            control_rx,
+            Arc::new(tokio::sync::Mutex::new(control_rx)),
             Quota::unbounded(),
             "127.0.0.1:1234".parse().expect("valid address"),
             peer_limit,
@@ -3361,7 +3374,7 @@ mod tests {
     struct Joining {
         endpoint: &'static EndpointInner,
         dials: UnboundedReceiver<Dial>,
-        _lane_dials: flume::Receiver<DialRequest>,
+        _lane_dials: channel::Receiver<DialRequest>,
     }
 
     fn joining(port: u16) -> Joining {
@@ -4603,7 +4616,7 @@ mod tests {
     /// admitted: a join is answered `JoinsHeld` and admits nothing.
     #[tokio::test(start_paused = true)]
     async fn joins_are_held_while_this_node_leaves() {
-        let (endpoint, lane_dials, _join_requests) =
+        let (endpoint, mut lane_dials, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let member = NodeId::new(addr(2));
@@ -5189,7 +5202,7 @@ mod tests {
     /// A local actor which a peer's frames are delivered to, watching one of the peer's actors.
     struct Recipient {
         self_ref: SelfRef<u64>,
-        incoming_rx: crate::channel::Receiver<Incoming<u64>>,
+        incoming_rx: channel::Receiver<Incoming<u64>>,
         _watcher_registration: WatcherRegistration,
         received: Vec<Incoming<u64>>,
     }

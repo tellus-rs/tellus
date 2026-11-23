@@ -338,6 +338,7 @@ mod tests {
     use crate::{
         ActorId, Incoming, MailboxCapacity, ReplyTo, SchemaVersion,
         actor_ref::SelfRef,
+        channel::Receiver,
         cluster::{
             codec::{Codec, CodecError},
             discovery::Key,
@@ -355,7 +356,6 @@ mod tests {
         mailbox::Mailbox,
         sync::lock,
     };
-    use flume::Receiver;
     use semver::Version;
     use serde::{
         Deserialize, Deserializer, Serialize, Serializer, de,
@@ -519,16 +519,16 @@ mod tests {
 
     /// Every frame queued so far, with the address it is queued toward and its data stream.
     fn queued(
-        dial_requests: &Receiver<DialRequest>,
+        dial_requests: &mut Receiver<DialRequest>,
     ) -> Vec<(SocketAddr, Option<usize>, Frame<'static>)> {
         let mut frames = Vec::new();
-        for lane in dial_requests.try_iter() {
+        for mut lane in dial_requests.try_iter() {
             frames.extend(
                 lane.control_rx
                     .try_iter()
                     .map(|frame| (lane.addr, None, frame)),
             );
-            for (stream, data_rx) in lane.data_rx.iter().enumerate() {
+            for (stream, data_rx) in lane.data_rx.iter_mut().enumerate() {
                 frames.extend(
                     data_rx
                         .try_iter()
@@ -553,20 +553,20 @@ mod tests {
 
     fn own_and_remote_subscribers() -> (&'static EndpointInner, Mailbox<u64>, Receiver<DialRequest>)
     {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let (_, local) = subscriber::<u64>(endpoint, "notes");
         remote_subscribers::<u64>(endpoint, NodeId::new(addr(2)), "notes", 1);
         let told = endpoint::with_current(endpoint, || publish(&Topic::<u64>::new("notes"), 42));
         assert_eq!(told.expect("resolves"), 2);
-        assert_eq!(queued(&dial_requests).len(), 1);
+        assert_eq!(queued(&mut dial_requests).len(), 1);
         (endpoint, local, dial_requests)
     }
 
     fn assert_publish_fails(
         endpoint: &'static EndpointInner,
         local: Mailbox<u64>,
-        dial_requests: &Receiver<DialRequest>,
+        dial_requests: &mut Receiver<DialRequest>,
     ) {
         let told = endpoint::with_current(endpoint, || publish(&Topic::<u64>::new("notes"), 43));
         assert!(matches!(told, Err(ReceptionistError::NoLongerMember)));
@@ -619,22 +619,22 @@ mod tests {
     /// as if the topic had no subscribers.
     #[test]
     fn a_publish_fails_once_this_node_has_left() {
-        let (endpoint, local, remote_lane) = own_and_remote_subscribers();
+        let (endpoint, local, mut remote_lane) = own_and_remote_subscribers();
 
         endpoint.update(|membership, _| membership.leave(endpoint.node(), Instant::now()));
 
-        assert_publish_fails(endpoint, local, &remote_lane);
+        assert_publish_fails(endpoint, local, &mut remote_lane);
     }
 
     /// Once this node's own entry is Down, a publish tells nobody and fails instead of answering
     /// as if the topic had no subscribers.
     #[test]
     fn a_publish_fails_once_this_node_is_down() {
-        let (endpoint, local, remote_lane) = own_and_remote_subscribers();
+        let (endpoint, local, mut remote_lane) = own_and_remote_subscribers();
 
         endpoint.update(|membership, _| membership.down(endpoint.node(), Instant::now()));
 
-        assert_publish_fails(endpoint, local, &remote_lane);
+        assert_publish_fails(endpoint, local, &mut remote_lane);
     }
 
     /// An actor registered for discovery under the topic's name is no subscriber.
@@ -680,7 +680,7 @@ mod tests {
     /// resolve in, and a frame names its targets in resolution order.
     #[test]
     fn a_publish_sends_one_frame_per_node_and_stream() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests_with_data_streams(EndpointConfig::new(addr(1)), 4);
         let topic = Topic::<u64>::new("notes");
         let subscribers = [addr(2), addr(3)]
@@ -693,7 +693,7 @@ mod tests {
 
         assert_eq!(publish_at(endpoint, &topic, 42).expect("resolves"), 16);
 
-        let frames = queued(&dial_requests);
+        let frames = queued(&mut dial_requests);
         let mut seen = HashSet::new();
         let mut told = HashMap::<SocketAddr, Vec<ActorId>>::new();
         for (addr, stream, frame) in frames {
@@ -748,7 +748,7 @@ mod tests {
             if !peer_limited {
                 config.max_frame_size = max_frame_size;
             }
-            let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+            let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
             let node = NodeId::new(addr(2));
             let ids = remote_subscribers::<u64>(endpoint, node, "notes", 5);
             if peer_limited {
@@ -760,7 +760,7 @@ mod tests {
                 5
             );
 
-            let frames = queued(&dial_requests);
+            let frames = queued(&mut dial_requests);
             let mut told = Vec::new();
             let mut sizes = Vec::new();
             for (_, stream, frame) in frames {
@@ -782,7 +782,7 @@ mod tests {
     /// shape may differ per peer.
     #[test]
     fn a_publish_serializes_only_for_remote_subscribers_and_once_per_node() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let topic = Topic::<Counted>::new("counted");
         SERIALIZATIONS.set(0);
@@ -810,7 +810,7 @@ mod tests {
             8
         );
         assert_eq!(SERIALIZATIONS.get(), 2);
-        assert_eq!(queued(&dial_requests).len(), 2);
+        assert_eq!(queued(&mut dial_requests).len(), 2);
     }
 
     /// A reply destination shared by a cloneable wrapper is serialized once, for the first remote
@@ -818,7 +818,7 @@ mod tests {
     /// the second subscriber's tell finds the destination taken and dead-letters.
     #[test]
     fn a_shared_reply_destination_reaches_one_remote_subscriber() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let first_node = NodeId::new(addr(2));
         let [first] = remote_subscribers::<SharedReply>(endpoint, first_node, "replies", 1)[..]
@@ -834,7 +834,7 @@ mod tests {
 
         assert_eq!(told.expect("resolves"), 2);
         assert_eq!(endpoint.pending_replies().len(), 1);
-        let frames = queued(&dial_requests);
+        let frames = queued(&mut dial_requests);
         let [
             (
                 addr,
@@ -870,7 +870,7 @@ mod tests {
     /// reply is left behind for a frame never sent.
     #[test]
     fn a_failed_encoding_leaves_no_pending_reply() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         remote_subscribers::<PoisonedReply>(endpoint, NodeId::new(addr(2)), "replies", 1);
         remote_subscribers::<PoisonedReply>(endpoint, NodeId::new(addr(3)), "replies", 1);
@@ -882,7 +882,7 @@ mod tests {
 
         assert_eq!(told.expect("resolves"), 2);
         assert_eq!(endpoint.pending_replies().len(), 0);
-        assert!(queued(&dial_requests).is_empty());
+        assert!(queued(&mut dial_requests).is_empty());
     }
 
     /// Reply tags minted for a frame refused at admission, over this node's frame size or the
@@ -899,7 +899,7 @@ mod tests {
             (peer_oversize, Some(16), false),
             (refusing, None, true),
         ] {
-            let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+            let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
             let first_node = NodeId::new(addr(2));
             remote_subscribers::<SharedReply>(endpoint, first_node, "replies", 1);
             remote_subscribers::<SharedReply>(endpoint, NodeId::new(addr(3)), "replies", 1);
@@ -917,7 +917,7 @@ mod tests {
 
             assert_eq!(told.expect("resolves"), 2);
             assert_eq!(endpoint.pending_replies().len(), 0);
-            assert!(queued(&dial_requests).is_empty());
+            assert!(queued(&mut dial_requests).is_empty());
         }
     }
 
@@ -989,7 +989,7 @@ mod tests {
     /// new, and every frame carries its schema version.
     #[test]
     fn a_publish_encodes_the_shape_each_peer_understands() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let unknown = NodeId::new(addr(2));
         let older = NodeId::new(addr(3));
@@ -1011,7 +1011,7 @@ mod tests {
         let told = publish_at(endpoint, &Topic::new("shaped"), Shaped(5));
 
         assert_eq!(told.expect("resolves"), 3);
-        let mut shapes = queued(&dial_requests)
+        let mut shapes = queued(&mut dial_requests)
             .into_iter()
             .map(|(addr, _, frame)| match frame {
                 Frame::Multicast {
@@ -1039,7 +1039,7 @@ mod tests {
     /// way: with no information before the handshake, with the version afterward.
     #[test]
     fn a_tell_encodes_the_shape_the_peer_understands() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let node = NodeId::new(addr(2));
         let target = ActorId::new();
@@ -1055,7 +1055,7 @@ mod tests {
         endpoint::with_current(endpoint, || sink.try_send_message(target, Shaped(6)))
             .expect("sends");
 
-        let shapes = queued(&dial_requests)
+        let shapes = queued(&mut dial_requests)
             .into_iter()
             .map(|(_, _, frame)| match frame {
                 Frame::Message {
@@ -1086,7 +1086,7 @@ mod tests {
     /// message frame carrying the pending reply, which that peer's reply settles.
     #[test]
     fn a_destination_serialized_for_one_peer_rides_that_peers_message_frame() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let older = NodeId::new(addr(2));
         let newer = NodeId::new(addr(3));
@@ -1112,7 +1112,7 @@ mod tests {
 
         assert_eq!(told.expect("resolves"), 2);
         assert_eq!(endpoint.pending_replies().len(), 1);
-        let mut frames = queued(&dial_requests);
+        let mut frames = queued(&mut dial_requests);
         frames.sort_by_key(|(addr, _, _)| *addr);
         let [
             (older_addr, _, Frame::Multicast { .. }),
@@ -1155,7 +1155,7 @@ mod tests {
     /// destination, so the ask fails as `NoReply` rather than hanging.
     #[test]
     fn a_reply_of_an_unsupported_version_drops_the_destination() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let node = NodeId::new(addr(2));
         remote_subscribers::<SharedReply>(endpoint, node, "replies", 1);
@@ -1166,7 +1166,7 @@ mod tests {
         });
 
         assert_eq!(told.expect("resolves"), 1);
-        let frames = queued(&dial_requests);
+        let frames = queued(&mut dial_requests);
         let [(_, _, Frame::Message { reply_tags, .. })] = &frames[..] else {
             panic!("not one message frame: {frames:?}");
         };

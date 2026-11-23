@@ -3,6 +3,8 @@ use crate::cluster::{downing::DowningProviderConfig, failure::FailureDetectorCon
 use crate::{
     ActorId, ActorRef, Backoff,
     actor_context::PanicPayload,
+    channel,
+    channel::Sender,
     cluster::{
         bootstrap::BootstrapConfig,
         codec::Codec,
@@ -33,7 +35,6 @@ use crate::{
     timers,
 };
 use derive_more::Debug;
-use flume::Sender;
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -560,9 +561,9 @@ where
 {
     validate(&config)?;
 
-    let (dial_request_tx, dial_request_rx) = flume::unbounded();
-    let (join_request_tx, join_request_rx) = flume::unbounded();
-    let (probe_request_tx, probe_request_rx) = flume::unbounded();
+    let (dial_request_tx, dial_request_rx) = channel::make_channel();
+    let (join_request_tx, join_request_rx) = channel::make_channel();
+    let (probe_request_tx, probe_request_rx) = channel::make_channel();
     let data_streams = transport.data_streams().map_or(0, |streams| {
         config.max_streams_per_peer.get().min(streams.get())
     });
@@ -650,8 +651,8 @@ impl EndpointInner {
         config: EndpointConfig,
     ) -> (
         &'static EndpointInner,
-        flume::Receiver<DialRequest>,
-        flume::Receiver<JoinRequest>,
+        channel::Receiver<DialRequest>,
+        channel::Receiver<JoinRequest>,
     ) {
         Self::for_tests_with_data_streams(config, 0)
     }
@@ -662,8 +663,8 @@ impl EndpointInner {
         data_streams: usize,
     ) -> (
         &'static EndpointInner,
-        flume::Receiver<DialRequest>,
-        flume::Receiver<JoinRequest>,
+        channel::Receiver<DialRequest>,
+        channel::Receiver<JoinRequest>,
     ) {
         let (endpoint, dial_request_rx, join_request_rx, _) =
             Self::for_tests_with_probes(config, data_streams);
@@ -676,13 +677,13 @@ impl EndpointInner {
         data_streams: usize,
     ) -> (
         &'static EndpointInner,
-        flume::Receiver<DialRequest>,
-        flume::Receiver<JoinRequest>,
-        flume::Receiver<ProbeRequest>,
+        channel::Receiver<DialRequest>,
+        channel::Receiver<JoinRequest>,
+        channel::Receiver<ProbeRequest>,
     ) {
-        let (dial_request_tx, dial_request_rx) = flume::unbounded();
-        let (join_request_tx, join_request_rx) = flume::unbounded();
-        let (probe_request_tx, probe_request_rx) = flume::unbounded();
+        let (dial_request_tx, dial_request_rx) = channel::make_channel();
+        let (join_request_tx, join_request_rx) = channel::make_channel();
+        let (probe_request_tx, probe_request_rx) = channel::make_channel();
         let inner = Self::new(
             config,
             data_streams,
@@ -2548,7 +2549,7 @@ mod tests {
     #[cfg(feature = "serde")]
     use crate::cluster::{codec::Codec, downing::KeepMajority, failure::PhiAccrual};
     use crate::{
-        ActorId, SchemaVersion,
+        ActorId, SchemaVersion, channel,
         cluster::{
             ClusterState,
             downing::{Disconnected, Downing, DowningProvider},
@@ -2624,10 +2625,10 @@ mod tests {
     #[test]
     fn a_send_toward_a_left_member_is_refused_on_its_bound_lane() {
         let peer = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.update(|membership, _| membership.add_up(peer));
-        let lane = connected_lane(endpoint, &dial_requests, peer);
+        let lane = connected_lane(endpoint, &mut dial_requests, peer);
 
         endpoint.update(|membership, _| {
             membership.merge(&[Member::new(peer, MemberState::Left)], Instant::now())
@@ -2645,14 +2646,14 @@ mod tests {
     #[test]
     fn a_dialing_lane_refuses_a_down_incarnation_and_serves_its_successor() {
         let predecessor = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.update(|membership, _| membership.add_up(predecessor));
         endpoint
             .send(predecessor, gossip())
             .expect("the lane opens");
-        let lane = dial_requests.try_recv().expect("the lane is dialed");
-        lane.control_rx.drain().for_each(drop);
+        let mut lane = dial_requests.try_recv().expect("the lane is dialed");
+        lane.control_rx.try_iter().for_each(drop);
 
         endpoint.update(|membership, _| {
             membership.merge(
@@ -2669,7 +2670,7 @@ mod tests {
         endpoint
             .send(successor, gossip())
             .expect("the successor is reached through the dialing lane");
-        assert_eq!(lane.control_rx.len(), 1);
+        assert_eq!(lane.control_rx.try_iter().count(), 1);
         assert!(dial_requests.is_empty());
     }
 
@@ -2679,7 +2680,7 @@ mod tests {
     fn a_refused_address_is_not_redialed_per_frame() {
         let local = addr(1);
         let peer = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(local));
         endpoint.update(|membership, _| membership.add_up(peer));
         endpoint.refuse(peer.addr());
@@ -2696,13 +2697,13 @@ mod tests {
         endpoint
             .send(peer, gossip())
             .expect("an address can be retried after it is explicitly unrefused");
-        assert_eq!(dial_requests.len(), 1);
+        assert_eq!(dial_requests.try_iter().count(), 1);
     }
 
     #[tokio::test(start_paused = true)]
     async fn a_refusal_expires_after_its_backoff() {
         let peer = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.update(|membership, _| membership.add_up(peer));
 
@@ -2718,7 +2719,7 @@ mod tests {
         endpoint
             .send(peer, gossip())
             .expect("an expired refusal dials again");
-        assert_eq!(dial_requests.len(), 1);
+        assert_eq!(dial_requests.try_iter().count(), 1);
     }
 
     /// Every refusal before a lift doubles the previous backoff, up to the cap.
@@ -2882,14 +2883,14 @@ mod tests {
         let local = addr(1);
         let silent = NodeId::new(addr(2));
         let fresh = NodeId::new(addr(3));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(local));
         endpoint.update(|membership, _| membership.add_up(silent));
         endpoint.update(|membership, _| membership.add_up(fresh));
 
         // A lane is disconnected until its dial completes, which this one never does.
         endpoint.send(silent, gossip()).expect("the lane is opened");
-        let silent_lane = dial_requests.recv().expect("the silent peer is dialed");
+        let mut silent_lane = dial_requests.try_recv().expect("the silent peer is dialed");
         assert_eq!(endpoint.lane_connected(silent.addr()), Some(false));
 
         endpoint.push_reachability(vec![WireReachability {
@@ -2899,8 +2900,8 @@ mod tests {
             reachable: false,
         }]);
 
-        assert_eq!(silent_lane.control_rx.len(), 1);
-        assert_eq!(dial_requests.len(), 1);
+        assert_eq!(silent_lane.control_rx.try_iter().count(), 1);
+        assert_eq!(dial_requests.try_iter().count(), 1);
     }
 
     /// The value names this node, so its own entry is found by identity, not by address.
@@ -3199,40 +3200,40 @@ mod tests {
     #[test]
     fn an_unchanged_member_list_is_gossiped_as_an_empty_frame() {
         let peer = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.update(|membership, _| membership.add_up(peer));
-        let lane = connected_lane(endpoint, &dial_requests, peer);
+        let mut lane = connected_lane(endpoint, &mut dial_requests, peer);
 
         endpoint.gossip_tick();
-        assert_eq!(gossip_members(&lane), [endpoint.membership().members()]);
+        assert_eq!(gossip_members(&mut lane), [endpoint.membership().members()]);
 
         endpoint.gossip_tick();
-        assert_eq!(gossip_members(&lane), [Vec::new()]);
+        assert_eq!(gossip_members(&mut lane), [Vec::new()]);
 
         endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(3))));
         endpoint.gossip_tick();
         let members = endpoint.membership().members();
         assert_eq!(members.len(), 3);
-        assert_eq!(gossip_members(&lane), [members]);
+        assert_eq!(gossip_members(&mut lane), [members]);
 
         endpoint.gossip_tick();
-        assert_eq!(gossip_members(&lane), [Vec::new()]);
+        assert_eq!(gossip_members(&mut lane), [Vec::new()]);
     }
 
     /// Every [FULL_GOSSIP_EVERY]th tick sends the full list, even to a peer holding it already.
     #[test]
     fn every_tenth_tick_gossips_the_full_member_list() {
         let peer = NodeId::new(addr(2));
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.update(|membership, _| membership.add_up(peer));
-        let lane = connected_lane(endpoint, &dial_requests, peer);
+        let mut lane = connected_lane(endpoint, &mut dial_requests, peer);
 
         let full_ticks = (0..=2 * FULL_GOSSIP_EVERY)
             .filter(|_| {
                 endpoint.gossip_tick();
-                let gossip = gossip_members(&lane);
+                let gossip = gossip_members(&mut lane);
                 assert_eq!(gossip.len(), 1);
                 !gossip[0].is_empty()
             })
@@ -3248,7 +3249,7 @@ mod tests {
         let peer = NodeId::new(addr(2));
         let mut config = EndpointConfig::new(addr(1));
         config.max_frame_size = NonZeroUsize::new(4 * MIN_FRAME_SIZE).expect("not zero");
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
         let others = (3..40)
             .map(|port| NodeId::new(addr(port)))
             .collect::<Vec<_>>();
@@ -3258,7 +3259,7 @@ mod tests {
                 membership.add_up(*other);
             }
         });
-        let lane = connected_lane(endpoint, &dial_requests, peer);
+        let mut lane = connected_lane(endpoint, &mut dial_requests, peer);
         endpoint.record_peer(peer, None, MIN_FRAME_SIZE);
         assert_eq!(endpoint.frame_limit(peer), MIN_FRAME_SIZE);
 
@@ -3292,8 +3293,8 @@ mod tests {
             .collect::<Vec<_>>();
         endpoint.push_reachability(observations.clone());
 
-        let frames = lane.control_rx.drain().collect::<Vec<_>>();
-        assert!(lane.data_rx.iter().all(flume::Receiver::is_empty));
+        let frames = lane.control_rx.try_iter().collect::<Vec<_>>();
+        assert!(lane.data_rx.iter().all(channel::Receiver::is_empty));
         for frame in &frames {
             let len = frame.encoded_len().expect("frame size");
             assert!(
@@ -3323,7 +3324,7 @@ mod tests {
         endpoint.announce();
         let announced = lane
             .control_rx
-            .drain()
+            .try_iter()
             .map(|frame| {
                 let len = frame.encoded_len().expect("frame size");
                 assert!(
@@ -3358,20 +3359,20 @@ mod tests {
     /// Opens the lane to `peer` with an empty frame, drained again, and marks it connected.
     fn connected_lane(
         endpoint: &EndpointInner,
-        dial_requests: &flume::Receiver<DialRequest>,
+        dial_requests: &mut channel::Receiver<DialRequest>,
         peer: NodeId,
     ) -> DialRequest {
         endpoint.send(peer, gossip()).expect("the lane opens");
-        let lane = dial_requests.try_recv().expect("the lane is dialed");
+        let mut lane = dial_requests.try_recv().expect("the lane is dialed");
         endpoint.bind_lane(peer.addr(), lane.generation, peer);
-        assert_eq!(gossip_members(&lane), [Vec::new()]);
+        assert_eq!(gossip_members(&mut lane), [Vec::new()]);
         lane
     }
 
     /// The members of every Gossip frame queued on the lane since the last call.
-    fn gossip_members(lane: &DialRequest) -> Vec<Vec<Member>> {
+    fn gossip_members(lane: &mut DialRequest) -> Vec<Vec<Member>> {
         lane.control_rx
-            .drain()
+            .try_iter()
             .filter_map(|frame| match frame {
                 Frame::Gossip { members, .. } => Some(members),
                 _ => None,
@@ -3545,7 +3546,7 @@ mod tests {
 
     #[tokio::test]
     async fn a_second_leave_waits_for_the_first_departure() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let peer = NodeId::new(addr(2));
@@ -3587,7 +3588,7 @@ mod tests {
     /// departure still ends at the leave timeout.
     #[tokio::test(start_paused = true)]
     async fn a_departure_reports_how_each_lane_drained() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         for port in [2, 3, 4] {
@@ -3656,7 +3657,7 @@ mod tests {
     /// every caller, a concurrent and a later one included, sees it fail.
     #[tokio::test]
     async fn a_panicking_departure_downs_this_node_for_every_leave() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint
@@ -3690,7 +3691,7 @@ mod tests {
 
     #[tokio::test]
     async fn an_aborted_leave_keeps_the_departure_running() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let peer = NodeId::new(addr(2));
@@ -3787,7 +3788,7 @@ mod tests {
     async fn a_leave_timeout_of_duration_max_departs() {
         let mut config = EndpointConfig::new(addr(1));
         config.leave_timeout = Duration::MAX;
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
         endpoint.form_cluster().expect("a fresh endpoint forms");
         let peer = NodeId::new(addr(2));
         endpoint.update(|membership, _| membership.add_up(peer));
@@ -4677,7 +4678,7 @@ mod tests {
     /// for every lane, not restarted between the phases." Two silent lanes cost one timeout.
     #[tokio::test(start_paused = true)]
     async fn two_silent_lanes_share_one_leave_timeout() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         for port in [2, 3] {
@@ -4700,7 +4701,7 @@ mod tests {
     /// never ends times out.
     #[tokio::test(start_paused = true)]
     async fn a_drain_resolves_by_the_incarnation_it_goes_to() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let [
@@ -4771,7 +4772,7 @@ mod tests {
     /// A departure whose only peer left itself first is complete, but not acknowledged.
     #[tokio::test(start_paused = true)]
     async fn a_departure_with_a_departed_peer_is_complete_but_not_acknowledged() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let departed = NodeId::new(addr(2));
@@ -4799,7 +4800,7 @@ mod tests {
     /// unbound. A leave right after neither waits for it nor lists it.
     #[tokio::test(start_paused = true)]
     async fn a_departure_skips_the_lane_of_a_member_dead_before_the_leave() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let (live, dead) = (NodeId::new(addr(2)), NodeId::new(addr(3)));
@@ -4831,7 +4832,7 @@ mod tests {
     /// dials, and lists it as unacknowledged.
     #[tokio::test(start_paused = true)]
     async fn a_departure_waits_for_the_lanes_of_nodes_not_known_here() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let (known, bound, dialing) = (
@@ -4840,9 +4841,9 @@ mod tests {
             NodeId::new(addr(4)),
         );
         endpoint.update(|membership, _| membership.add_up(known));
-        let known_lane = connected_lane(endpoint, &dial_requests, known);
+        let known_lane = connected_lane(endpoint, &mut dial_requests, known);
         known_lane.connected_tx.send_replace(Some(known));
-        let bound_lane = connected_lane(endpoint, &dial_requests, bound);
+        let bound_lane = connected_lane(endpoint, &mut dial_requests, bound);
         bound_lane.connected_tx.send_replace(Some(bound));
         endpoint
             .send(dialing, gossip())
@@ -4879,7 +4880,7 @@ mod tests {
     /// then shares.
     #[tokio::test(start_paused = true)]
     async fn a_departure_judges_a_restarted_process_by_its_own_incarnation() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let predecessors = [2, 3, 4, 5].map(|port| NodeId::new(addr(port)));
@@ -4936,7 +4937,7 @@ mod tests {
     /// for nor listed, like a lane toward a Down node.
     #[tokio::test(start_paused = true)]
     async fn a_departure_skips_a_lane_settled_by_a_newer_death_at_its_address() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let stale = NodeId::new(addr(2));
@@ -4958,7 +4959,7 @@ mod tests {
     /// waits for it there.
     #[tokio::test(start_paused = true)]
     async fn a_departure_waits_for_a_successor_on_its_predecessors_lane() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let predecessor = NodeId::new(addr(2));
@@ -4995,7 +4996,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_departure_classifies_its_peers_once_the_last_lane_has_ended() {
         for _ in 0..10 {
-            let (endpoint, dial_requests, _join_requests) =
+            let (endpoint, mut dial_requests, _join_requests) =
                 EndpointInner::for_tests(EndpointConfig::new(addr(1)));
             endpoint.form_cluster().expect("an unformed endpoint forms");
             let (departing, acknowledging) = (NodeId::new(addr(2)), NodeId::new(addr(3)));
@@ -5039,13 +5040,13 @@ mod tests {
     /// dialed included".
     #[tokio::test(start_paused = true)]
     async fn the_departure_is_queued_on_a_lane_still_being_dialed() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let member = NodeId::new(addr(2));
         endpoint.update(|membership, _| membership.add_up(member));
         endpoint.send(member, gossip()).expect("a lane opens");
-        let dial = dial_requests.try_recv().expect("the lane is dialed");
+        let mut dial = dial_requests.try_recv().expect("the lane is dialed");
         assert_eq!(endpoint.lane_connected(member.addr()), Some(false));
 
         let leaving = task::spawn(endpoint.leave());

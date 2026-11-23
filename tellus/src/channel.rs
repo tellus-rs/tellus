@@ -88,7 +88,7 @@ impl<T> Receiver<T> {
         future::poll_fn(|cx| self.poll_recv(cx)).await
     }
 
-    #[cfg(any(feature = "test-util", all(test, feature = "cluster")))]
+    #[cfg(any(feature = "test-util", feature = "cluster"))]
     pub(crate) fn try_recv(&mut self) -> Option<T> {
         if self.batch.is_empty() {
             let mut state = self.shared.lock();

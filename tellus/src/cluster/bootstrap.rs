@@ -686,18 +686,22 @@ where
 mod tests {
     #[cfg(feature = "serde")]
     use crate::cluster::formation::{Decision, FormationView};
-    use crate::cluster::{
-        bootstrap::{
-            BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, NoSeeds, SeedDiscovery,
-            Settle, Step, bootstrap, probe_foreign_clusters, run, step, universe, validate,
+    use crate::{
+        channel,
+        cluster::{
+            bootstrap::{
+                BootstrapConfig, Declines, FixedSeeds, InvalidBootstrapConfig, NoSeeds,
+                SeedDiscovery, Settle, Step, bootstrap, probe_foreign_clusters, run, step,
+                universe, validate,
+            },
+            endpoint::{EndpointConfig, EndpointInner},
+            formation::{Declined, JoinOutcome, MajorityWithFallback},
+            frame::RefusalReason,
+            membership::JoinRound,
+            node::{ClusterId, NodeId},
+            peer::{ConnectError, DialRequest, JoinRequest},
+            state::ForeignCluster,
         },
-        endpoint::{EndpointConfig, EndpointInner},
-        formation::{Declined, JoinOutcome, MajorityWithFallback},
-        frame::RefusalReason,
-        membership::JoinRound,
-        node::{ClusterId, NodeId},
-        peer::{ConnectError, DialRequest, JoinRequest},
-        state::ForeignCluster,
     };
     use std::{
         collections::BTreeSet,
@@ -824,13 +828,13 @@ mod tests {
     /// the first resolution.
     #[tokio::test(start_paused = true)]
     async fn bootstrap_joins_before_the_view_has_settled() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(2), EndpointConfig::new);
         let start = tokio_time::Instant::now();
         let mut config = config();
         config.settle = Duration::from_secs(3_600);
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config);
 
-        let request = next_join(&join_requests).await;
+        let request = next_join(&mut join_requests).await;
         assert_eq!(request.addr, addr(1));
         assert!(request.result_tx.send(Ok(())).is_ok());
 
@@ -842,13 +846,13 @@ mod tests {
     /// settled, however clearly the rounds before allow it.
     #[tokio::test(start_paused = true)]
     async fn bootstrap_forms_only_once_the_view_has_settled() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(1), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(1), EndpointConfig::new);
         let start = tokio_time::Instant::now();
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config());
 
         let mut rounds = 0;
         while !bootstrap.is_finished() {
-            let Ok(request) = timeout(SETTLE * 2, join_requests.recv_async()).await else {
+            let Ok(request) = timeout(SETTLE * 2, join_requests.recv()).await else {
                 break;
             };
             let request = request.expect("bootstrap requests joins");
@@ -875,13 +879,13 @@ mod tests {
     /// provider, settled view or not.
     #[tokio::test(start_paused = true)]
     async fn a_held_round_postpones_formation() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(1), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(1), EndpointConfig::new);
         let mut config = config();
         config.settle = Duration::ZERO;
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config);
 
         for _ in 0..5 {
-            let request = next_join(&join_requests).await;
+            let request = next_join(&mut join_requests).await;
             assert!(
                 request
                     .result_tx
@@ -889,7 +893,7 @@ mod tests {
                     .is_ok()
             );
         }
-        let request = next_join(&join_requests).await;
+        let request = next_join(&mut join_requests).await;
         assert!(!endpoint.formed(), "a held round formed a cluster");
         assert!(
             request
@@ -911,7 +915,7 @@ mod tests {
         const HELD_FROM: Duration = Duration::from_secs(2);
         const HELD_UNTIL: Duration = Duration::from_secs(63);
 
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(2), EndpointConfig::new);
         let start = tokio_time::Instant::now();
         let mut config = config();
         config.settle = Duration::ZERO;
@@ -921,8 +925,7 @@ mod tests {
         let mut unavailable_again = None;
         let mut last_answer = Duration::ZERO;
         while !bootstrap.is_finished() {
-            let Ok(request) = timeout(RESOLVE_INTERVAL * 5, join_requests.recv_async()).await
-            else {
+            let Ok(request) = timeout(RESOLVE_INTERVAL * 5, join_requests.recv()).await else {
                 break;
             };
             let request = request.expect("bootstrap requests joins");
@@ -958,7 +961,7 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn an_ambiguous_join_postpones_formation() {
         let bound = Duration::from_secs(5);
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(1), |addr| {
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(1), |addr| {
             let mut config = EndpointConfig::new(addr);
             config.ambiguous_join_bound = bound;
             config
@@ -976,7 +979,7 @@ mod tests {
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config);
 
         while !bootstrap.is_finished() {
-            let Ok(request) = timeout(bound * 2, join_requests.recv_async()).await else {
+            let Ok(request) = timeout(bound * 2, join_requests.recv()).await else {
                 break;
             };
             let request = request.expect("bootstrap requests joins");
@@ -998,7 +1001,7 @@ mod tests {
     /// formation: the other seeds are asked in the same round, and one of them admits this node.
     #[tokio::test(start_paused = true)]
     async fn formation_waits_for_the_other_seeds_once_a_pin_is_released() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(1), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(1), EndpointConfig::new);
         assert!(endpoint.enter_join());
         endpoint.pin_cluster(addr(2), ClusterId::new());
         assert!(
@@ -1015,7 +1018,7 @@ mod tests {
             ConnectError::Closed,
             ConnectError::Refused(RefusalReason::NoCluster),
         ] {
-            let request = next_join(&join_requests).await;
+            let request = next_join(&mut join_requests).await;
             assert_eq!(request.addr, addr(2));
             assert!(endpoint.enter_join());
             let result = endpoint.finish_join(addr(2), Err(answer));
@@ -1023,7 +1026,7 @@ mod tests {
         }
         let released_at = tokio_time::Instant::now();
 
-        let asked = timeout(SETTLE, join_requests.recv_async()).await;
+        let asked = timeout(SETTLE, join_requests.recv()).await;
         assert!(!endpoint.formed(), "formed without asking addr(3)");
         let request = asked
             .expect("a join request within the timeout")
@@ -1041,17 +1044,17 @@ mod tests {
     #[tokio::test(start_paused = true)]
     async fn a_round_over_silent_seeds_reaches_a_live_one() {
         let attempt_timeout = BootstrapConfig::DEFAULT_JOIN_ATTEMPT_TIMEOUT;
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(4), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(4), EndpointConfig::new);
         let start = tokio_time::Instant::now();
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3), addr(4)], config());
 
         let mut silent = Vec::new();
         for silent_addr in [addr(1), addr(2)] {
-            let request = next_join(&join_requests).await;
+            let request = next_join(&mut join_requests).await;
             assert_eq!(request.addr, silent_addr);
             silent.push(request);
         }
-        let request = next_join(&join_requests).await;
+        let request = next_join(&mut join_requests).await;
         assert_eq!(request.addr, addr(3));
         assert!(start.elapsed() >= attempt_timeout * 2);
         assert!(request.result_tx.send(Ok(())).is_ok());
@@ -1067,7 +1070,7 @@ mod tests {
     /// node is no longer the lowest address.
     #[tokio::test(start_paused = true)]
     async fn no_formation_is_decided_on_a_universe_which_changed_during_the_round() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(2), EndpointConfig::new);
         let seeds = SharedSeeds::default();
         seeds.set(vec![addr(2), addr(3)]);
         let mut config = config();
@@ -1075,7 +1078,7 @@ mod tests {
         let bootstrap = spawn_run_with(endpoint, seeds.clone(), config);
 
         for registers_lower in [false, true] {
-            let request = next_join(&join_requests).await;
+            let request = next_join(&mut join_requests).await;
             assert_eq!(request.addr, addr(3));
             if registers_lower {
                 seeds.set(vec![addr(1), addr(2), addr(3)]);
@@ -1090,7 +1093,7 @@ mod tests {
 
         for _ in 0..3 {
             for asked in [addr(1), addr(3)] {
-                let request = next_join(&join_requests).await;
+                let request = next_join(&mut join_requests).await;
                 assert!(!endpoint.formed(), "formed on a stale universe");
                 assert_eq!(request.addr, asked);
                 assert!(
@@ -1102,7 +1105,7 @@ mod tests {
             }
         }
 
-        let request = next_join(&join_requests).await;
+        let request = next_join(&mut join_requests).await;
         assert!(!endpoint.formed(), "formed although addr(1) is the lowest");
         assert_eq!(request.addr, addr(1));
         assert!(request.result_tx.send(Ok(())).is_ok());
@@ -1113,13 +1116,13 @@ mod tests {
     /// round still joins through a seed which answers.
     #[tokio::test(start_paused = true)]
     async fn a_join_attempt_timeout_of_duration_max_is_capped() {
-        let (endpoint, _lane_dials, join_requests) = endpoint(addr(2), EndpointConfig::new);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(2), EndpointConfig::new);
         let mut config = config();
         config.join_attempt_timeout = Duration::MAX;
         assert!(validate(&config).is_ok());
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2)], config);
 
-        let request = next_join(&join_requests).await;
+        let request = next_join(&mut join_requests).await;
         assert!(request.result_tx.send(Ok(())).is_ok());
         finished(bootstrap).await;
     }
@@ -1128,7 +1131,7 @@ mod tests {
     /// one answering with another cluster is published as a foreign cluster.
     #[tokio::test(start_paused = true)]
     async fn the_probe_records_a_foreign_cluster() {
-        let (endpoint, _lane_dials, _join_requests, probe_requests) =
+        let (endpoint, _lane_dials, _join_requests, mut probe_requests) =
             EndpointInner::for_tests_with_probes(EndpointConfig::new(addr(1)), 0);
         endpoint.form_cluster().expect("an unformed endpoint forms");
         endpoint.update(|membership, _| membership.add_up(NodeId::new(addr(3))));
@@ -1137,7 +1140,7 @@ mod tests {
         let probe = task::spawn(probe_foreign_clusters(endpoint, seeds, RESOLVE_INTERVAL));
 
         for _ in 0..3 {
-            let request = timeout(RESOLVE_INTERVAL * 2, probe_requests.recv_async())
+            let request = timeout(RESOLVE_INTERVAL * 2, probe_requests.recv())
                 .await
                 .expect("a probe per interval")
                 .expect("the probe task requests probes");
@@ -1164,14 +1167,14 @@ mod tests {
     /// ending the probe task.
     #[tokio::test(start_paused = true)]
     async fn a_probe_interval_of_duration_max_probes_once_and_keeps_running() {
-        let (endpoint, _lane_dials, _join_requests, probe_requests) =
+        let (endpoint, _lane_dials, _join_requests, mut probe_requests) =
             EndpointInner::for_tests_with_probes(EndpointConfig::new(addr(1)), 0);
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let other = ClusterId::new();
         let seeds = FixedSeeds::new(vec![addr(1), addr(2)]).expect("seeds");
         let probe = task::spawn(probe_foreign_clusters(endpoint, seeds, Duration::MAX));
 
-        let request = timeout(RESOLVE_INTERVAL, probe_requests.recv_async())
+        let request = timeout(RESOLVE_INTERVAL, probe_requests.recv())
             .await
             .expect("a first probe at once")
             .expect("the probe task requests probes");
@@ -1345,8 +1348,8 @@ mod tests {
         config: F,
     ) -> (
         &'static EndpointInner,
-        flume::Receiver<DialRequest>,
-        flume::Receiver<JoinRequest>,
+        channel::Receiver<DialRequest>,
+        channel::Receiver<JoinRequest>,
     )
     where
         F: FnOnce(SocketAddr) -> EndpointConfig,
@@ -1386,8 +1389,8 @@ mod tests {
         })
     }
 
-    async fn next_join(join_requests: &flume::Receiver<JoinRequest>) -> JoinRequest {
-        timeout(SETTLE, join_requests.recv_async())
+    async fn next_join(join_requests: &mut channel::Receiver<JoinRequest>) -> JoinRequest {
+        timeout(SETTLE, join_requests.recv())
             .await
             .expect("a join request within the timeout")
             .expect("bootstrap requests joins")
