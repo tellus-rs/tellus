@@ -1,5 +1,6 @@
 use crate::{
-    ActorId,
+    ActorId, channel,
+    channel::Sender,
     cluster::{
         frame::{Frame, StreamKey},
         node::NodeId,
@@ -9,7 +10,6 @@ use crate::{
     quota::{CountedSendError, CountedSender, Quota},
     sync::{read, write},
 };
-use flume::Sender;
 use std::{
     collections::{
         HashMap,
@@ -26,6 +26,8 @@ use thiserror::Error;
 use tokio::sync::{oneshot, watch};
 use tracing::error;
 use uuid::Uuid;
+
+type OutboundTx = CountedSender<Frame<'static>, Sender<Frame<'static>>>;
 
 /// A task and the entry it was started for must agree, so a stale task cannot close a newer one.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -225,16 +227,16 @@ impl Lanes {
         peer: NodeId,
         frame: &Frame,
         snapshot: Arc<Snapshot>,
-    ) -> &'a CountedSender<Frame<'static>> {
+    ) -> &'a OutboundTx {
         let addr = peer.addr();
         let quota = Quota::bounded(self.outbound_capacity);
         let generation = Generation(self.next_generation.fetch_add(1, Ordering::Relaxed));
 
-        let (control_tx, control_rx) = flume::unbounded();
+        let (control_tx, control_rx) = channel::make_channel();
         let control_tx = CountedSender::new(control_tx, quota.clone());
         let (data_tx, data_rx) = (0..self.data_streams)
             .map(|_| {
-                let (data_tx, data_rx) = flume::unbounded();
+                let (data_tx, data_rx) = channel::make_channel();
                 (CountedSender::new(data_tx, quota.clone()), data_rx)
             })
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -282,8 +284,8 @@ struct Lane {
     peer: Option<NodeId>,
     newest_peer: NodeId,
     connected: bool,
-    control_tx: CountedSender<Frame<'static>>,
-    data_tx: Vec<CountedSender<Frame<'static>>>,
+    control_tx: OutboundTx,
+    data_tx: Vec<OutboundTx>,
     snapshot_tx: watch::Sender<Option<Arc<Snapshot>>>,
     connected_rx: watch::Receiver<Option<NodeId>>,
     done_rx: oneshot::Receiver<Drain>,
@@ -292,7 +294,7 @@ struct Lane {
 impl Lane {
     /// System frames bypass the outbound capacity; a frame's [StreamKey] picks the stream, hence
     /// FIFO per recipient.
-    fn outbound_tx(&self, frame: &Frame) -> &CountedSender<Frame<'static>> {
+    fn outbound_tx(&self, frame: &Frame) -> &OutboundTx {
         let data_tx = frame
             .stream_key()
             .zip(NonZeroUsize::new(self.data_tx.len()))
@@ -317,7 +319,7 @@ fn matching_sender<'a>(
     lanes: &'a HashMap<SocketAddr, Lane>,
     peer: NodeId,
     frame: &Frame,
-) -> Result<Option<&'a CountedSender<Frame<'static>>>, LaneError> {
+) -> Result<Option<&'a OutboundTx>, LaneError> {
     Ok(matching_lane(lanes, peer)?.map(|lane| lane.outbound_tx(frame)))
 }
 
@@ -344,7 +346,7 @@ fn record_newest(lanes: &mut HashMap<SocketAddr, Lane>, peer: NodeId) {
 }
 
 fn try_send(
-    outbound_tx: &CountedSender<Frame<'static>>,
+    outbound_tx: &OutboundTx,
     frame: Frame<'static>,
     peer: NodeId,
 ) -> Result<(), LaneError> {
@@ -374,7 +376,8 @@ fn stream_index(key: StreamKey, streams: NonZeroUsize) -> usize {
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, SchemaVersion,
+        ActorId, SchemaVersion, channel,
+        channel::Receiver,
         cluster::{
             frame::{Frame, StreamKey},
             lanes::{Generation, Lane, LaneError, Lanes, matching_sender, stream_index, try_send},
@@ -384,7 +387,6 @@ mod tests {
         quota::{CountedSender, Quota},
         sync::read,
     };
-    use flume::Receiver;
     use std::{
         borrow::Cow,
         collections::HashMap,
@@ -400,7 +402,7 @@ mod tests {
             next_generation: AtomicU64::new(1),
             data_streams: 0,
             outbound_capacity: NonZeroUsize::MIN,
-            dial_request_tx: flume::unbounded().0,
+            dial_request_tx: channel::make_channel().0,
         }
     }
 
@@ -438,11 +440,11 @@ mod tests {
         Receiver<Frame<'static>>,
         Vec<Receiver<Frame<'static>>>,
     ) {
-        let (control_tx, control_rx) = flume::unbounded();
+        let (control_tx, control_rx) = channel::make_channel();
         let control_tx = CountedSender::new(control_tx, quota.clone());
         let (data_tx, data_rx) = (0..streams)
             .map(|_| {
-                let (data_tx, data_rx) = flume::unbounded();
+                let (data_tx, data_rx) = channel::make_channel();
                 (CountedSender::new(data_tx, quota.clone()), data_rx)
             })
             .unzip::<_, _, Vec<_>, Vec<_>>();
@@ -516,7 +518,7 @@ mod tests {
     /// not as a special case.
     #[test]
     fn without_data_streams_everything_rides_the_control_stream() {
-        let (lane, control_rx, _data_rx) = lane(0);
+        let (lane, mut control_rx, _data_rx) = lane(0);
         let (target, watcher) = (ActorId::new(), ActorId::new());
 
         assert!(lane.data_tx.is_empty(), "the lane has no data streams");
@@ -534,7 +536,7 @@ mod tests {
         send(&lane, Frame::Watch { target, watcher });
         send(&lane, gossip());
 
-        assert_eq!(control_rx.len(), 4);
+        assert_eq!(control_rx.try_iter().count(), 4);
     }
 
     /// A terminated signal rides its watcher's stream, the one the messages to that watcher ride:
@@ -542,7 +544,7 @@ mod tests {
     #[test]
     fn a_terminated_signal_shares_its_watchers_stream() {
         let streams = NonZeroUsize::new(8).expect("8 is not zero");
-        let (lane, control_rx, data_rx) = lane(streams.get());
+        let (lane, control_rx, mut data_rx) = lane(streams.get());
         let watcher = ActorId::new();
 
         send(
@@ -563,7 +565,9 @@ mod tests {
         );
 
         assert_eq!(
-            data_rx[stream_index(StreamKey::Actor(watcher), streams)].len(),
+            data_rx[stream_index(StreamKey::Actor(watcher), streams)]
+                .try_iter()
+                .count(),
             2
         );
         assert!(control_rx.is_empty());
@@ -573,14 +577,14 @@ mod tests {
     /// delivered to an actor have a stream to pick.
     #[test]
     fn per_node_frames_stay_on_the_control_stream() {
-        let (lane, control_rx, data_rx) = lane(8);
+        let (lane, mut control_rx, data_rx) = lane(8);
         let (target, watcher) = (ActorId::new(), ActorId::new());
 
         send(&lane, Frame::Watch { target, watcher });
         send(&lane, Frame::Unwatch { target, watcher });
         send(&lane, gossip());
 
-        assert_eq!(control_rx.len(), 3);
+        assert_eq!(control_rx.try_iter().count(), 3);
         assert!(data_rx.iter().all(Receiver::is_empty));
     }
 
@@ -591,7 +595,7 @@ mod tests {
     #[test]
     fn messages_are_counted_against_the_outbound_capacity_and_system_frames_bypass_it() {
         let capacity = NonZeroUsize::new(1).expect("1 is not zero");
-        let (lane, control_rx, _data_rx) = lane_with_quota(0, Quota::bounded(capacity));
+        let (lane, mut control_rx, _data_rx) = lane_with_quota(0, Quota::bounded(capacity));
         let (target, watcher) = (ActorId::new(), ActorId::new());
         let peer = NodeId::new("127.0.0.1:2552".parse().expect("valid address"));
 
@@ -605,7 +609,7 @@ mod tests {
         assert!(try_send_on(&lane, Frame::Watch { target, watcher }, peer).is_ok());
         assert!(try_send_on(&lane, gossip(), peer).is_ok());
 
-        assert_eq!(control_rx.len(), 4);
+        assert_eq!(control_rx.try_iter().count(), 4);
     }
 
     /// A send toward a peer whose lane is gone is unreachable, not full: the two failures steer

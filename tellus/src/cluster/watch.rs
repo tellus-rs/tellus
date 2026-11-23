@@ -523,9 +523,9 @@ mod tests {
     /// death.
     #[tokio::test]
     async fn a_watch_on_a_dead_incarnation_fires_at_once() {
-        let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests(EndpointConfig::new(
-            "127.0.0.1:1".parse().expect("valid address"),
-        ));
+        let (endpoint, mut lane_dials, _join_requests) = EndpointInner::for_tests(
+            EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
+        );
         endpoint.form_cluster().expect("an unformed endpoint forms");
         let down = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
         let left = NodeId::new("127.0.0.1:3".parse().expect("valid address"));
@@ -545,7 +545,7 @@ mod tests {
         membership::on_gossip(endpoint, &[Member::new(draining, MemberState::Left)]);
         assert!(!endpoint.departure_deferred(left));
         assert!(endpoint.departure_deferred(draining));
-        while lane_dials.try_recv().is_ok() {}
+        while lane_dials.try_recv().is_some() {}
 
         let target = ActorId::new();
         for peer in [down, left] {

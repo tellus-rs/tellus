@@ -1876,7 +1876,7 @@ mod tests {
 
     #[test]
     fn a_self_down_snapshot_runs_no_effect_for_a_superseded_member() {
-        let (endpoint, dial_requests, _join_requests) =
+        let (endpoint, mut dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let predecessor = NodeId::new(addr(2));
         let successor = NodeId::new(addr(2));
@@ -1895,9 +1895,9 @@ mod tests {
                 },
             )
             .expect("the lane is opened");
-        let witness_lane = dial_requests.try_recv().expect("the witness is dialed");
+        let mut witness_lane = dial_requests.try_recv().expect("the witness is dialed");
         endpoint.bind_lane(witness.addr(), witness_lane.generation, witness);
-        while witness_lane.control_rx.try_recv().is_ok() {}
+        while witness_lane.control_rx.try_recv().is_some() {}
 
         let (mailbox_handle, mailbox) = make_mailbox::<()>(MailboxCapacity::Unbounded);
         let (incoming_rx, _watcher_registration) = mailbox.split();
@@ -1927,7 +1927,7 @@ mod tests {
         assert!(down.contains(&predecessor));
         assert!(down.contains(&endpoint.node()));
         assert!(incoming_rx.is_empty());
-        assert!(witness_lane.control_rx.try_recv().is_err());
+        assert!(witness_lane.control_rx.try_recv().is_none());
     }
 
     /// A node is live or Left here unless it is Down, or older than a Left or Down incarnation at

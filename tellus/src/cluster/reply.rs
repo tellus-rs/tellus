@@ -904,7 +904,7 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
-        ActorId, MailboxCapacity, ReplyTo, SchemaVersion,
+        ActorId, MailboxCapacity, ReplyTo, SchemaVersion, channel,
         cluster::{
             codec::{Codec, CodecError},
             endpoint::{self, EndpointConfig, EndpointInner},
@@ -1194,7 +1194,7 @@ mod tests {
 
     #[test]
     fn a_received_cancellation_is_passed_down_the_chain() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1210,11 +1210,11 @@ mod tests {
         on_reply_canceled(endpoint, origin, origin_nonce);
 
         assert!(endpoint.pending_replies().take(forwarded).is_none());
-        let lane = dial_requests.try_recv().expect("the next node is dialed");
+        let mut lane = dial_requests.try_recv().expect("the next node is dialed");
         assert_eq!(lane.addr, next.addr());
         assert!(matches!(
             lane.control_rx.try_recv(),
-            Ok(frame @ Frame::ReplyCanceled { nonce, .. })
+            Some(frame @ Frame::ReplyCanceled { nonce, .. })
                 if nonce == forwarded && frame.stream_key() == stream
         ));
     }
@@ -1503,7 +1503,7 @@ mod tests {
     /// reach the caller. The destination minted before it is released, and the origin is told.
     #[test]
     fn a_panicking_reply_encode_drops_the_reply() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1516,11 +1516,11 @@ mod tests {
         });
 
         assert_eq!(endpoint.pending_replies().len(), 0);
-        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        let mut lane = dial_requests.try_recv().expect("the origin is dialed");
         assert_eq!(lane.addr, origin.addr());
         assert!(matches!(
             lane.control_rx.try_recv(),
-            Ok(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
+            Some(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
         ));
         assert!(lane.control_rx.is_empty());
     }
@@ -1529,7 +1529,7 @@ mod tests {
     /// rather than sent, and the origin is told.
     #[test]
     fn a_reply_over_the_origins_frame_size_is_dropped() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1539,11 +1539,11 @@ mod tests {
 
         endpoint::with_current(endpoint, || reply_to.reply(vec![0; MIN_FRAME_SIZE]));
 
-        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        let mut lane = dial_requests.try_recv().expect("the origin is dialed");
         assert_eq!(lane.addr, origin.addr());
         assert!(matches!(
             lane.control_rx.try_recv(),
-            Ok(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
+            Some(Frame::ReplyDropped { nonce: dropped, .. }) if dropped == nonce
         ));
         assert!(lane.control_rx.is_empty());
     }
@@ -1552,7 +1552,7 @@ mod tests {
     /// it does not reach the caller of `on_reply`, and the origin is told.
     #[test]
     fn a_panicking_encode_of_a_forwarded_reply_drops_the_reply() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1583,11 +1583,11 @@ mod tests {
         });
 
         assert_eq!(pending.len(), 0);
-        let lane = dial_requests.try_recv().expect("the origin is dialed");
+        let mut lane = dial_requests.try_recv().expect("the origin is dialed");
         assert_eq!(lane.addr, origin.addr());
         assert!(matches!(
             lane.control_rx.try_recv(),
-            Ok(Frame::ReplyDropped { nonce, .. }) if nonce == origin_nonce
+            Some(Frame::ReplyDropped { nonce, .. }) if nonce == origin_nonce
         ));
         assert!(lane.control_rx.is_empty());
     }
@@ -1682,7 +1682,7 @@ mod tests {
 
     #[test]
     fn a_reply_frame_names_the_reply_destinations_of_its_payload() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let origin = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1691,8 +1691,8 @@ mod tests {
 
         endpoint::with_current(endpoint, || reply_to.reply(ReplyTo::new(|_| ())));
 
-        let lane = dial_requests.try_recv().expect("the origin is dialed");
-        let Ok(Frame::Reply { reply_tags, .. }) = lane.control_rx.try_recv() else {
+        let mut lane = dial_requests.try_recv().expect("the origin is dialed");
+        let Some(Frame::Reply { reply_tags, .. }) = lane.control_rx.try_recv() else {
             panic!("not a reply frame");
         };
         let [embedded] = reply_tags[..] else {
@@ -1707,7 +1707,7 @@ mod tests {
     /// carries is answered toward its responder, so the responder's entry does not leak.
     #[test]
     fn a_reply_without_a_pending_entry_releases_its_reply_destinations() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1724,7 +1724,7 @@ mod tests {
             &payload,
         );
 
-        assert_reply_dropped(&dial_requests, responder, embedded);
+        assert_reply_dropped(&mut dial_requests, responder, embedded);
     }
 
     /// A reply for the asker's current incarnation which carries a reply destination of its
@@ -1732,18 +1732,18 @@ mod tests {
     /// responder's entry for that destination.
     #[test]
     fn a_dead_lettered_reply_releases_its_reply_destinations_at_the_responder() {
-        let (responder, responder_dials, _responder_joins) = EndpointInner::for_tests(
+        let (responder, mut responder_dials, _responder_joins) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.2:1".parse().expect("valid address")),
         );
-        let (asker, asker_dials, _asker_joins) = EndpointInner::for_tests(EndpointConfig::new(
+        let (asker, mut asker_dials, _asker_joins) = EndpointInner::for_tests(EndpointConfig::new(
             "127.0.0.1:1".parse().expect("valid address"),
         ));
 
         let (reply_dropped_asker, nonce) = dead_lettered_reply(
             responder,
-            &responder_dials,
+            &mut responder_dials,
             asker,
-            &asker_dials,
+            &mut asker_dials,
             asker.node(),
         );
         assert_eq!(responder.pending_replies().len(), 1);
@@ -1758,17 +1758,17 @@ mod tests {
     #[test]
     fn a_dead_lettered_reply_for_the_predecessor_leaves_its_reply_destinations_to_the_fence() {
         let predecessor = NodeId::new("127.0.0.1:1".parse().expect("valid address"));
-        let (responder, responder_dials, _responder_joins) = EndpointInner::for_tests(
+        let (responder, mut responder_dials, _responder_joins) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.2:1".parse().expect("valid address")),
         );
-        let (asker, asker_dials, _asker_joins) =
+        let (asker, mut asker_dials, _asker_joins) =
             EndpointInner::for_tests(EndpointConfig::new(predecessor.addr()));
 
         let (reply_dropped_asker, nonce) = dead_lettered_reply(
             responder,
-            &responder_dials,
+            &mut responder_dials,
             asker,
-            &asker_dials,
+            &mut asker_dials,
             predecessor,
         );
         on_reply_dropped(responder, asker.node(), reply_dropped_asker, nonce);
@@ -1780,7 +1780,7 @@ mod tests {
 
     #[test]
     fn an_undecodable_reply_releases_its_reply_destinations() {
-        let (endpoint, dial_requests, _join_requests) = EndpointInner::for_tests(
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(
             EndpointConfig::new("127.0.0.1:1".parse().expect("valid address")),
         );
         let responder = NodeId::new("127.0.0.1:2".parse().expect("valid address"));
@@ -1804,19 +1804,19 @@ mod tests {
         );
 
         assert_eq!(pending.len(), 0);
-        assert_reply_dropped(&dial_requests, responder, embedded);
+        assert_reply_dropped(&mut dial_requests, responder, embedded);
     }
 
     fn assert_reply_dropped(
-        dial_requests: &flume::Receiver<DialRequest>,
+        dial_requests: &mut channel::Receiver<DialRequest>,
         responder: NodeId,
         embedded: ReplyTag,
     ) {
-        let lane = dial_requests.try_recv().expect("the responder is dialed");
+        let mut lane = dial_requests.try_recv().expect("the responder is dialed");
         assert_eq!(lane.addr, responder.addr());
         assert_eq!(
             lane.control_rx.try_recv(),
-            Ok(Frame::ReplyDropped {
+            Some(Frame::ReplyDropped {
                 asker: responder,
                 nonce: embedded.nonce,
                 recipient: embedded.recipient,
@@ -1827,18 +1827,18 @@ mod tests {
 
     fn dead_lettered_reply(
         responder: &'static EndpointInner,
-        responder_dials: &flume::Receiver<DialRequest>,
+        responder_dials: &mut channel::Receiver<DialRequest>,
         asker: &'static EndpointInner,
-        asker_dials: &flume::Receiver<DialRequest>,
+        asker_dials: &mut channel::Receiver<DialRequest>,
         origin: NodeId,
     ) -> (NodeId, Nonce) {
         let proxy =
             remote_proxy::<ReplyTo<u64>>(responder.pending_replies(), origin, Nonce::first(), None);
         endpoint::with_current(responder, || proxy.reply(ReplyTo::new(|_| ())));
-        let lane = responder_dials
+        let mut lane = responder_dials
             .try_recv()
             .expect("the asker's address is dialed");
-        let Ok(Frame::Reply {
+        let Some(Frame::Reply {
             asker: reply_asker,
             nonce,
             reply_tags,
