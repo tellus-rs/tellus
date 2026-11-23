@@ -271,9 +271,11 @@ first round it is unavailable in; any other answer, and any round which did not 
 the timer. The timers follow every observed round, so a round answered `Held` resets the timer as
 well, although it never forms. An address unavailable again afterward waits a fresh `after`. It
 trades uniqueness for liveness: a lowest address which is merely unreachable from some nodes, not
-gone, can form a cluster of its own beside the one they form. The foreign cluster probe (see
-bootstrap below) reports such a double formation in `ClusterState::foreign_clusters` on both sides,
-but the two clusters never merge.
+gone, can form a cluster of its own beside the one they form. A lowest address which is a member of
+a cluster already, but unreachable from the others, is passed over just the same: an address which
+does not answer looks like one which is gone, so the others form a second cluster. The foreign
+cluster probe (see bootstrap below) reports such a double formation in
+`ClusterState::foreign_clusters` on both sides, but the two clusters never merge.
 
 ### Bootstrap
 
@@ -1354,7 +1356,8 @@ swap is added.
   which costs liveness: while the lowest address of the universe does not answer, nothing forms. A
   discovery which keeps resolving nodes that are gone hence never lets a cold start finish.
   `MajorityWithFallback` is the opt-in which restores that liveness at the price of uniqueness: a
-  lowest address which is unreachable rather than gone can form a second cluster.
+  lowest address which is unreachable rather than gone can form a second cluster, and one which is
+  a member of a cluster already is passed over, so the others form a second cluster beside it.
 - **Two clusters never merge.** The foreign cluster probe lists the other cluster in
   `ClusterState::foreign_clusters` on both sides, and each side logs it at error level every 5
   min. Recovering is an operator's task: stop every node of the younger cluster, the one with the
