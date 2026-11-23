@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795475437301,
+  "lastUpdate": 1795475439804,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -38173,6 +38173,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 135852,
             "range": "± 4224",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "4dfa40c13864ff3aaf25870e1364cc22b40d442c",
+          "message": "Merge pull request #536 from tellus-rs/perf/lane-channel\n\nperf(cluster): move the cluster queues onto our own channel",
+          "timestamp": "2026-11-24T01:02:23+02:00",
+          "tree_id": "ddcb0c36c9b1c387a78252f9339fccf1a2a370bd",
+          "url": "https://github.com/tellus-rs/tellus/commit/4dfa40c13864ff3aaf25870e1364cc22b40d442c"
+        },
+        "date": 1795475439404,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3253052,
+            "range": "± 158723",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3358129,
+            "range": "± 143639",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 834545,
+            "range": "± 9701",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 109463,
+            "range": "± 2653",
             "unit": "ns/iter"
           }
         ]
