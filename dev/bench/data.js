@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795465814776,
+  "lastUpdate": 1795465817066,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -37837,6 +37837,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105759,
             "range": "± 2462",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "735c4208e27aeebc409b96353da0cffa836c163a",
+          "message": "Merge pull request #535 from tellus-rs/ci/cluster-sweep\n\nci: sweep the cluster bench across stack positions",
+          "timestamp": "2026-11-23T22:21:57+02:00",
+          "tree_id": "f84210cc9796de799fcaefa65364b5e5a7e59085",
+          "url": "https://github.com/tellus-rs/tellus/commit/735c4208e27aeebc409b96353da0cffa836c163a"
+        },
+        "date": 1795465816509,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3532783,
+            "range": "± 172514",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3482503,
+            "range": "± 144587",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1077870,
+            "range": "± 14408",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 133604,
+            "range": "± 4654",
             "unit": "ns/iter"
           }
         ]
