@@ -31,7 +31,9 @@ from a member of another cluster. The member list is gossiped, so every member l
 from one seed address. A node shutting down cleanly announces its own departure with
 `cluster::leave` instead of leaving the cluster to detect its silence. `cluster::lifecycle` reports
 where an endpoint stands: `Unformed` after the start, `Formed` once it is a member of a cluster of
-one or of many, and `Downed` once it was downed or left, which is final for the process.
+one or of many, and `Downed` once it was downed or left, which is final for the process. A leaving
+node is `Downed` once `leave` has finished draining or `leave_timeout` has passed, or as soon as
+its departure ends without a report.
 
 A node gets into a cluster by joining it, and it gets its first reference to a remote actor by
 discovery: `cluster::register` names a local actor and `receptionist::lookup_at` resolves that name
@@ -443,7 +445,7 @@ report, which runs in a task of its own. So none severs the connections another 
 and a caller which is canceled only stops waiting. Leaving again after the departure has ended
 returns its report as well. A node downed before it began to leave fails with `LeaveError::Downed`.
 An endpoint which has neither formed nor joined a cluster has nothing to leave. It fails with
-`LeaveError::NotAMember` and stays as it was, so it can still form or join one. A join in progress
+`LeaveError::Unformed` and stays as it was, so it can still form or join one. A join in progress
 does not count as a membership: it may still make this node a member after the refused leave. A
 departure which ends without a report, e.g. since its task panicked, fails safe. A supervisor
 awaiting that task then latches this node Downed and severs every connection. Only after that does
@@ -559,7 +561,7 @@ member advertises the address, which is worth retrying while gossip converges. I
 what puts the departure behind every terminated signal the tree owes remote watchers. When the actor
 system did not terminate cleanly, it still announces the departure and then fails with
 `LeaveError::Terminated`. On an endpoint which has neither formed nor joined a cluster, it fails
-with `LeaveError::NotAMember` once the actor system has terminated.
+with `LeaveError::Unformed` once the actor system has terminated.
 
 ### Example
 
@@ -972,9 +974,11 @@ Once this node's own entry is Left or Down, because it left, was downed or downe
 `lookup_at` and `current` fail as `NoLongerMember`. Every answer lists Up members only, so an answer
 would leave out this node's own registrations and read like a cluster where nobody registered. A
 node which is leaving answers as usual until its entry is Left, which is the first step of `leave`.
-A node which never formed or joined a cluster has an Up entry of its own and answers its own
-registrations. `subscribe`, `settled` and `settlement` answer from no resolved set and still
-answer; a `Subscription` taken earlier fails on its next `current`.
+`cluster::lifecycle` still reports `Formed` until `leave` has finished draining or `leave_timeout`
+has passed. A departure which ends without a report, e.g. since its task panicked, makes it
+`Downed` as soon as it ends. A node which never formed or joined a cluster has an Up entry of its
+own and answers its own registrations. `subscribe`, `settled` and `settlement` answer from no
+resolved set and still answer; a `Subscription` taken earlier fails on its next `current`.
 
 Every node replicates the full set of its own registrations as one versioned snapshot per origin
 incarnation, grouped by key: each key (kind, name, manifest) once, followed by the IDs of the actors
