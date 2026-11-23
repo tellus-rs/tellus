@@ -12,6 +12,7 @@ use tokio::{runtime::Builder, sync::oneshot, task, time::sleep};
 
 const MESSAGES: usize = 100_000;
 const DEADLINE: Duration = Duration::from_secs(30);
+const STOP_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// An actor with a never empty mailbox must not monopolize its worker: on a current-thread
 /// runtime, a task woken by its first message runs while it still has messages to handle.
@@ -101,7 +102,7 @@ fn a_self_telling_actor_yields_to_a_current_thread_timer() {
     });
 
     let root = root_rx.recv().expect("runtime publishes root");
-    let stopped_by = match stopped_rx.recv_timeout(DEADLINE) {
+    let stopped_by = match stopped_rx.recv_timeout(STOP_TIMEOUT) {
         Ok(stopped_by) => stopped_by,
         Err(std_mpsc::RecvTimeoutError::Timeout) => {
             root.tell(FairMessage::WatchdogStop);

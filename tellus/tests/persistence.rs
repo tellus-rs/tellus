@@ -300,6 +300,40 @@ async fn an_offered_snapshot_without_a_store_is_dropped() {
     );
 }
 
+/// An effect without events saves no snapshot, even for an actor which offers one of every state:
+/// two `Get`s leave the snapshot store empty. A `Get` replies from a `then` continuation, which
+/// runs before `snapshot` would be called. Only the second reply hence shows that the first `Get`
+/// has settled. The `Increment` after them has an event and saves one.
+#[tokio::test]
+async fn an_effect_without_events_saves_no_snapshot() {
+    let store = FaultyStore::default();
+    let (probe_tx, _probe_rx) = mpsc::unbounded_channel();
+    let id = persistence_id("no-events");
+
+    let system = ActorSystem::event_sourced(
+        Counter::new("no-events", probe_tx).with_snapshot_every(1),
+        Persistence::new(store.clone()).with_snapshot_store(store.clone()),
+    );
+    ask_count(&system).await;
+    ask_count(&system).await;
+    assert_eq!(
+        store.inner().snapshot(&id),
+        None,
+        "an effect without events must save no snapshot"
+    );
+
+    system.root().tell(Command::Increment(1));
+    ask_count(&system).await;
+    assert_eq!(
+        store.inner().snapshot(&id).map(|stored| stored.next_seq_no),
+        Some(SeqNo::new(1)),
+        "the effect with an event must save a snapshot"
+    );
+
+    system.root().tell(Command::Stop);
+    assert_terminates(system, "system did not terminate").await;
+}
+
 /// A `then` continuation runs once its events are settled and never on replay: across a failure
 /// and restart, replaying the events emits no continuation probes.
 #[tokio::test]

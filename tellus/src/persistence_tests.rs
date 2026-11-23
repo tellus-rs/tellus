@@ -29,7 +29,11 @@ use std::{
 use tokio::task::JoinSet;
 
 const LIMIT: NonZeroUsize = NonZeroUsize::new(1_024).unwrap();
-const SEPARATORS: [char; 6] = [':', '|', '#', '.', '-', '_'];
+// No slash, since no segment may hold one.
+const SEPARATORS: &[&str] = &[
+    "!", "\"", "#", "$", "%", "&", "'", "(", ")", "*", "+", ",", "-", ".", ":", ";", "<", "=", ">",
+    "?", "@", "[", "\\", "]", "^", "_", "`", "{", "|", "}", "~", "::", ", ", " ",
+];
 
 /// Run every [EventStore] check against the given store.
 pub async fn event_store_contract<E>(store: E)
@@ -433,7 +437,7 @@ where
 
 /// Both segments of a persistence ID identify the stream: one entity ID under two entity types
 /// names two streams, and so do two IDs whose segments concatenate, or join with a separator such
-/// as `:`, to the same string.
+/// as `:` or `::`, to the same string.
 pub async fn streams_are_isolated_by_both_segments<E>(store: E)
 where
     E: EventStore,
@@ -789,7 +793,7 @@ where
 
 /// Both segments of a persistence ID identify a snapshot: a snapshot saved under one ID loads
 /// under no other one, be it the same entity ID under another entity type or an ID whose
-/// segments concatenate, or join with a separator such as `:`, to the same string.
+/// segments concatenate, or join with a separator such as `:` or `::`, to the same string.
 pub async fn snapshots_are_isolated_by_both_segments<S>(store: S)
 where
     S: SnapshotStore,
@@ -982,7 +986,7 @@ fn writer_events(writer: u8) -> Vec<EncodedEvent> {
 fn confusable_id_pairs() -> Vec<(PersistenceId, PersistenceId)> {
     let unique = unique_entity_id();
 
-    let separated = SEPARATORS.into_iter().map(|separator| {
+    let separated = SEPARATORS.iter().map(|separator| {
         (
             persistence_id(format!("contract{separator}e"), &unique),
             persistence_id("contract", format!("e{separator}{unique}")),
