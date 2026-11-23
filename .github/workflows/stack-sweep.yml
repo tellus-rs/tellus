@@ -20,20 +20,22 @@ on:
           - messaging
           - persistence
           - stash
+          - cluster
       null_run:
         description: A null run, the base's executable in all three slots
         required: false
         default: false
         type: boolean
-  # The label `sweep` sweeps the messaging bench, `sweep-persistence` the persistence bench and
-  # `sweep-stash` the stash bench, of the pull request's head against its parent.
+  # The label `sweep` sweeps the messaging bench, `sweep-persistence` the persistence bench,
+  # `sweep-stash` the stash bench and `sweep-cluster` the cluster bench, of the pull request's head
+  # against its parent.
   pull_request:
     types: [labeled]
 
 env:
   BASE: ${{ inputs.base }}
   CANDIDATE: ${{ inputs.candidate || github.event.pull_request.head.sha }}
-  BENCH: ${{ github.event.label.name == 'sweep-persistence' && 'persistence' || github.event.label.name == 'sweep-stash' && 'stash' || inputs.bench || 'messaging' }}
+  BENCH: ${{ github.event.label.name == 'sweep-persistence' && 'persistence' || github.event.label.name == 'sweep-stash' && 'stash' || github.event.label.name == 'sweep-cluster' && 'cluster' || inputs.bench || 'messaging' }}
   NULL_RUN: ${{ inputs.null_run && 'true' || 'false' }}
 
 concurrency:
@@ -55,6 +57,7 @@ jobs:
       || github.event.label.name == 'sweep'
       || github.event.label.name == 'sweep-persistence'
       || github.event.label.name == 'sweep-stash'
+      || github.event.label.name == 'sweep-cluster'
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 150
     outputs:
@@ -110,18 +113,23 @@ jobs:
           toolchain: ${{ steps.worktrees.outputs.stable }}
 
       # A null run copies the base's executable into all three slots, so B, C and A are one binary.
+      # The cluster bench is the bench role of the `cluster.rs` test binary, built as
+      # `just bench-cluster` builds it.
       - name: Build benches
         run: |
-          features=()
-          if [ "$BENCH" = persistence ] || [ "$BENCH" = stash ]; then
-            features=(--features "persistence,persistence-in-memory")
+          if [ "$BENCH" = cluster ]; then
+            build=(cargo test -p tellus --test cluster --features "cluster-dev,__internal" --release)
+          elif [ "$BENCH" = persistence ] || [ "$BENCH" = stash ]; then
+            build=(cargo bench -p tellus --bench "$BENCH" --features "persistence,persistence-in-memory")
+          else
+            build=(cargo bench -p tellus --bench "$BENCH")
           fi
           trees=(base)
           if [ "$NULL_RUN" != true ]; then
             trees+=(candidate)
           fi
           for tree in "${trees[@]}"; do
-            (cd "../$tree" && cargo bench -p tellus --bench "$BENCH" "${features[@]}" --no-run --locked --message-format=json) \
+            (cd "../$tree" && "${build[@]}" --no-run --locked --message-format=json) \
               | jq -r --arg bench "$BENCH" 'select(.reason == "compiler-artifact" and .target.name == $bench and .executable != null) | .executable' \
               > "$tree.path"
             test "$(wc -l < "$tree.path")" -eq 1
@@ -179,10 +187,14 @@ jobs:
       - name: Sweep
         run: |
           sweep="$RUNNER_TEMP/sweep"
-          python3 -I ../base/.github/stack-sweep/sweep.py run \
+          kind=()
+          if [ "$BENCH" = cluster ]; then
+            kind=(--kind cluster)
+          fi
+          python3 -I ../base/.github/stack-sweep/sweep.py run "${kind[@]}" \
             --preload "$sweep/stack_shift.so" --workdir "$sweep/work" --out "$sweep/results.jsonl" \
             "B=$sweep/B" "C=$sweep/C" "A=$sweep/A"
-          test "$(wc -l < "$sweep/results.jsonl")" -eq "$(python3 -I ../base/.github/stack-sweep/sweep.py lines "$sweep/B")"
+          test "$(wc -l < "$sweep/results.jsonl")" -eq "$(python3 -I ../base/.github/stack-sweep/sweep.py lines "${kind[@]}" "$sweep/B")"
           python3 -I ../base/.github/stack-sweep/sweep.py summary "$sweep/results.jsonl" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload results

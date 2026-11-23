@@ -28,19 +28,20 @@ file itself comes from the pull request's merge ref, or from the ref a sweep is 
 ### Running it
 
 - **On a pull request:** add the label `sweep` for the messaging bench, `sweep-persistence` for
-  the persistence bench or `sweep-stash` for the stash bench. The candidate is the pull request's
+  the persistence bench, `sweep-stash` for the stash bench or `sweep-cluster` for the cluster
+  bench. The candidate is the pull request's
   head and the base its parent; CI already makes a pull request one commit. To run it again, remove
   the label and add it again.
 - **By hand:** `gh workflow run stack-sweep.yml -f base=<full parent ID> -f candidate=<full commit
-  ID> [-f bench=persistence|stash]`. The candidate must be exactly one commit on top of the base and
+  ID> [-f bench=persistence|stash|cluster]`. The candidate must be exactly one commit on top of the base and
   pushed, as a branch or a pull request head. `--ref <branch>` takes the workflow from that branch;
   the scripts come from the base and the code from the two commits.
 - **The report:** the `Report` job runs `report.py` once every sweep job has succeeded and writes it
   to the run's summary. It fails if a row fails; borderline and inconclusive rows leave it green.
   `python3 -I .github/stack-sweep/report.py <run ID>` does the same locally.
 - **Locally on aarch64:** build the shift library and the probe as the workflow does, check the
-  probe with `probe.sh`, and run `sweep.py run`. The binaries go before `--rows` and `--shifts`,
-  since both take a variable number of values.
+  probe with `probe.sh`, and run `sweep.py run`, with `--kind cluster` for the cluster bench. The
+  binaries go before `--rows` and `--shifts`, since both take a variable number of values.
 
 The rows are the benchmarks the base's bench lists (`--list`), in its order. The candidate and the
 copy must list each of them; a row only the candidate lists is named in the log and not swept.
@@ -48,6 +49,16 @@ A messaging run sweeps every row of the messaging bench, the groups `flood`, `pi
 `queued` and `timers`: 2304 bench runs per job, 16 rows. A persistence run sweeps every row of the
 persistence bench, the groups `persist` and `recover`: 576 runs, 4 rows. A stash run sweeps every
 row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows.
+
+The cluster bench is the bench role of the `cluster.rs` test binary (`just bench-cluster`), built
+with `--release` and the features `cluster-dev,__internal`. It spawns an echo and a keeper node and
+prints every row in one run, with no `--list`, so each run measures all of them. Its rows are the
+ones the base prints, in its order; the candidate and the copy must print each of them, and a row
+only the candidate prints is named in the log and not swept. A row is recorded in nanoseconds per
+unit, a throughput (`round trips/s`, `asks/s`, `MiB/s`) inverted and a latency (`us/...`) scaled, so
+a positive figure is a slowdown for every row, as for the Criterion benches. A cluster run sweeps 7
+rows, `pipelined`, `serial`, `ask pipelined`, `ask serial`, `actor ask pipelined`,
+`actor ask serial` and `bulk`: 240 runs per job.
 
 ### The protocol
 
@@ -59,11 +70,13 @@ row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows
   `stack_shift.c`.
   - The probe checks first that the shift moves a new thread's stack by exactly that amount.
   - Every bench run must report `stack_shift=<shift>` and `stack_shift_threads` of at least the
-    bench's 4 Tokio workers, so the bench's own threads went through the shift.
-- **Schedule:** 3 repetitions. Within each, the shifts ascend, the rows follow in the bench's order,
-  and the binary order rotates by one per repetition.
-- **Job figure:** per row, the median of the candidate's 48 runs over the median of the base's,
-  minus 1. The A/A figure is the same for the copy.
+    bench's 4 Tokio workers, so the bench's own threads went through the shift. A cluster run
+    must report both from every process, the spawned nodes too, which inherit the shift.
+- **Schedule:** 3 repetitions, 5 for the cluster bench, since one of its runs is one sample rather
+  than the median of Criterion's. Within each, the shifts ascend, the rows follow in the bench's
+  order, and the binary order rotates by one per repetition.
+- **Job figure:** per row, the median of the candidate's 48 runs (80 for the cluster bench) over
+  the median of the base's, minus 1. The A/A figure is the same for the copy.
 - **Exclusion:** a job's row is excluded if its A/A figure is off by more than 3%.
 - **Verdict per row:** inconclusive if fewer than 3 of the 4 jobs remain, or if the retained
   figures spread by more than 6 points. Otherwise the median decides: below +3% passes, above +5%
@@ -73,7 +86,7 @@ row of the stash bench, the groups `actor` and `event_sourced`: 432 runs, 3 rows
   penalties or hit them systematically, so it says nothing about robustness.
 
 `report.py` applies these rules, and `test_report.py` pins them. `test_sweep.py` pins how
-`sweep.py` lists, schedules and checks the bench runs.
+`sweep.py` lists, schedules and checks the bench runs, and how it reads the cluster bench's rows.
 
 ### A borderline row
 
@@ -105,7 +118,7 @@ one independent repeat of the whole sweep is run with the same base and candidat
 
 ## The null mode
 
-`gh workflow run stack-sweep.yml -f base=<full commit ID> -f null_run=true [-f bench=persistence|stash]`
+`gh workflow run stack-sweep.yml -f base=<full commit ID> -f null_run=true [-f bench=persistence|stash|cluster]`
 builds only the base and copies its executable into all three slots. The build step checks that
 B, C and A have one hash. The report names the run `<base>-null`. A null run measures the protocol's
 own noise: a verdict other than pass is a false alarm by construction.

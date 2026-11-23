@@ -1,10 +1,15 @@
 """Run a bench across worker-stack shifts, or summarize one job's results.
 
-run:     sweep.py run --preload SO --workdir DIR --out FILE B=BIN C=BIN A=BIN
+run:     sweep.py run [--kind cluster] --preload SO --workdir DIR --out FILE B=BIN C=BIN A=BIN
 summary: sweep.py summary FILE
-lines:   sweep.py lines BIN, the number of result lines of a full run of the bench BIN as the base
+lines:   sweep.py lines [--kind cluster] BIN, the number of result lines of a full run of the bench
+         BIN as the base
 
-The rows are every benchmark the base lists (`--list`); C and A must list each of them.
+A Criterion bench's rows are every benchmark the base lists (`--list`); C and A must list each of
+them. The cluster bench (the bench role of the `cluster.rs` test binary) prints all its rows in one
+run, so every run measures each of them; its rows are the ones the base prints, and C and A must
+print each of them. A cluster row is recorded in nanoseconds per unit, a throughput inverted and a
+latency scaled, so a lower value is better for every row of either kind.
 """
 
 import argparse
@@ -19,25 +24,29 @@ import time
 
 SHIFTS = list(range(0, 4096, 256))
 REPETITIONS = 3
+CLUSTER_REPETITIONS = 5
 ORDER = ["B", "C", "A"]
 WORKER_THREADS = 4
+CLUSTER_LINE = re.compile(r"^([a-z][a-z ]*): ([0-9]+(?:\.[0-9]+)?) ([^()]+?)(?: \(.*\))?$")
 
 
 def main():
     parser = argparse.ArgumentParser()
     commands = parser.add_subparsers(dest="command", required=True)
     run_parser = commands.add_parser("run")
+    run_parser.add_argument("--kind", choices=["criterion", "cluster"], default="criterion")
     run_parser.add_argument("--preload", required=True)
     run_parser.add_argument("--workdir", required=True)
     run_parser.add_argument("--out", required=True)
     run_parser.add_argument("--rows", nargs="*")
     run_parser.add_argument("--shifts", nargs="*", type=int, default=SHIFTS)
-    run_parser.add_argument("--repetitions", type=int, default=REPETITIONS)
+    run_parser.add_argument("--repetitions", type=int)
     run_parser.add_argument("--workers", type=int, default=WORKER_THREADS)
     run_parser.add_argument("binaries", nargs=3)
     summary_parser = commands.add_parser("summary")
     summary_parser.add_argument("results")
     lines_parser = commands.add_parser("lines")
+    lines_parser.add_argument("--kind", choices=["criterion", "cluster"], default="criterion")
     lines_parser.add_argument("binary")
     args = parser.parse_args()
 
@@ -46,11 +55,22 @@ def main():
         if sorted(binaries) != sorted(ORDER):
             sys.exit(f"expected binaries {ORDER}, got {sorted(binaries)}")
         binaries = {name: os.path.abspath(path) for name, path in binaries.items()}
+        if args.kind == "cluster":
+            if args.rows is not None:
+                sys.exit("a cluster run measures every row, --rows does not apply")
+            if args.repetitions is None:
+                args.repetitions = CLUSTER_REPETITIONS
+            run_cluster(args, binaries)
+            return
+        if args.repetitions is None:
+            args.repetitions = REPETITIONS
         if args.rows is None:
             args.rows = swept_rows({name: listed_rows(path) for name, path in binaries.items()})
         run(args, binaries)
     elif args.command == "summary":
         summary(args.results)
+    elif args.kind == "cluster":
+        print(len(printed_rows(args.binary)) * len(SHIFTS) * CLUSTER_REPETITIONS * len(ORDER))
     else:
         print(len(listed_rows(args.binary)) * len(SHIFTS) * REPETITIONS * len(ORDER))
 
@@ -147,6 +167,99 @@ def measure(binary, name, row, shift, preload, workdir, workers):
         sys.exit(f"{context}: benchmark.json names {full_id}")
     with open(estimates) as file:
         return json.load(file)["median"]["point_estimate"]
+
+
+def printed_rows(binary):
+    """The rows one unshifted cluster run of `binary` prints, in its order."""
+    process = subprocess.run(
+        [os.path.abspath(binary)], env={"PATH": "/usr/bin:/bin", "TELLUS_REMOTING_ROLE": "bench"},
+        capture_output=True, text=True,
+    )
+    if process.returncode != 0:
+        sys.exit(f"{binary}: exit code {process.returncode}\n{process.stderr}")
+    return list(cluster_rows(process.stdout, binary))
+
+
+def cluster_rows(output, context):
+    """The rows a cluster run printed, in its order, each in nanoseconds per unit."""
+    rows = {}
+    for text in output.splitlines():
+        match = CLUSTER_LINE.match(text)
+        if not match:
+            continue
+        row, value, unit = match.group(1), float(match.group(2)), match.group(3)
+        if value <= 0:
+            sys.exit(f"{context}: {row} is {value} {unit}")
+        if unit.endswith("/s"):
+            nanoseconds = 1e9 / value
+        elif unit.startswith("us/"):
+            nanoseconds = value * 1e3
+        else:
+            sys.exit(f"{context}: {row} has the unknown unit {unit}")
+        if row in rows:
+            sys.exit(f"{context}: {row} printed twice")
+        rows[row] = nanoseconds
+    if not rows:
+        sys.exit(f"{context}: no row printed\n{output}")
+    return rows
+
+
+def run_cluster(args, binaries):
+    preload = os.path.abspath(args.preload)
+    workdir = os.path.abspath(args.workdir)
+    rows = None
+    unswept = set()
+    with open(args.out, "a") as out:
+        for repetition in range(args.repetitions):
+            order = ORDER[repetition % 3 :] + ORDER[: repetition % 3]
+            for shift in args.shifts:
+                for name in order:
+                    measured = measure_cluster(binaries[name], name, shift, preload, workdir, args.workers)
+                    if rows is None:
+                        rows = list(measured)
+                    missing = [row for row in rows if row not in measured]
+                    if missing:
+                        sys.exit(f"{name} at shift {shift} does not print the rows {missing} of the base")
+                    unswept.update(row for row in measured if row not in rows)
+                    for row in rows:
+                        line = {
+                            "binary": name,
+                            "repetition": repetition,
+                            "shift": shift,
+                            "row": row,
+                            "median_ns": measured[row],
+                            "timestamp": time.time(),
+                        }
+                        out.write(json.dumps(line) + "\n")
+                    out.flush()
+    if unswept:
+        print(f"not swept, since the base does not print them: {sorted(unswept)}", file=sys.stderr)
+
+
+def measure_cluster(binary, name, shift, preload, workdir, workers):
+    """Every row of one run; the run's processes, the spawned nodes too, each report the shift."""
+    home = os.path.join(workdir, name)
+    os.makedirs(home, exist_ok=True)
+    env = {
+        "PATH": "/usr/bin:/bin",
+        "HOME": home,
+        "LD_PRELOAD": preload,
+        "STACK_SHIFT": str(shift),
+        "TELLUS_REMOTING_ROLE": "bench",
+    }
+    process = subprocess.run([binary], cwd=home, env=env, capture_output=True, text=True)
+    context = f"{name} shift {shift}"
+    if process.returncode != 0:
+        sys.exit(f"{context}: exit code {process.returncode}\n{process.stderr}")
+    stderr = process.stderr.splitlines()
+    processes = stderr.count(f"stack_shift={shift}")
+    threads = [int(line.split("=", 1)[1]) for line in stderr if line.startswith("stack_shift_threads=")]
+    if processes == 0 or len(threads) != processes or min(threads) < workers:
+        sys.exit(
+            f"{context}: expected stack_shift={shift} and stack_shift_threads of at least {workers} "
+            f"from every process\n{process.stderr}"
+        )
+    return cluster_rows(process.stdout, context)
 
 
 def summary(results):

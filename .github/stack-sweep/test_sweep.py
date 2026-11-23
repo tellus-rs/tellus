@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sweep
-from sweep import figure, listed_rows, parse_list, run, summary, swept_rows
+from sweep import cluster_rows, figure, listed_rows, parse_list, run, run_cluster, summary, swept_rows
 
 FAKE_BENCH = """#!{python}
 import json, os, sys, time
@@ -31,6 +31,19 @@ with open(os.path.join(directory, "benchmark.json"), "w") as file:
     json.dump({{"full_id": row}}, file)
 with open(os.path.join(directory, "estimates.json"), "w") as file:
     json.dump({{"median": {{"point_estimate": {median} + int(shift)}}}}, file)
+"""
+
+FAKE_CLUSTER = """#!{python}
+import os, sys
+assert os.environ["TELLUS_REMOTING_ROLE"] == "bench"
+shift = os.environ.get("STACK_SHIFT", "0")
+print("ADDR 127.0.0.1:1234")
+for row, value, unit in {rows!r}:
+    print(f"{{row}}: {{value + int(shift)}} {{unit}} (some detail)")
+for threads in {threads!r}:
+    print("stack_shift=" + shift, file=sys.stderr)
+    if threads is not None:
+        print(f"stack_shift_threads={{threads}}", file=sys.stderr)
 """
 
 
@@ -132,6 +145,91 @@ class Figures(unittest.TestCase):
         os.unlink(file.name)
         self.assertIn("| `r` | +0.0% | +0.0% |", stdout.getvalue())
         self.assertIn("| `s` | +0.0% | +0.0% |", stdout.getvalue())
+
+
+class Cluster(unittest.TestCase):
+    ROWS = [("pipelined", 1000, "round trips/s"), ("serial", 50, "us/round trip"), ("bulk", 500, "MiB/s")]
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def bench(self, name, rows=ROWS, threads=(10, 10, 12)):
+        path = os.path.join(self.directory.name, name)
+        with open(path, "w") as file:
+            file.write(FAKE_CLUSTER.format(python=sys.executable, rows=rows, threads=list(threads)))
+        os.chmod(path, os.stat(path).st_mode | stat.S_IXUSR)
+        return path
+
+    def args(self, shifts=(0, 256), repetitions=3):
+        return argparse.Namespace(
+            preload="/dev/null", workdir=os.path.join(self.directory.name, "work"),
+            out=os.path.join(self.directory.name, "results.jsonl"), rows=None, shifts=list(shifts),
+            repetitions=repetitions, workers=4,
+        )
+
+    def test_a_throughput_is_inverted_and_a_latency_scaled_to_nanoseconds(self):
+        output = "ADDR 127.0.0.1:1\npipelined: 2000 round trips/s (50000 pings)\nask serial: 61.5 us/ask (2000 asks)\nbulk: 512.0 MiB/s\n"
+        self.assertEqual(
+            cluster_rows(output, "test"), {"pipelined": 500000.0, "ask serial": 61500.0, "bulk": 1953125.0}
+        )
+
+    def test_an_unknown_unit_fails(self):
+        with self.assertRaises(SystemExit):
+            cluster_rows("serial: 3 ms/round trip\n", "test")
+
+    def test_a_row_printed_twice_fails(self):
+        with self.assertRaises(SystemExit):
+            cluster_rows("bulk: 1 MiB/s\nbulk: 2 MiB/s\n", "test")
+
+    def test_output_without_a_row_fails(self):
+        with self.assertRaises(SystemExit):
+            cluster_rows("ADDR 127.0.0.1:1\n", "test")
+
+    def test_a_run_records_every_row_of_every_run_with_a_rotating_order(self):
+        binaries = {name: self.bench(name) for name in ("B", "C", "A")}
+        args = self.args()
+        run_cluster(args, binaries)
+        lines = [json.loads(line) for line in open(args.out)]
+        self.assertEqual(len(lines), 3 * 2 * 3 * 3)
+        self.assertEqual([line["binary"] for line in lines[:9:3]], ["B", "C", "A"])
+        self.assertEqual([line["binary"] for line in lines[18:27:3]], ["C", "A", "B"])
+        self.assertEqual([line["row"] for line in lines[:3]], ["pipelined", "serial", "bulk"])
+        self.assertEqual((lines[10]["shift"], lines[10]["row"], lines[10]["median_ns"]), (256, "serial", 306000.0))
+
+    def test_a_row_of_the_base_missing_in_the_candidate_fails(self):
+        binaries = {"B": self.bench("B"), "C": self.bench("C", rows=self.ROWS[:2]), "A": self.bench("A")}
+        with self.assertRaises(SystemExit):
+            run_cluster(self.args(shifts=(0,), repetitions=1), binaries)
+
+    def test_a_row_only_the_candidate_prints_is_not_swept(self):
+        extra = self.ROWS + [("new", 1, "asks/s")]
+        binaries = {"B": self.bench("B"), "C": self.bench("C", rows=extra), "A": self.bench("A")}
+        args = self.args(shifts=(0,), repetitions=1)
+        stderr = io.StringIO()
+        with redirect_stderr(stderr):
+            run_cluster(args, binaries)
+        self.assertNotIn("new", {json.loads(line)["row"] for line in open(args.out)})
+        self.assertIn("new", stderr.getvalue())
+
+    def test_a_process_with_too_few_shifted_threads_fails(self):
+        binaries = {name: self.bench(name, threads=(10, 2, 12)) for name in ("B", "C", "A")}
+        with self.assertRaises(SystemExit):
+            run_cluster(self.args(shifts=(0,), repetitions=1), binaries)
+
+    def test_a_process_reporting_no_thread_count_fails(self):
+        binaries = {name: self.bench(name, threads=(10, None, 12)) for name in ("B", "C", "A")}
+        with self.assertRaises(SystemExit):
+            run_cluster(self.args(shifts=(0,), repetitions=1), binaries)
+
+    def test_lines_counts_every_printed_row(self):
+        stdout = io.StringIO()
+        with redirect_stdout(stdout):
+            sys.argv = ["sweep.py", "lines", "--kind", "cluster", self.bench("B")]
+            sweep.main()
+        self.assertEqual(int(stdout.getvalue()), 3 * len(sweep.SHIFTS) * sweep.CLUSTER_REPETITIONS * 3)
 
 
 if __name__ == "__main__":
