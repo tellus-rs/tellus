@@ -204,7 +204,7 @@ pub fn settled(version: u64) -> Result<bool, ReceptionistError> {
 /// Fails if the endpoint is not started.
 pub fn settlement() -> Result<Settlement, ReceptionistError> {
     let endpoint = endpoint::get().ok_or(ReceptionistError::EndpointNotStarted)?;
-    Ok(endpoint.receptionist().settlement())
+    Ok(current_settlement(endpoint))
 }
 
 /// What one change of the cluster publishes on the channel behind
@@ -253,12 +253,6 @@ impl Receptionist {
                 republished: Vec::new(),
             }),
         }
-    }
-
-    pub(crate) fn settlement(&self) -> Settlement {
-        let mut replicas = lock(&self.replicas);
-        self.resettle(&mut replicas);
-        replicas.settlement
     }
 
     /// Call after the watch was written, never while it is held. The state's channel send and the
@@ -723,6 +717,17 @@ where
     resolve(endpoint, &listing)
 }
 
+/// A caller must not hold a borrow of the cluster state watch.
+pub(crate) fn current_settlement(endpoint: &EndpointInner) -> Settlement {
+    let current = endpoint.state_rx().borrow().clone();
+    let receptionist = endpoint.receptionist();
+    let replicas = lock(&receptionist.replicas);
+    Settlement::new(
+        current.version(),
+        compute_settled(&current, receptionist.node, &replicas.map),
+    )
+}
+
 fn resolve_key_at<M>(
     endpoint: &EndpointInner,
     key: &Key<M>,
@@ -748,13 +753,8 @@ where
 }
 
 fn settled_at(endpoint: &EndpointInner, version: u64) -> bool {
-    let current = endpoint.state_rx().borrow().clone();
-    if current.version() != version {
-        return false;
-    }
-    let receptionist = endpoint.receptionist();
-    let replicas = lock(&receptionist.replicas);
-    compute_settled(&current, receptionist.node, &replicas.map)
+    let settlement = current_settlement(endpoint);
+    settlement.version() == version && settlement.settled()
 }
 
 fn compute_settled(state: &ClusterState, node: NodeId, map: &HashMap<NodeId, Replica>) -> bool {
@@ -1202,10 +1202,8 @@ mod tests {
         let endpoint = endpoint();
         let mut published = endpoint.published_changes();
         let first = NodeId::new(addr(2));
-        assert_eq!(
-            endpoint.receptionist().settlement(),
-            Settlement::new(0, true)
-        );
+        let (_, settlement, _) = endpoint.receptionist().snapshot();
+        assert_eq!(settlement, Settlement::new(0, true));
 
         up(endpoint, first);
         expect_state(&mut published, 1);
