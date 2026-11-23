@@ -1,9 +1,10 @@
 use crate::{
     ActorId, Incoming,
+    sync::CachePadded,
     watch::{ActorTerminated, TerminatedHandler},
 };
-use flume::Sender;
 use std::{
+    marker::PhantomData,
     num::NonZeroUsize,
     sync::{
         Arc,
@@ -12,27 +13,57 @@ use std::{
 };
 use thiserror::Error;
 
-pub(crate) struct CountedSender<T> {
-    tx: Sender<T>,
-    quota: Quota,
+pub(crate) trait Queue<T>: Clone {
+    fn push(&self, item: T) -> Result<(), T>;
+
+    fn is_closed(&self) -> bool;
+
+    fn len(&self) -> usize;
 }
 
-impl<T> CountedSender<T> {
-    pub(crate) fn new(tx: Sender<T>, quota: Quota) -> Self {
-        Self { tx, quota }
+impl<T> Queue<T> for flume::Sender<T> {
+    fn push(&self, item: T) -> Result<(), T> {
+        self.send(item).map_err(flume::SendError::into_inner)
+    }
+
+    fn is_closed(&self) -> bool {
+        flume::Sender::is_disconnected(self)
+    }
+
+    fn len(&self) -> usize {
+        flume::Sender::len(self)
+    }
+}
+
+pub(crate) struct CountedSender<T, Q = flume::Sender<T>> {
+    tx: Q,
+    quota: Quota,
+    _item: PhantomData<fn(T)>,
+}
+
+impl<T, Q> CountedSender<T, Q>
+where
+    Q: Queue<T>,
+{
+    pub(crate) fn new(tx: Q, quota: Quota) -> Self {
+        Self {
+            tx,
+            quota,
+            _item: PhantomData,
+        }
     }
 
     #[cfg_attr(feature = "hotpath", hotpath::measure)]
     pub(crate) fn try_send_counted(&self, item: T) -> Result<(), CountedSendError> {
         match self.quota.reserve() {
             Ok(reservation) => {
-                self.tx.send(item).map_err(|_| Disconnected)?;
+                self.tx.push(item).map_err(|_| Disconnected)?;
                 reservation.commit();
                 Ok(())
             }
 
             // A full quota never drains after termination!
-            Err(_) if self.tx.is_disconnected() => Err(Disconnected.into()),
+            Err(_) if self.tx.is_closed() => Err(Disconnected.into()),
 
             Err(full) => Err(full.into()),
         }
@@ -40,14 +71,14 @@ impl<T> CountedSender<T> {
 
     pub(crate) fn try_send_forced(&self, item: T) -> Result<(), Disconnected> {
         let reservation = self.quota.reserve_forced();
-        self.tx.send(item).map_err(|_| Disconnected)?;
+        self.tx.push(item).map_err(|_| Disconnected)?;
         reservation.commit();
 
         Ok(())
     }
 
     pub(crate) fn try_send_uncounted(&self, item: T) -> Result<(), Disconnected> {
-        self.tx.send(item).map_err(|_| Disconnected)
+        self.tx.push(item).map_err(|_| Disconnected)
     }
 
     pub(crate) fn len(&self) -> usize {
@@ -56,18 +87,23 @@ impl<T> CountedSender<T> {
 }
 
 // A derived `Clone` would needlessly require `T: Clone`.
-impl<T> Clone for CountedSender<T> {
+impl<T, Q> Clone for CountedSender<T, Q>
+where
+    Q: Clone,
+{
     fn clone(&self) -> Self {
         Self {
             tx: self.tx.clone(),
             quota: self.quota.clone(),
+            _item: PhantomData,
         }
     }
 }
 
-impl<M> TerminatedHandler for CountedSender<Incoming<M>>
+impl<M, Q> TerminatedHandler for CountedSender<Incoming<M>, Q>
 where
     M: Send + 'static,
+    Q: Queue<Incoming<M>> + Send + Sync + 'static,
 {
     fn handle_terminated(&self, actor_id: ActorId) -> Result<(), ActorTerminated> {
         self.try_send_uncounted(Incoming::Terminated(actor_id))
@@ -100,7 +136,7 @@ impl Quota {
     pub(crate) fn bounded(capacity: NonZeroUsize) -> Self {
         Self(Repr::Bounded {
             capacity,
-            count: Arc::new(AtomicUsize::new(0)),
+            count: Arc::new(CachePadded::new(AtomicUsize::new(0))),
         })
     }
 
@@ -161,7 +197,7 @@ enum Repr {
 
     Bounded {
         capacity: NonZeroUsize,
-        count: Arc<AtomicUsize>,
+        count: Arc<CachePadded<AtomicUsize>>,
     },
 }
 

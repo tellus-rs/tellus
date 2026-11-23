@@ -2222,7 +2222,7 @@ mod tests {
             mailbox
                 .split()
                 .0
-                .drain()
+                .close_and_drain()
                 .filter_map(|incoming| match incoming {
                     Incoming::Message(message) => Some(message),
                     Incoming::Terminated(_) => None,
@@ -2307,7 +2307,7 @@ mod tests {
         let received = second_mailbox
             .split()
             .0
-            .drain()
+            .close_and_drain()
             .filter_map(|incoming| match incoming {
                 Incoming::Message(message) => Some(message),
                 Incoming::Terminated(_) => None,
@@ -5164,7 +5164,7 @@ mod tests {
     /// A local actor which a peer's frames are delivered to, watching one of the peer's actors.
     struct Recipient {
         self_ref: SelfRef<u64>,
-        incoming_rx: flume::Receiver<Incoming<u64>>,
+        incoming_rx: crate::channel::Receiver<Incoming<u64>>,
         _watcher_registration: WatcherRegistration,
         received: Vec<Incoming<u64>>,
     }
@@ -6571,7 +6571,7 @@ mod tests {
         let order = mailbox
             .split()
             .0
-            .drain()
+            .close_and_drain()
             .map(|incoming| match incoming {
                 Incoming::Message(BlocksWhenDecoded(value)) => format!("Message({value})"),
                 Incoming::Terminated(_) => "Terminated".to_string(),
@@ -7138,7 +7138,7 @@ mod tests {
                 let (target, mailbox) =
                     SelfRef::<u64>::new(ActorId::new(), MailboxCapacity::Unbounded);
                 endpoint.registry().bind(target.actor_ref());
-                let (incoming_rx, _registration) = mailbox.split();
+                let (mut incoming_rx, _registration) = mailbox.split();
                 let frames = (0..FRAMES)
                     .map(|value| {
                         message(endpoint, target.actor_ref().actor_id(), value)

@@ -101,7 +101,7 @@ Benchmarks:
   feature; read the report as relative attribution, criterion stays the source of truth for
   absolute regressions.
 - `just profile-alloc-gate`: run the profiling workload with allocation tracking and fail unless
-  `tell`, `reserve` and `receive_incoming` allocate exactly 0 bytes; `profile-alloc-check <file>`
+  `tell`, `reserve`, `receive_incoming` and `mailbox::recv` allocate exactly 0 bytes; `profile-alloc-check <file>`
   applies that check to an existing JSON report. CI (`profile.yml`) runs each workload twice on a pinned runner image, toolchain and Valgrind package (`VALGRIND_VERSION`), since instruction counts compare only within one such environment. The first run is native and writes `native.json`. The second runs under Callgrind (x86_64 Linux only) with `HOTPATH_MERGE_REPORT` pointing at it. The merged report takes everything but the instruction counts from the native run. Instruction counts complement Criterion and do not show contention, since Valgrind serializes threads. It uploads the merged reports to hotpath Cloud as the `profile` and `profile_persistence` series (PR reports go through `hotpath-relay.yml`), which comments on every PR and posts a `hotpath / <benchmark>` check on its head commit. Under `pr_check = "fail"` in `hotpath/<benchmark>-policy.toml` that check fails only when a zero-alloc rule (an `alloc.total = "0 B"` budget) breaks; allocation regressions above 2% and instruction count changes above 3% are reported in the comment without failing it, and timing is listed (`judged = false`) but never judged. The profile jobs themselves pass unless a report is not merged or lacks instruction counts or timing, or, on `main`, the upload fails (`HOTPATH_UPLOAD=fail-on-error`, and the job checks that hotpath wrote the upload's response); make the check required to block merging. The steps of every profile job live in the composite action `.github/actions/hotpath-profile`.
 - `just profile-persistence` / `just profile-persistence-alloc`: the same for the persistence code
   (`tellus/examples/profile_persistence.rs`, features `hotpath` plus `persistence` and
@@ -112,19 +112,20 @@ Benchmarks:
   `replay_page`, which must stay allocation-free: `just profile-persistence-alloc-gate` runs the
   workload and fails on a violation, `profile-persistence-alloc-check <file>` applies that check
   to an existing JSON report, and CI enforces it as a budget that fails the `hotpath / profile_persistence` check in the same way.
-- `just profile-criterion <bench> <id> <iterations> [features]`: run one criterion benchmark
-  through hotpath's criterion adapter (the benches import `hotpath::criterion`), executing its
-  routine exactly `iterations` times in criterion's test mode and writing one hotpath report.
-  CI (`profile-criterion.yml`) runs it for `ping_pong/pairs/1` the same way `profile.yml` runs the
+- `just profile-criterion <bench> <id> <iterations> [features]`: run one criterion benchmark through
+  hotpath's criterion adapter (the benches import `hotpath::criterion`), executing its routine
+  exactly `iterations` times in criterion's test mode and writing one hotpath report. CI
+  (`profile-criterion.yml`) runs it for `ping_pong/pairs/1` the same way `profile.yml` runs the
   profile examples (native run, then a merged Callgrind run on the same pinned environment), as the
-  `criterion-ping_pong-pairs-1` series, judged under `hotpath/criterion-ping_pong-pairs-1-policy.toml`
-  with `pr_check = "fail"` and relayed by `hotpath-relay.yml`. It covers what the profile examples
-  do not exercise: spawning, watching and termination under steady messaging. It never builds a
-  mailbox backlog, so its allocations and instruction counts repeat across runs; benchmarks that
-  flood a mailbox (`flood/bounded`, `persist/snapshots`) are left out, since how far flume's queue
-  grows depends on the scheduler, which makes their allocations vary by run. Its zero-alloc budgets
-  cover `tell` and `reserve`, but not `receive_incoming`, which allocates in this benchmark. Without
-  `HOTPATH_CRITERION_ITERATIONS` the adapter forwards to criterion, so `just bench` is unaffected.
+  `criterion-ping_pong-pairs-1` series, judged under
+  `hotpath/criterion-ping_pong-pairs-1-policy.toml` with `pr_check = "fail"` and relayed by
+  `hotpath-relay.yml`. It covers what the profile examples do not exercise: spawning, watching and
+  termination under steady messaging. It never builds a mailbox backlog, so its allocations and
+  instruction counts repeat across runs; benchmarks that flood a mailbox (`flood/bounded`,
+  `persist/snapshots`) are left out, since how far a mailbox's queue grows depends on the scheduler,
+  which makes their allocations vary by run. Its zero-alloc budgets cover `tell`, `reserve` and
+  `mailbox::recv`, but not `receive_incoming`, which allocates in this benchmark. Without `HOTPATH_CRITERION_ITERATIONS`
+  the adapter forwards to criterion, so `just bench` is unaffected.
 - `just check-hotpath-policies`: validate every policy in `hotpath/` against hotpath.rs with
   `hotpath cloud validate-policy`, which needs the hotpath CLI built with its `cloud` feature. The
   server refuses every upload judged under a policy it finds invalid. CI (`hotpath-policy.yml`)
@@ -432,14 +433,15 @@ cross-file invariants:
   loop neither polls a sleep nor counts items, the unstashed loop holds no stash code, and no loop
   checks a mode. `start_timer` and `cancel_timer` exist only on `ActorContext<M, Timed, S>`, `stash`
   and `unstash_all` only on `ActorContext<M, T, Stashed>`.
-- `mailbox.rs` is where messaging and death watch meet: one FIFO flume channel per actor, always
-  unbounded underneath, with a bounded capacity enforced by a reservation counter (`quota.rs`) in
-  front. Terminated signals bypass the capacity check but ride the same FIFO channel as ordinary
-  messages; that shared queue is the entire mechanism behind the ordering guarantee (a terminated
-  signal arrives behind all messages the terminated actor delivered to the watcher). Death watch
-  itself lives in `watch.rs` (`Watcher`, `WatcherRegistry` and the `TerminatedHandler` a watcher
-  runs); the mailbox half holds the registry and implements that trait for its own sender, and
-  registration closes atomically with termination, so watch is race-free.
+- `mailbox.rs` is where messaging and death watch meet: one FIFO channel per actor (`channel.rs`:
+  one lock, one waker slot, a receiver taking the queue in batches), always unbounded underneath,
+  with a bounded capacity enforced by a reservation counter (`quota.rs`) in front. Terminated
+  signals bypass the capacity check but ride the same FIFO channel as ordinary messages; that shared
+  queue is the entire mechanism behind the ordering guarantee (a terminated signal arrives behind
+  all messages the terminated actor delivered to the watcher). Death watch itself lives in
+  `watch.rs` (`Watcher`, `WatcherRegistry` and the `TerminatedHandler` a watcher runs); the mailbox
+  half holds the registry and implements that trait for its own sender, and registration closes
+  atomically with termination, so watch is race-free.
 - `stash.rs` holds the sealed `StashMode` with `Unstashed`, whose table in the context is `()`, and
   `Stashed`, whose table is the `Stash`: what an actor deferred with `ActorContext::stash`, what
   `unstash_all` handed back, and the requests of the item in hand. The run loop settles those with

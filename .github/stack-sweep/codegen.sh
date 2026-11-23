@@ -19,7 +19,8 @@ renames=("$@")
 # A selection for reading, not a coverage claim; every pattern must match in both binaries.
 patterns=(
   '^<tellus::actor_ref::ActorRef<[^>]*>>::tell$'
-  '^<flume::Shared<tellus::actor::Incoming<[^>]*>>>::(send|recv)::<'
+  '^<tellus::channel::Sender<tellus::actor::Incoming<[^>]*>> as tellus::quota::Queue<[^>]*>>>::push$'
+  '^<tellus::channel::Receiver<tellus::actor::Incoming<[^>]*>>>::poll_recv$'
 )
 case $bench in
   messaging)

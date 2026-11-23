@@ -77,7 +77,7 @@ fn busy_actor_can_be_stopped() {
     );
 }
 
-/// A permanently ready Flume receive must still charge Tokio's cooperative budget. The external
+/// A permanently ready mailbox receive must still charge Tokio's cooperative budget. The external
 /// stop keeps a regression from hanging the test process: without fairness it wins and fails.
 #[test]
 fn a_self_telling_actor_yields_to_a_current_thread_timer() {

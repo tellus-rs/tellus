@@ -166,7 +166,7 @@ profile-alloc-gate out="target/hotpath/profile.json":
 
 # The steady-state messaging path must not allocate per message; "0 B" is exact, not rounded.
 profile-alloc-check file:
-    just _alloc-check "{{ file }}" tellus::actor_ref::tell tellus::quota::reserve tellus::actor_context::receive_incoming
+    just _alloc-check "{{ file }}" tellus::actor_ref::tell tellus::quota::reserve tellus::actor_context::receive_incoming tellus::mailbox::recv
 
 profile-persistence-alloc-gate out="target/hotpath/profile_persistence.json":
     #!/usr/bin/env bash
