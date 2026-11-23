@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795470069008,
+  "lastUpdate": 1795470071673,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -43725,6 +43725,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5072027,
             "range": "± 222545",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "49be29c602e39db1f9ce72f80b5b89a874418f62",
+          "message": "Merge pull request #537 from tellus-rs/build/bump-cookie-and-url\n\nbuild(deps): bump cookie to 0.18.3 and url to 2.5.9",
+          "timestamp": "2026-11-23T23:32:42+02:00",
+          "tree_id": "cac0db7d874504673f1154e971b8a4476cbc0f7d",
+          "url": "https://github.com/tellus-rs/tellus/commit/49be29c602e39db1f9ce72f80b5b89a874418f62"
+        },
+        "date": 1795470071061,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 28016331,
+            "range": "± 1772319",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27178595,
+            "range": "± 1531439",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5546163,
+            "range": "± 362521",
             "unit": "ns/iter"
           }
         ]
