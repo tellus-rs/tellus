@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795548921335,
+  "lastUpdate": 1795548924829,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -38677,6 +38677,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 81563,
             "range": "± 2894",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "279eb8f238bdea09505d8718393782f822e114cc",
+          "message": "Merge pull request #542 from tellus-rs/test/four-gaps\n\ntest: close four gaps in the stash, persistence and fairness tests",
+          "timestamp": "2026-11-24T21:26:45+02:00",
+          "tree_id": "7a2b25850bb261c40e76ea2730a5479a0d3d7520",
+          "url": "https://github.com/tellus-rs/tellus/commit/279eb8f238bdea09505d8718393782f822e114cc"
+        },
+        "date": 1795548924588,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2815821,
+            "range": "± 12735",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2821562,
+            "range": "± 28037",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 783742,
+            "range": "± 23406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 105655,
+            "range": "± 5283",
             "unit": "ns/iter"
           }
         ]
