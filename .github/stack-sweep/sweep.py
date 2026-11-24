@@ -13,7 +13,9 @@ latency scaled, so a lower value is better for every row of either kind.
 """
 
 import argparse
+import ctypes
 import json
+import mmap
 import os
 import re
 import shutil
@@ -27,6 +29,9 @@ REPETITIONS = 3
 CLUSTER_REPETITIONS = 5
 ORDER = ["B", "C", "A"]
 WORKER_THREADS = 4
+EVICT_ATTEMPTS = 20
+EVICT_PAUSE = 0.05
+LIBC = ctypes.CDLL(None, use_errno=True)
 CLUSTER_LINE = re.compile(r"^([a-z][a-z ]*): ([0-9]+(?:\.[0-9]+)?) ([^()]+?)(?: \(.*\))?$")
 
 
@@ -207,13 +212,15 @@ def cluster_rows(output, context):
 def run_cluster(args, binaries):
     preload = os.path.abspath(args.preload)
     workdir = os.path.abspath(args.workdir)
+    residency_log = os.path.join(os.path.dirname(os.path.abspath(args.out)), "residency.log")
     rows = None
     unswept = set()
-    with open(args.out, "a") as out:
+    with open(args.out, "a") as out, open(residency_log, "a") as residency:
         for repetition in range(args.repetitions):
             order = ORDER[repetition % 3 :] + ORDER[: repetition % 3]
             for shift in args.shifts:
                 for name in order:
+                    evict(binaries, residency, f"repetition {repetition} shift {shift} {name}")
                     measured = measure_cluster(binaries[name], name, shift, preload, workdir, args.workers)
                     if rows is None:
                         rows = list(measured)
@@ -234,6 +241,46 @@ def run_cluster(args, binaries):
                     out.flush()
     if unswept:
         print(f"not swept, since the base does not print them: {sorted(unswept)}", file=sys.stderr)
+
+
+def evict(binaries, log, context):
+    """Drops every binary from the page cache; exits unless none of their pages stays resident."""
+    before = resident_bytes(binaries)
+    for attempt in range(1, EVICT_ATTEMPTS + 1):
+        for path in binaries.values():
+            fd = os.open(path, os.O_RDONLY)
+            try:
+                os.fsync(fd)
+                os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_DONTNEED)
+            finally:
+                os.close(fd)
+        after = resident_bytes(binaries)
+        if not any(after.values()):
+            break
+        time.sleep(EVICT_PAUSE)
+    log.write(json.dumps({"context": context, "before": before, "after": after, "attempts": attempt}) + "\n")
+    log.flush()
+    if any(after.values()):
+        sys.exit(f"{context}: eviction left resident bytes {after} after {attempt} attempts")
+
+
+def resident_bytes(binaries):
+    return {name: resident_file_bytes(path) for name, path in binaries.items()}
+
+
+def resident_file_bytes(path):
+    size = os.path.getsize(path)
+    pages = (size + mmap.PAGESIZE - 1) // mmap.PAGESIZE
+    vector = (ctypes.c_ubyte * pages)()
+    with open(path, "rb") as file, mmap.mmap(file.fileno(), size, access=mmap.ACCESS_COPY) as mapping:
+        start = ctypes.c_char.from_buffer(mapping)
+        try:
+            failed = LIBC.mincore(ctypes.c_void_p(ctypes.addressof(start)), ctypes.c_size_t(size), vector)
+        finally:
+            del start
+    if failed:
+        sys.exit(f"mincore {path}: {os.strerror(ctypes.get_errno())}")
+    return sum(flag & 1 for flag in vector) * mmap.PAGESIZE
 
 
 def measure_cluster(binary, name, shift, preload, workdir, workers):

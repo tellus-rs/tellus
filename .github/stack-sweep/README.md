@@ -56,7 +56,12 @@ prints every row in one run, with no `--list`, so each run measures all of them.
 ones the base prints, in its order; the candidate and the copy must print each of them, and a row
 only the candidate prints is named in the log and not swept. A row is recorded in nanoseconds per
 unit, a throughput (`round trips/s`, `asks/s`, `MiB/s`) inverted and a latency (`us/...`) scaled, so
-a positive figure is a slowdown for every row, as for the Criterion benches. A cluster run sweeps 7
+a positive figure is a slowdown for every row, as for the Criterion benches. Before every run of the
+cluster bench, `sweep.py` drops the three executables from the page cache and checks with `mincore`
+that none of their pages stays resident, retrying for up to a second. A job whose check fails exits
+without a figure, and `residency.log` in its artifact records every check. Without the eviction,
+an executable copy kept an offset of up to 5% on the serial rows for a whole job on Neoverse-N2,
+whichever slot it ran in. A cluster run sweeps 7
 rows, `pipelined`, `serial`, `ask pipelined`, `ask serial`, `actor ask pipelined`,
 `actor ask serial` and `bulk`: 240 runs per job.
 
