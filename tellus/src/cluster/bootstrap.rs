@@ -12,6 +12,8 @@ use crate::{
     timers,
 };
 use derive_more::Debug;
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     collections::BTreeSet,
     error::Error,
@@ -327,13 +329,13 @@ struct UncheckedBootstrapConfig {
     #[serde(default)]
     min_nodes: Option<NonZeroUsize>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     settle: Option<Duration>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     resolve_interval: Option<Duration>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     join_attempt_timeout: Option<Duration>,
 
     #[serde(default)]
@@ -679,7 +681,7 @@ fn deserialize_probe_interval<'de, D>(deserializer: D) -> Result<Option<Option<D
 where
     D: serde::Deserializer<'de>,
 {
-    humantime_serde::option::deserialize(deserializer).map(Some)
+    friendly::compact::optional::deserialize(deserializer).map(Some)
 }
 
 #[cfg(test)]

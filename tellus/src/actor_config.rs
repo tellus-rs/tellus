@@ -1,4 +1,6 @@
 use crate::backoff::Backoff;
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     num::{NonZeroU32, NonZeroUsize},
     time::Duration,
@@ -121,7 +123,7 @@ pub struct RestartPolicy {
     /// [RestartPolicy::DEFAULT_RESET_AFTER].
     #[cfg_attr(
         feature = "serde",
-        serde(default = "default_reset_after", with = "humantime_serde")
+        serde(default = "default_reset_after", with = "friendly::compact::required")
     )]
     pub reset_after: Duration,
 }
@@ -229,7 +231,7 @@ mod tests {
         }
     }
 
-    /// The snake_case variant names, the per-field defaults and the humantime duration format are
+    /// The snake_case variant names, the per-field defaults and the friendly duration format are
     /// a public configuration surface; this pins it down.
     #[cfg(feature = "serde")]
     #[test]

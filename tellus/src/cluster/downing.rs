@@ -3,6 +3,8 @@
 //! default is [KeepMajority], which resolves a partition toward its majority side.
 
 use crate::cluster::membership::{Member, MemberState};
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     ops::Deref,
     sync::Arc,
@@ -80,7 +82,7 @@ pub enum Downing {
     serde(default, deny_unknown_fields)
 )]
 pub struct KeepMajority {
-    #[cfg_attr(feature = "serde", serde(with = "humantime_serde"))]
+    #[cfg_attr(feature = "serde", serde(with = "friendly::compact::required"))]
     after: Duration,
 }
 
@@ -151,7 +153,7 @@ impl DowningProvider for KeepMajority {
     serde(deny_unknown_fields)
 )]
 pub struct DownAfterDeadline {
-    #[cfg_attr(feature = "serde", serde(with = "humantime_serde"))]
+    #[cfg_attr(feature = "serde", serde(with = "friendly::compact::required"))]
     after: Duration,
 }
 

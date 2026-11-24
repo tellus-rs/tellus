@@ -35,6 +35,8 @@ use crate::{
     timers,
 };
 use derive_more::Debug;
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     cell::Cell,
     collections::{BTreeMap, BTreeSet, HashMap, HashSet},
@@ -1954,10 +1956,10 @@ struct UncheckedEndpointConfig {
     #[serde(default)]
     app_version: Option<AppVersion>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     heartbeat_interval: Option<Duration>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     watch_refresh_interval: Option<Duration>,
 
     #[serde(default)]
@@ -1966,13 +1968,13 @@ struct UncheckedEndpointConfig {
     #[serde(default)]
     downing_provider: Option<DowningProviderConfig>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     down_retention: Option<Duration>,
 
     #[serde(default)]
     down_watermarks: Option<NonZeroUsize>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     leave_timeout: Option<Duration>,
 
     #[serde(default)]
@@ -1981,7 +1983,7 @@ struct UncheckedEndpointConfig {
     #[serde(default)]
     max_connect_attempts: Option<NonZeroU32>,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     ambiguous_join_bound: Option<Duration>,
 
     #[serde(default)]
@@ -4181,7 +4183,7 @@ mod tests {
 
         let json = r#"{
             "advertised_addr": "127.0.0.1:2552",
-            "watch_refresh_interval": "500000000000years"
+            "watch_refresh_interval": "5000000000000000h"
         }"#;
         assert!(serde_json::from_str::<EndpointConfig>(json).is_err());
 

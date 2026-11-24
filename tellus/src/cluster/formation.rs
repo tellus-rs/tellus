@@ -5,6 +5,8 @@
 //! inside a partition, as long as the universe holds every node. Its lowest-address rule makes the
 //! forming node unique among nodes deciding on the same universe.
 
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     borrow::Cow,
     collections::{BTreeSet, HashMap},
@@ -239,7 +241,7 @@ impl FormationProvider for Majority {
     serde(deny_unknown_fields)
 )]
 pub struct MajorityWithFallback {
-    #[cfg_attr(feature = "serde", serde(with = "humantime_serde"))]
+    #[cfg_attr(feature = "serde", serde(with = "friendly::compact::required"))]
     after: Duration,
 
     #[cfg_attr(feature = "serde", serde(skip))]

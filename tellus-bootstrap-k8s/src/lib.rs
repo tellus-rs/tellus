@@ -25,6 +25,8 @@
 #![warn(missing_docs, clippy::missing_errors_doc)]
 
 use derive_more::Debug;
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use k8s_openapi::api::core::v1::Pod;
 use kube::{Api, Client, api::ListParams};
 use std::{
@@ -214,7 +216,7 @@ struct UncheckedPods {
 
     port: Port,
 
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     list_timeout: Option<Duration>,
 }
 
