@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795503402959,
+  "lastUpdate": 1795503404790,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -38341,6 +38341,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 109463,
             "range": "± 2653",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ff761be1a392e31e0f370bb83d7abc38f2ee4c5a",
+          "message": "Merge pull request #538 from tellus-rs/build/drop-flume\n\nbuild(deps): drop flume",
+          "timestamp": "2026-11-24T08:48:28+02:00",
+          "tree_id": "605135e069428cc7586e76ba5289ae3522a96c7c",
+          "url": "https://github.com/tellus-rs/tellus/commit/ff761be1a392e31e0f370bb83d7abc38f2ee4c5a"
+        },
+        "date": 1795503404481,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3481160,
+            "range": "± 161140",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3538299,
+            "range": "± 181490",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1091919,
+            "range": "± 41808",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 135749,
+            "range": "± 4486",
             "unit": "ns/iter"
           }
         ]
