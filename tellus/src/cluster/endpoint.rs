@@ -608,7 +608,7 @@ pub(crate) struct EndpointInner {
     config: EndpointConfig,
     registry: Arc<Registry>,
     lanes: Lanes,
-    inbound_readers: tokio::sync::Mutex<HashMap<SocketAddr, InboundReader>>,
+    inbound_readers: tokio::sync::Mutex<HashMap<NodeId, InboundReader>>,
     membership: Membership,
     update_lock: Mutex<()>,
     state_tx: watch::Sender<Arc<ClusterState>>,
@@ -1361,6 +1361,11 @@ impl EndpointInner {
     }
 
     #[cfg(test)]
+    pub(crate) async fn inbound_reading(&self, peer: NodeId) -> bool {
+        self.inbound_readers.lock().await.contains_key(&peer)
+    }
+
+    #[cfg(test)]
     pub(crate) fn departure_awaited(&self, peer: NodeId) -> bool {
         lock(&self.departures)
             .deferrals
@@ -1391,24 +1396,36 @@ impl EndpointInner {
             .bind(addr, generation, peer, || self.membership.is_down(peer));
     }
 
-    /// Held from the old reader's shutdown to the new one's spawn, else two readers overlap.
-    pub(crate) async fn supersede_inbound_reader<F>(&self, addr: SocketAddr, spawn_reader: F)
+    /// Spares an older incarnation's reader while its departure is deferred here. Held from the
+    /// superseded readers' shutdown to the new one's spawn, else one incarnation has two readers.
+    pub(crate) async fn supersede_inbound_reader<F, R>(&'static self, peer: NodeId, read: F)
     where
-        F: FnOnce(watch::Receiver<()>) -> JoinHandle<()>,
+        F: FnOnce(watch::Receiver<()>) -> R,
+        R: Future<Output = ()> + Send + 'static,
     {
         let mut readers = self.inbound_readers.lock().await;
 
-        if let Some(superseded) = readers.remove(&addr) {
+        let superseded_readers = readers
+            .extract_if(|node, _| {
+                peer.covers(*node) && (*node == peer || !self.departure_deferred(*node))
+            })
+            .collect::<Vec<_>>();
+        for (node, superseded) in superseded_readers {
             let _ = superseded.shutdown_tx.send(());
             if let Err(error) = superseded.reader.await {
-                warn!(peer_addr = %addr, %error, "superseded inbound reader panicked");
+                warn!(peer = %node, %error, "superseded inbound reader panicked");
             }
         }
 
         let (shutdown_tx, shutdown_rx) = watch::channel(());
-        let reader = spawn_reader(shutdown_rx);
+        let shutdown = shutdown_rx.clone();
+        let read = read(shutdown_rx);
+        let reader = task::spawn(async move {
+            read.await;
+            self.remove_inbound_reader(peer, shutdown);
+        });
         readers.insert(
-            addr,
+            peer,
             InboundReader {
                 shutdown_tx,
                 reader,
@@ -1483,6 +1500,20 @@ impl EndpointInner {
     /// `true` if this call removed the lane, i.e. it was still the address's current one.
     pub(crate) fn remove_lane(&self, addr: SocketAddr, generation: Generation) -> bool {
         self.lanes.remove(addr, generation)
+    }
+
+    /// Removes the entry of the reader `shutdown` belongs to, unless a reconnect has replaced it.
+    /// Locks in a task of its own, since a superseding connection holds the lock while it awaits
+    /// the reader.
+    fn remove_inbound_reader(&'static self, peer: NodeId, shutdown: watch::Receiver<()>) {
+        task::spawn(async move {
+            let mut readers = self.inbound_readers.lock().await;
+            if readers.get(&peer).is_some_and(|registered| {
+                registered.shutdown_tx.subscribe().same_channel(&shutdown)
+            }) {
+                readers.remove(&peer);
+            }
+        });
     }
 
     /// Runs the deferred death of a departed peer once its last inbound connection has drained,

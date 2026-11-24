@@ -500,22 +500,20 @@ where
     endpoint.unrefuse(peer.addr());
 
     endpoint
-        .supersede_inbound_reader(peer.addr(), |shutdown_rx| {
-            task::spawn(async move {
-                let severed = read_streams(
-                    connection,
-                    frame_sender,
-                    frame_receiver,
-                    peer,
-                    Admitted { liveness, inbound },
-                    endpoint,
-                    shutdown_rx,
-                )
-                .await;
-                if let Some(generation) = severed {
-                    endpoint.note_severed(peer.addr(), ConnectionDirection::Inbound, generation);
-                }
-            })
+        .supersede_inbound_reader(peer, |shutdown_rx| async move {
+            let severed = read_streams(
+                connection,
+                frame_sender,
+                frame_receiver,
+                peer,
+                Admitted { liveness, inbound },
+                endpoint,
+                shutdown_rx,
+            )
+            .await;
+            if let Some(generation) = severed {
+                endpoint.note_severed(peer.addr(), ConnectionDirection::Inbound, generation);
+            }
         })
         .await;
 }
@@ -5269,6 +5267,17 @@ mod tests {
         .expect("the condition holds in time");
     }
 
+    /// Waits until a reader of the node's inbound connection has started, or until none runs.
+    async fn eventually_reading(endpoint: &EndpointInner, node: NodeId, reading: bool) {
+        timeout(Duration::from_secs(5), async {
+            while endpoint.inbound_reading(node).await != reading {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the reader starts or ends in time");
+    }
+
     fn message(endpoint: &EndpointInner, target: ActorId, value: u64) -> Frame<'static> {
         Frame::Message {
             target,
@@ -5614,6 +5623,174 @@ mod tests {
         drop(connection.close());
         recipient.receive(1).await;
         assert_eq!(recipient.received(), [None]);
+    }
+
+    /// A reconnect supersedes the reader of its own incarnation: once the reconnect is read, the
+    /// earlier connection is not. The superseded reader's end leaves the reconnect's reader
+    /// registered, so the next reconnect supersedes that one in turn.
+    #[tokio::test]
+    async fn a_reconnect_supersedes_the_reader_of_its_own_incarnation() {
+        let endpoint = formed(1);
+        let first = InboundPeer::admitted_by(endpoint, 2).await;
+        let node = first.node;
+        let mut recipient = Recipient::watching(endpoint, node, ActorId::new());
+        let first_stream = first.open_stream();
+
+        let second = InboundPeer::handshaking(endpoint, node, HandshakeIntent::Member)
+            .await
+            .expect("the reconnect is admitted");
+        eventually(|| first_stream.0.is_closed()).await;
+        let second_stream = second.open_stream();
+        second_stream.send(&message(endpoint, recipient.id(), 2));
+        recipient.receive(1).await;
+
+        let third = InboundPeer::handshaking(endpoint, node, HandshakeIntent::Member)
+            .await
+            .expect("the next reconnect is admitted");
+        eventually(|| second_stream.0.is_closed()).await;
+        let third_stream = third.open_stream();
+        third_stream.send(&message(endpoint, recipient.id(), 3));
+        recipient.receive(2).await;
+        assert_eq!(recipient.received(), [Some(2), Some(3)]);
+        assert!(endpoint.inbound_reading(node).await);
+        drop(first);
+    }
+
+    /// A successor admitted at the address of a Down predecessor, by a join or as a member,
+    /// supersedes the predecessor's reader before its own reader starts.
+    #[tokio::test]
+    async fn a_successor_supersedes_the_reader_of_a_down_predecessor() {
+        for intent in [HandshakeIntent::Join, HandshakeIntent::Member] {
+            let endpoint = formed(1);
+            let predecessor = InboundPeer::admitted_by(endpoint, 2).await;
+            let stream = predecessor.open_stream();
+            eventually_reading(endpoint, predecessor.node, true).await;
+
+            let successor = NodeId::new(addr(2));
+            if intent == HandshakeIntent::Member {
+                membership::on_gossip(endpoint, &[Member::new(successor, MemberState::Up)]);
+            }
+            let _successor = InboundPeer::handshaking(endpoint, successor, intent)
+                .await
+                .expect("the successor is admitted");
+            eventually_reading(endpoint, successor, true).await;
+
+            assert_eq!(
+                endpoint.membership().state(predecessor.node),
+                Some(MemberState::Down),
+                "{intent:?}"
+            );
+            assert!(
+                !endpoint.inbound_reading(predecessor.node).await,
+                "{intent:?}: the predecessor's reader has ended"
+            );
+            assert!(!endpoint.inbound_open(predecessor.node), "{intent:?}");
+            assert!(stream.0.is_closed(), "{intent:?}");
+        }
+    }
+
+    /// A successor admitted at the address of a node whose departure is deferred, by a join or as
+    /// a member, leaves the departing node's reader running. What the departing node's connection
+    /// carries once the successor is read is still delivered, and the death follows its close.
+    #[tokio::test]
+    async fn a_successor_at_a_departing_address_leaves_its_reader_running() {
+        for intent in [HandshakeIntent::Join, HandshakeIntent::Member] {
+            let endpoint = formed(1);
+            let leaver = InboundPeer::admitted_by(endpoint, 2).await;
+            let node = leaver.node;
+            let stopped = ActorId::new();
+            let mut recipient = Recipient::watching(endpoint, node, stopped);
+            let stream = leaver.open_stream();
+            leaver.send(&departure(node));
+            eventually(|| endpoint.departure_deferred(node)).await;
+
+            let successor = NodeId::new(addr(2));
+            if intent == HandshakeIntent::Member {
+                membership::on_gossip(endpoint, &[Member::new(successor, MemberState::Up)]);
+            }
+            let _successor = InboundPeer::handshaking(endpoint, successor, intent)
+                .await
+                .expect("the successor is admitted");
+            eventually_reading(endpoint, successor, true).await;
+            assert!(
+                endpoint.departure_deferred(node),
+                "{intent:?}: the departure still waits for the leaver's connection"
+            );
+            assert!(
+                endpoint.inbound_reading(node).await,
+                "{intent:?}: the leaver's reader still runs"
+            );
+
+            stream.send(&message(endpoint, recipient.id(), 7));
+            stream.send(&Frame::Terminated {
+                target: stopped,
+                watcher: recipient.id(),
+            });
+            drop((stream, leaver));
+            eventually(|| !endpoint.departure_deferred(node)).await;
+            assert_eq!(recipient.received(), [Some(7), None], "{intent:?}");
+            assert!(endpoint.membership().is_up(successor), "{intent:?}");
+            assert!(endpoint.inbound_reading(successor).await, "{intent:?}");
+        }
+    }
+
+    /// A departed node's connection admitted to drain after its successor's reader has started
+    /// leaves the successor's reader running: what the successor's connection carries afterward
+    /// is still delivered, and the departure drains as usual.
+    #[tokio::test]
+    async fn a_drain_admitted_after_the_successor_leaves_the_successors_reader_running() {
+        let endpoint = formed(1);
+        let leaver = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(leaver));
+        let mut recipient = Recipient::watching(endpoint, leaver, ActorId::new());
+        membership::on_gossip(endpoint, &[Member::new(leaver, MemberState::Left)]);
+        assert!(endpoint.departure_deferred(leaver));
+
+        let successor =
+            InboundPeer::handshaking(endpoint, NodeId::new(addr(2)), HandshakeIntent::Join)
+                .await
+                .expect("the successor is admitted");
+        eventually_reading(endpoint, successor.node, true).await;
+        let successor_stream = successor.open_stream();
+        let mut successor_recipient = Recipient::watching(endpoint, successor.node, ActorId::new());
+
+        let mut drain = InboundPeer::handshaking(endpoint, leaver, HandshakeIntent::Member)
+            .await
+            .expect("the leaver is admitted to drain");
+        eventually_reading(endpoint, leaver, true).await;
+        assert!(
+            endpoint.inbound_reading(successor.node).await,
+            "the successor's reader still runs"
+        );
+        successor_stream.send(&message(endpoint, successor_recipient.id(), 1));
+        successor_recipient.receive(1).await;
+        assert_eq!(successor_recipient.received(), [Some(1)]);
+
+        let stream = drain.open_stream();
+        stream.send(&message(endpoint, recipient.id(), 2));
+        drain.send(&Frame::Drained { data_streams: 1 });
+        drop(stream);
+        drain.drain_ack().await;
+        drop(drain.close());
+        recipient.receive(2).await;
+        assert_eq!(recipient.received(), [Some(2), None]);
+        assert!(endpoint.membership().is_up(successor.node));
+        assert!(endpoint.inbound_reading(successor.node).await);
+        assert_eq!(successor_recipient.received(), [Some(1)]);
+    }
+
+    /// A reader is forgotten once it has ended, so the endpoint holds no more readers than it has
+    /// connections to read.
+    #[tokio::test]
+    async fn an_ended_reader_is_forgotten() {
+        let endpoint = formed(1);
+        let peer = InboundPeer::admitted_by(endpoint, 2).await;
+        let node = peer.node;
+        eventually_reading(endpoint, node, true).await;
+
+        drop(peer.close());
+        eventually_reading(endpoint, node, false).await;
+        assert!(!endpoint.inbound_open(node));
     }
 
     /// A departed incarnation is admitted with a Member handshake only while its departure is

@@ -486,6 +486,9 @@ once, after the last connection's readers have finished: pending asks fail, the 
 registrations are evicted, the remaining watchers get synthesized signals. A reconnect which
 supersedes a reader takes over its drain, since the superseded reader is no longer the last
 connection. One abandoned before its reader started has drained nothing and does not end the wait.
+While the departure is deferred, only a reconnect of the leaver itself supersedes its reader. A
+successor admitted at the leaver's address meanwhile gets a reader of its own beside the leaver's,
+whichever of the two connections was admitted first.
 Without any connection from the leaver, the death waits for one, up to the same deadline. A death
 which runs at that deadline is logged as a warning only where a connection of the leaver was
 awaited, since the leaver was Up here or has connected to drain. The death of a leaver whose
