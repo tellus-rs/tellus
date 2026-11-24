@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795553839639,
+  "lastUpdate": 1795553842535,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -39013,6 +39013,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 141304,
             "range": "± 13288",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "ddd35d1a01677bd1812f637c95a1ca1f501930ab",
+          "message": "Merge pull request #551 from tellus-rs/build/replace-humantime-with-jiff\n\nbuild(deps)!: replace humantime-serde with jiff",
+          "timestamp": "2026-11-24T22:49:10+02:00",
+          "tree_id": "508852fbf65cbb8df63a71b138a3caa1161e741f",
+          "url": "https://github.com/tellus-rs/tellus/commit/ddd35d1a01677bd1812f637c95a1ca1f501930ab"
+        },
+        "date": 1795553841943,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3466591,
+            "range": "± 198786",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3596034,
+            "range": "± 137572",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1083642,
+            "range": "± 9030",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 134797,
+            "range": "± 4141",
             "unit": "ns/iter"
           }
         ]
