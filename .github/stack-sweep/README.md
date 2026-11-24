@@ -132,7 +132,7 @@ runs of #188 did, but only the null mode asserts it.
 builds the bench of both commits with v0 symbol mangling, each in its own worktree and target
 directory under `target/`. It then runs:
 
-- `fncounts.py`: per-function instruction counts of tellus, flume and the bench, with the functions
+- `fncounts.py`: per-function instruction counts of tellus and the bench, with the functions
   only in one binary and the name collisions;
 - `fndiff.py`: the diff of each function on a per-message path kept in the script, one list per
   bench. Every pattern must match in both binaries, and a collision among the matches fails it.

@@ -14,7 +14,7 @@ from disasm import load, renames_from
 parser = argparse.ArgumentParser()
 parser.add_argument("base")
 parser.add_argument("candidate")
-parser.add_argument("--select", default=r"tellus|flume|messaging|persistence")
+parser.add_argument("--select", default=r"tellus|messaging|persistence")
 parser.add_argument("--rename", action="append", help="REGEX=REPLACEMENT, applied to the candidate")
 args = parser.parse_args()
 

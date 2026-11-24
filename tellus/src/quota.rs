@@ -21,21 +21,7 @@ pub(crate) trait Queue<T>: Clone {
     fn len(&self) -> usize;
 }
 
-impl<T> Queue<T> for flume::Sender<T> {
-    fn push(&self, item: T) -> Result<(), T> {
-        self.send(item).map_err(flume::SendError::into_inner)
-    }
-
-    fn is_closed(&self) -> bool {
-        flume::Sender::is_disconnected(self)
-    }
-
-    fn len(&self) -> usize {
-        flume::Sender::len(self)
-    }
-}
-
-pub(crate) struct CountedSender<T, Q = flume::Sender<T>> {
+pub(crate) struct CountedSender<T, Q> {
     tx: Q,
     quota: Quota,
     _item: PhantomData<fn(T)>,
@@ -203,7 +189,10 @@ enum Repr {
 
 #[cfg(test)]
 mod tests {
-    use crate::quota::{CountedSendError, CountedSender, Quota};
+    use crate::{
+        channel::make_channel,
+        quota::{CountedSendError, CountedSender, Quota},
+    };
     use std::num::NonZeroUsize;
 
     /// A full quota whose receiver is gone reports the disconnect rather than the full quota: the
@@ -211,7 +200,7 @@ mod tests {
     /// forever.
     #[test]
     fn disconnect_overrides_full() {
-        let (item_tx, item_rx) = flume::unbounded();
+        let (item_tx, item_rx) = make_channel();
         let item_tx = CountedSender::new(item_tx, Quota::bounded(NonZeroUsize::MIN));
 
         assert!(item_tx.try_send_counted(()).is_ok());
@@ -271,7 +260,7 @@ mod tests {
     /// this pins the manual [Clone] impl, which must clone the quota, never rebuild it.
     #[test]
     fn sender_clones_share_the_quota() {
-        let (item_tx, _item_rx) = flume::unbounded();
+        let (item_tx, _item_rx) = make_channel();
         let item_tx = CountedSender::new(item_tx, Quota::bounded(NonZeroUsize::MIN));
         let clone = item_tx.clone();
 
@@ -286,7 +275,7 @@ mod tests {
     /// costs no capacity; committing only on success is what keeps the count off the failure path.
     #[test]
     fn a_failed_send_releases_its_reservation() {
-        let (item_tx, item_rx) = flume::unbounded();
+        let (item_tx, item_rx) = make_channel();
         let quota = Quota::bounded(NonZeroUsize::MIN);
         let item_tx = CountedSender::new(item_tx, quota.clone());
 
@@ -303,7 +292,7 @@ mod tests {
     /// other, without the count drifting.
     #[test]
     fn forced_reserves_past_a_full_quota() {
-        let (item_tx, item_rx) = flume::unbounded();
+        let (item_tx, mut item_rx) = make_channel();
         let quota = Quota::bounded(NonZeroUsize::MIN);
         let item_tx = CountedSender::new(item_tx, quota.clone());
 
@@ -315,7 +304,7 @@ mod tests {
 
         assert!(item_tx.try_send_forced(3).is_ok());
         assert!(item_tx.try_send_forced(4).is_ok());
-        assert_eq!(item_rx.drain().collect::<Vec<_>>(), vec![1, 3, 4]);
+        assert_eq!(item_rx.try_iter().collect::<Vec<_>>(), vec![1, 3, 4]);
 
         // Everything sent is still counted, so ordinary senders stay refused until the receiver
         // has released the excess.
@@ -333,7 +322,7 @@ mod tests {
     /// no capacity on this path either.
     #[test]
     fn a_failed_forced_send_releases_its_reservation() {
-        let (item_tx, item_rx) = flume::unbounded();
+        let (item_tx, item_rx) = make_channel();
         let quota = Quota::bounded(NonZeroUsize::MIN);
         let item_tx = CountedSender::new(item_tx, quota.clone());
 
@@ -346,7 +335,7 @@ mod tests {
     /// An uncounted item passes a full quota and keeps its place behind the counted ones.
     #[test]
     fn uncounted_bypasses_a_full_quota() {
-        let (item_tx, item_rx) = flume::unbounded();
+        let (item_tx, mut item_rx) = make_channel();
         let item_tx = CountedSender::new(item_tx, Quota::bounded(NonZeroUsize::MIN));
 
         assert!(item_tx.try_send_counted(1).is_ok());
@@ -356,6 +345,6 @@ mod tests {
         ));
         assert!(item_tx.try_send_uncounted(3).is_ok());
 
-        assert_eq!(item_rx.drain().collect::<Vec<_>>(), vec![1, 3]);
+        assert_eq!(item_rx.try_iter().collect::<Vec<_>>(), vec![1, 3]);
     }
 }
