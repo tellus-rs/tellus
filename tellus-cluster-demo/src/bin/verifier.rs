@@ -574,8 +574,7 @@ async fn verify_cluster(client: &Client, nodes: &[String]) -> (Vec<String>, Opti
 }
 
 /// Asked again, a bounded number of times, while the verdict judges an older version than the
-/// state: a node reads the verdict first, and the receptionist judges a version once it is
-/// published.
+/// state: a node reads the verdict first.
 async fn cluster_view(client: &Client, node: &str) -> anyhow::Result<ClusterView> {
     let mut attempts = 1;
     loop {
@@ -959,8 +958,8 @@ mod tests {
         view
     }
 
-    /// A verdict judging an older version than the state is asked again, so a node read between
-    /// a change and its verdict is no violation.
+    /// A verdict judging an older version than the state is asked again, so a change between a
+    /// node's two reads is no violation.
     #[tokio::test]
     async fn a_lagging_verdict_is_asked_again() {
         let healthy = view_json("node1", 1, Phase::Member, &[1]);

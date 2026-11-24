@@ -2567,7 +2567,7 @@ mod tests {
             node::{ClusterId, NodeId},
             peer::{ConnectError, DialRequest},
             reachability::{Reachability, WireReachability},
-            receptionist::{PublishedChange, Settlement, SnapshotSource},
+            receptionist::{PublishedChange, Settlement, SnapshotSource, current_settlement},
             sink::{self, RemoteSendError},
             state::{BrokenLink, Change, ForeignCluster},
         },
@@ -3906,23 +3906,18 @@ mod tests {
         );
     }
 
-    /// A borrow of the cluster state watch may be held while asking the receptionist, and updates
-    /// keep coming: the receptionist must never wait on the watch while holding its lock, or the
+    /// A settlement names at least the version which was current before it was asked and judges
+    /// the version it names, while updates keep coming. No peer delivers registrations, so a
+    /// version is settled iff it has no other Up member. The receptionist's own copy, which feeds
+    /// the stream, never leads the watch. A borrow of the cluster state watch may be held across a
+    /// snapshot: the receptionist must never wait on the watch while holding its lock, or the
     /// writer-preferring watch lock deadlocks the three of them.
     #[test]
-    fn a_borrowed_state_and_a_settlement_query_never_deadlock_an_update() {
+    fn a_settlement_never_trails_the_watch_and_a_snapshot_under_a_borrow_never_deadlocks() {
         let (endpoint, _dial_requests, _join_requests) =
             EndpointInner::for_tests(EndpointConfig::new(addr(1)));
         let (done_tx, done_rx) = mpsc::channel();
 
-        let consumer = thread::spawn(move || {
-            let state_rx = endpoint.state_rx();
-            for _ in 0..2_000 {
-                let borrowed = state_rx.borrow();
-                let settlement = endpoint.receptionist().settlement();
-                assert!(settlement.version() <= borrowed.version());
-            }
-        });
         let updater = thread::spawn(move || {
             for _ in 0..1_000 {
                 let peer = NodeId::new(addr(2));
@@ -3930,16 +3925,44 @@ mod tests {
                 endpoint.update(|membership, _| membership.down(peer, Instant::now()));
             }
         });
-        thread::spawn(move || {
-            consumer.join().expect("the consumer completes");
+        let consumer = thread::spawn(move || {
+            let state_rx = endpoint.state_rx();
+            while !updater.is_finished() {
+                let state = state_rx.borrow().clone();
+                let settlement = current_settlement(endpoint);
+                assert!(
+                    settlement.version() >= state.version(),
+                    "version {} was current before the call, but the settlement is for {}",
+                    state.version(),
+                    settlement.version()
+                );
+                if settlement.version() == state.version() {
+                    assert_eq!(
+                        settlement.settled(),
+                        state.up().all(|member| member.node() == endpoint.node()),
+                        "the settlement misjudges version {}",
+                        state.version()
+                    );
+                }
+                let borrowed = state_rx.borrow();
+                let (published, _, _) = endpoint.receptionist().snapshot();
+                assert!(
+                    published.version() <= borrowed.version(),
+                    "the receptionist holds version {}, ahead of the watch at {}",
+                    published.version(),
+                    borrowed.version()
+                );
+            }
             updater.join().expect("the updater completes");
-            let _ = done_tx.send(());
+        });
+        thread::spawn(move || {
+            let _ = done_tx.send(consumer.join());
         });
 
-        assert!(
-            done_rx.recv_timeout(Duration::from_secs(30)).is_ok(),
-            "the borrowing consumer and the updater deadlocked"
-        );
+        done_rx
+            .recv_timeout(Duration::from_secs(30))
+            .expect("the borrowing consumer and the updater deadlocked")
+            .expect("the consumer and the updater complete");
     }
 
     /// Probabilistic: snapshots racing updates. A verdict for N after the state for N+1 would
