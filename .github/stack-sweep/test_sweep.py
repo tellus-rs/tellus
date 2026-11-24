@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sweep
@@ -152,6 +153,10 @@ class Cluster(unittest.TestCase):
 
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
+        self.evictions = []
+        evict = mock.patch.object(sweep, "evict", side_effect=lambda binaries, log, context: self.evictions.append(context))
+        evict.start()
+        self.addCleanup(evict.stop)
 
     def tearDown(self):
         self.directory.cleanup()
@@ -198,6 +203,8 @@ class Cluster(unittest.TestCase):
         self.assertEqual([line["binary"] for line in lines[18:27:3]], ["C", "A", "B"])
         self.assertEqual([line["row"] for line in lines[:3]], ["pipelined", "serial", "bulk"])
         self.assertEqual((lines[10]["shift"], lines[10]["row"], lines[10]["median_ns"]), (256, "serial", 306000.0))
+        self.assertEqual(len(self.evictions), 2 * 3 * 3)
+        self.assertEqual(self.evictions[:2], ["repetition 0 shift 0 B", "repetition 0 shift 0 C"])
 
     def test_a_row_of_the_base_missing_in_the_candidate_fails(self):
         binaries = {"B": self.bench("B"), "C": self.bench("C", rows=self.ROWS[:2]), "A": self.bench("A")}
@@ -230,6 +237,36 @@ class Cluster(unittest.TestCase):
             sys.argv = ["sweep.py", "lines", "--kind", "cluster", self.bench("B")]
             sweep.main()
         self.assertEqual(int(stdout.getvalue()), 3 * len(sweep.SHIFTS) * sweep.CLUSTER_REPETITIONS * 3)
+
+
+class Eviction(unittest.TestCase):
+    BINARIES = {"B": "/b", "C": "/c", "A": "/a"}
+
+    def evict(self, residencies):
+        log = io.StringIO()
+        with mock.patch.object(sweep, "resident_bytes", side_effect=residencies), \
+                mock.patch.object(os, "open"), mock.patch.object(os, "fsync"), \
+                mock.patch.object(os, "posix_fadvise") as fadvise, mock.patch.object(os, "close"), \
+                mock.patch.object(sweep.time, "sleep"):
+            sweep.evict(self.BINARIES, log, "test")
+        return fadvise, json.loads(log.getvalue())
+
+    def test_an_eviction_is_retried_until_nothing_is_resident(self):
+        full, part, none = ({name: size for name in "BCA"} for size in (100, 4096, 0))
+        fadvise, line = self.evict([full, part, part, none])
+        self.assertEqual(fadvise.call_count, 3 * 3)
+        self.assertEqual((line["before"], line["after"], line["attempts"]), (full, none, 3))
+
+    def test_an_eviction_leaving_pages_resident_fails(self):
+        part = {name: 4096 for name in "BCA"}
+        with self.assertRaises(SystemExit):
+            self.evict([part] * (sweep.EVICT_ATTEMPTS + 1))
+
+    def test_resident_bytes_counts_the_cached_pages_of_a_file(self):
+        with tempfile.NamedTemporaryFile() as file:
+            file.write(b"x" * (3 * sweep.mmap.PAGESIZE))
+            file.flush()
+            self.assertEqual(sweep.resident_file_bytes(file.name), 3 * sweep.mmap.PAGESIZE)
 
 
 if __name__ == "__main__":
