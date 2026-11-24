@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795549407487,
+  "lastUpdate": 1795549409832,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -38845,6 +38845,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 105655,
             "range": "± 5283",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "649116ef289b7e1457cf595e4f70b4b57cc28aac",
+          "message": "Merge pull request #544 from tellus-rs/fix/inbound-reader-per-incarnation\n\nfix(cluster): a successor at a leaver's address no longer cuts its drain",
+          "timestamp": "2026-11-24T21:27:07+02:00",
+          "tree_id": "32337110fe4862d247dd4223b3bf201271b948f9",
+          "url": "https://github.com/tellus-rs/tellus/commit/649116ef289b7e1457cf595e4f70b4b57cc28aac"
+        },
+        "date": 1795549409549,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3566602,
+            "range": "± 137695",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3488657,
+            "range": "± 173433",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1464321,
+            "range": "± 6718",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 141304,
+            "range": "± 13288",
             "unit": "ns/iter"
           }
         ]
