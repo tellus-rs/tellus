@@ -2079,8 +2079,8 @@ mod tests {
             membership::{self, JoinRound, Member, MemberState, Membership},
             node::{ClusterId, NodeId},
             peer::{
-                Admission, ConnectError, DEAD_LETTERS, DialRequest, Greeting, JoinRequest,
-                LeaveSignals, MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound,
+                Admission, BATCH_FRAMES, ConnectError, DEAD_LETTERS, DialRequest, Greeting,
+                JoinRequest, LeaveSignals, MAX_SNAPSHOT_MEMBERS, ReadEnd, WriterEnd, admit_inbound,
                 admit_outbound, check_dialed, dead_letter, dial_loop, exchange_handshakes,
                 identity_binds, join_loop, probe_loop, read_frames, recv_handshake, run_accepted,
                 write_frames, write_streams,
@@ -2107,7 +2107,7 @@ mod tests {
         future::pending,
         io, iter,
         net::{IpAddr, Ipv4Addr, SocketAddr},
-        num::NonZeroUsize,
+        num::{NonZeroU32, NonZeroUsize},
         sync::{
             Arc, Mutex,
             atomic::{AtomicBool, Ordering},
@@ -7184,6 +7184,126 @@ mod tests {
 
         assert!(!dead_lettered, "the message is not dead-lettered");
         assert!(delivered, "the message rides the next connection");
+    }
+
+    /// A lane toward an address no Up member advertises is given up after `max_connect_attempts`
+    /// failed attempts, turning its queued frames into dead letters.
+    #[tokio::test]
+    async fn a_lane_given_up_turns_its_queued_frames_into_dead_letters() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.max_connect_attempts = NonZeroU32::MIN;
+        let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let (dial_tx, mut dials) = unbounded_channel();
+        task::spawn(dial_loop(
+            Arc::new(ScriptedTransport(dial_tx)),
+            lane_dials,
+            endpoint,
+        ));
+        let stranger = NodeId::new(addr(2));
+        let targets = [ActorId::new(), ActorId::new()];
+        for target in targets {
+            endpoint
+                .send(stranger, message(endpoint, target, 7))
+                .expect("the message is queued");
+        }
+
+        drop(
+            timeout(Duration::from_secs(5), dials.recv())
+                .await
+                .expect("the lane dials in time")
+                .expect("the lane dials"),
+        );
+
+        timeout(Duration::from_secs(5), async {
+            while !targets
+                .iter()
+                .all(|target| lock(&DEAD_LETTERS).contains(target))
+            {
+                sleep(Duration::from_millis(1)).await;
+            }
+        })
+        .await
+        .expect("the queued messages are dead letters");
+        assert!(
+            targets
+                .iter()
+                .all(|target| lock(&DEAD_LETTERS).remove(target))
+        );
+        assert_eq!(endpoint.lane_connected(stranger.addr()), None);
+    }
+
+    /// Frames which an aborted writer took from its queue without handing them to the transport
+    /// stay queued, so the next writer sends them first and in order. Only the frames in flight
+    /// are dead letters.
+    #[tokio::test]
+    async fn frames_an_aborted_writer_took_but_did_not_send_ride_the_next_writer() {
+        let targets = (0..BATCH_FRAMES + 8)
+            .map(|_| ActorId::new())
+            .collect::<Vec<_>>();
+        let (blocked_tx, blocked_rx) = channel::make_channel();
+        for target in &targets {
+            blocked_tx
+                .send(Frame::Message {
+                    target: *target,
+                    reply_tags: Vec::new(),
+                    schema_version: SchemaVersion::new(0),
+                    payload: Cow::Borrowed(&[]),
+                })
+                .expect("blocked queue is open");
+        }
+        let (failed_tx, failed_rx) = channel::make_channel();
+        failed_tx
+            .send(Frame::Gossip {
+                members: Vec::new(),
+                more: false,
+            })
+            .expect("failed queue is open");
+        let started = Arc::new(Notify::new());
+        let [blocked_rx, failed_rx] =
+            [blocked_rx, failed_rx].map(|rx| Arc::new(tokio::sync::Mutex::new(rx)));
+
+        let end = write_streams(
+            vec![
+                CoordinatedSender::Block(started.clone()),
+                CoordinatedSender::FailAfter(started),
+            ],
+            &[blocked_rx.clone(), failed_rx],
+            &Quota::unbounded(),
+            "127.0.0.1:1234".parse().expect("valid address"),
+            1024,
+            tokio::sync::watch::channel(None).1,
+            leave_signals(NodeId::new(addr(1)), &NOT_LEAVING).1,
+            pending(),
+        )
+        .await;
+        assert!(matches!(end, WriterEnd::ConnectionLost));
+        drop(blocked_tx);
+
+        let (sent_tx, sent_rx) = mpsc::channel();
+        let end = write_frames(
+            RecordingSender(sent_tx),
+            blocked_rx,
+            Quota::unbounded(),
+            "127.0.0.1:1234".parse().expect("valid address"),
+            1024,
+            None,
+        )
+        .await;
+        assert!(end.is_ok());
+        let sent = sent_rx
+            .try_iter()
+            .map(
+                |bytes| match Frame::from_bytes(&bytes).expect("frame decodes") {
+                    Frame::Message { target, .. } => target,
+                    frame => panic!("not a message: {frame:?}"),
+                },
+            )
+            .collect::<Vec<_>>();
+        assert_eq!(sent, targets[BATCH_FRAMES..]);
+        for target in &targets[..BATCH_FRAMES] {
+            assert!(lock(&DEAD_LETTERS).remove(target));
+        }
     }
 
     /// A join round towards a silent seed asked last gives the join permit back before the
