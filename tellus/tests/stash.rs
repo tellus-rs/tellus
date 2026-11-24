@@ -112,6 +112,23 @@ async fn a_restart_hands_the_stash_back_without_the_failed_requests() {
     stop(system).await;
 }
 
+/// Stash requests made in `init` take effect once it has returned: the message `init` stashes and
+/// unstashes is received ahead of the first message from the mailbox.
+#[tokio::test]
+async fn stash_requests_of_init_take_effect_before_the_first_message() {
+    let (received_tx, mut received_rx) = mpsc::unbounded_channel();
+    let system = ActorSystem::new(Primer(received_tx));
+
+    system.root().tell(1);
+
+    let received = [
+        next_event(&mut received_rx).await,
+        next_event(&mut received_rx).await,
+    ];
+    assert_eq!(received, [0, 1]);
+    stop(system).await;
+}
+
 /// Termination drops the stash like the mailbox: a request stashed inside resolves its `ask` as
 /// `NoReply`.
 #[tokio::test]
@@ -476,6 +493,41 @@ enum ProbeEvent {
 #[derive(Debug, Error)]
 #[error("probe failed on purpose")]
 struct Failed;
+
+/// Stashes `0` in `init` and unstashes it at once, then reports every message it receives.
+struct Primer(mpsc::UnboundedSender<u32>);
+
+impl Actor for Primer {
+    type Message = u32;
+    type Timers = Untimed;
+    type Stash = Stashed;
+    type State = ();
+    type Error = !;
+
+    fn init(
+        &self,
+        context: &ActorContext<Self::Message, Untimed, Stashed>,
+    ) -> Result<Self::State, Self::Error> {
+        context
+            .stash(Incoming::Message(0))
+            .expect("the stash is unbounded");
+        context.unstash_all();
+        Ok(())
+    }
+
+    fn receive(
+        &self,
+        _: &ActorContext<Self::Message, Untimed, Stashed>,
+        incoming: Incoming<Self::Message>,
+        (): Self::State,
+    ) -> Result<Control<Self::State>, Self::Error> {
+        let Incoming::Message(n) = incoming else {
+            unreachable!("the primer watches no actor, hence never gets a terminated signal")
+        };
+        self.0.send(n).expect("test dropped the receiver");
+        Ok(Control::Continue(()))
+    }
+}
 
 /// Stashes every message and reports each one stashed.
 struct Hoarder(mpsc::UnboundedSender<()>);
@@ -899,6 +951,23 @@ mod event_sourced {
         stop(system).await;
     }
 
+    /// Stash requests made in `recovered` take effect once it has returned: the command
+    /// `recovered` stashes and unstashes is handled ahead of the first command from the mailbox.
+    #[tokio::test]
+    async fn stash_requests_of_recovered_take_effect_before_the_first_command() {
+        let (events_tx, mut events) = mpsc::unbounded_channel();
+        let system = ActorSystem::event_sourced(
+            Primer(events_tx),
+            Persistence::new(InMemoryStore::default()),
+        );
+
+        system.root().tell(Command::Keep(1));
+
+        let kept = [next_event(&mut events).await, next_event(&mut events).await];
+        assert_eq!(kept, [Event::Kept(0), Event::Kept(1)]);
+        stop(system).await;
+    }
+
     /// Stash `Keep` while holding; `Release` stops holding and unstashes, `Fail` fails.
     struct Journal {
         holding: AtomicBool,
@@ -999,5 +1068,62 @@ mod event_sourced {
             events: events_tx,
         };
         (journal, events_rx)
+    }
+
+    /// Stashes `Keep(0)` in `recovered` and unstashes it at once, then reports every `Keep` it
+    /// handles.
+    struct Primer(mpsc::UnboundedSender<Event>);
+
+    impl EventSourced for Primer {
+        type Command = Command;
+        type Timers = Untimed;
+        type Stash = Stashed;
+        type Event = Nothing;
+        type State = ();
+        type Snapshot = Nothing;
+        type Error = !;
+
+        fn persistence_id(&self) -> PersistenceId {
+            PersistenceId::new("primer", "1").expect("the segments are valid")
+        }
+
+        fn init(&self) -> Result<Self::State, Self::Error> {
+            Ok(())
+        }
+
+        fn init_from_snapshot(&self, snapshot: Self::Snapshot) -> Result<Self::State, Self::Error> {
+            match snapshot {}
+        }
+
+        fn recovered(
+            &self,
+            context: &ActorContext<Self::Command, Untimed, Stashed>,
+            (): Self::State,
+        ) -> Result<Self::State, Self::Error> {
+            context
+                .stash(Incoming::Message(Command::Keep(0)))
+                .expect("the stash is unbounded");
+            context.unstash_all();
+            Ok(())
+        }
+
+        fn handle(
+            &self,
+            _: &ActorContext<Self::Command, Untimed, Stashed>,
+            incoming: Incoming<Self::Command>,
+            (): &Self::State,
+        ) -> Result<Effect<Self>, Self::Error> {
+            let Incoming::Message(Command::Keep(n)) = incoming else {
+                unreachable!("the primer is told nothing but Keep and watches no actor")
+            };
+            self.0
+                .send(Event::Kept(n))
+                .expect("test dropped the receiver");
+            Ok(Effect::none())
+        }
+
+        fn apply(&self, (): Self::State, event: Self::Event) -> Self::State {
+            match event {}
+        }
     }
 }

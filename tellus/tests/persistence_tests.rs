@@ -42,6 +42,15 @@ async fn the_paging_check_fails_against_a_store_with_short_pages() {
     tellus::persistence_tests::reads_return_full_pages(ShortPages::default()).await;
 }
 
+/// The segments check fails against a store which keys a stream by its two segments joined with
+/// `::`.
+#[tokio::test]
+#[should_panic(expected = "must be a stream of its own")]
+async fn the_segments_check_fails_against_a_store_keying_by_joined_segments() {
+    tellus::persistence_tests::streams_are_isolated_by_both_segments(JoinedSegments::default())
+        .await;
+}
+
 /// The snapshot check fails against a store which keeps the first snapshot rather than the latest.
 #[tokio::test]
 #[should_panic(expected = "saving again must replace the earlier snapshot")]
@@ -115,6 +124,32 @@ impl EventStore for ShortPages {
     }
 }
 
+/// Keys every stream by its entity type and entity ID joined with `::`.
+#[derive(Debug, Clone, Default)]
+struct JoinedSegments(InMemoryStore);
+
+impl EventStore for JoinedSegments {
+    type Error = <InMemoryStore as EventStore>::Error;
+
+    async fn append(
+        &self,
+        id: &PersistenceId,
+        next_seq_no: SeqNo,
+        events: Vec<EncodedEvent>,
+    ) -> Result<(), AppendError<Self::Error>> {
+        self.0.append(&joined(id), next_seq_no, events).await
+    }
+
+    async fn read(
+        &self,
+        id: &PersistenceId,
+        from_seq_no: SeqNo,
+        limit: NonZeroUsize,
+    ) -> Result<Vec<StoredEvent>, Self::Error> {
+        self.0.read(&joined(id), from_seq_no, limit).await
+    }
+}
+
 /// Saves a snapshot only where none is stored yet.
 #[derive(Debug, Clone, Default)]
 struct FirstSnapshotWins(InMemoryStore);
@@ -137,4 +172,10 @@ impl SnapshotStore for FirstSnapshotWins {
     async fn load(&self, id: &PersistenceId) -> Result<Option<StoredSnapshot>, Self::Error> {
         self.0.load(id).await
     }
+}
+
+/// The ID whose entity ID is the given ID's segments joined with `::`.
+fn joined(id: &PersistenceId) -> PersistenceId {
+    PersistenceId::new("joined", [id.entity_type(), "::", id.entity_id()].concat())
+        .expect("the joined segments are a valid entity ID")
 }
