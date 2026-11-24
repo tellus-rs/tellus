@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795516360367,
+  "lastUpdate": 1795516362188,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -38509,6 +38509,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 135749,
             "range": "± 4486",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "d235e44a9b393dec63b333c2ea8906d16d228a1e",
+          "message": "Merge pull request #540 from tellus-rs/ci/evict-cluster-executables\n\nci(sweep): evict the executables before every cluster run",
+          "timestamp": "2026-11-24T12:25:18+02:00",
+          "tree_id": "08a2953ea2903590e9a58b2f6a40319ab7d3b847",
+          "url": "https://github.com/tellus-rs/tellus/commit/d235e44a9b393dec63b333c2ea8906d16d228a1e"
+        },
+        "date": 1795516361779,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 2508448,
+            "range": "± 120255",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 2518002,
+            "range": "± 101953",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 641465,
+            "range": "± 20696",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 81563,
+            "range": "± 2894",
             "unit": "ns/iter"
           }
         ]
