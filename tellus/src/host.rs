@@ -1,4 +1,6 @@
 use crate::{Actor, ActorContext, ActorId, ActorRef, Control, Incoming, Unstashed, Untimed};
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     any::type_name,
     collections::{HashMap, VecDeque, hash_map::Entry as MapEntry},
@@ -399,7 +401,7 @@ impl Drop for AbortSleeping {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UncheckedHostConfig {
-    #[serde(default, with = "humantime_serde")]
+    #[serde(default, with = "friendly::compact::optional")]
     idle_timeout: Option<Duration>,
 
     #[serde(default)]
@@ -445,7 +447,7 @@ mod tests {
     use crate::HostConfig;
     use std::time::Duration;
 
-    /// The field names, the per-field defaults and the humantime duration format are what a config
+    /// The field names, the per-field defaults and the friendly duration format are what a config
     /// file relies on; this pins them down.
     #[test]
     fn a_config_deserializes_from_its_documented_form() {

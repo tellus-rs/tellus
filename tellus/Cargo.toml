@@ -39,27 +39,27 @@ hotpath-cloud         = [ "hotpath", "hotpath/hotpath-cloud" ]
 persistence           = [ "dep:ciborium", "dep:serde", "dep:serde_json", "dep:trait-variant" ]
 persistence-in-memory = [ "persistence" ]
 persistence-tests     = [ "persistence" ]
-serde                 = [ "dep:humantime-serde", "dep:serde" ]
+serde                 = [ "dep:jiff", "dep:serde" ]
 test-util             = [  ]
 
 [dependencies]
-ciborium        = { workspace = true, optional = true }
-derive_more     = { workspace = true, features = [ "debug", "display", "into" ] }
-hotpath         = { workspace = true, optional = true }
-humantime-serde = { workspace = true, optional = true }
-postcard        = { workspace = true, features = [ "use-std" ], optional = true }
-quinn           = { version = "0.11", default-features = false, features = [ "runtime-tokio", "rustls-ring" ], optional = true }
-rcgen           = { version = "0.14", default-features = false, features = [ "crypto", "ring" ], optional = true }
-rustls          = { version = "0.23", default-features = false, features = [ "ring", "std" ], optional = true }
-semver          = { version = "1.0", features = [ "serde" ], optional = true }
-serde           = { version = "1.0", features = [ "derive" ], optional = true }
-serde_json      = { workspace = true, features = [ "float_roundtrip" ], optional = true }
-thiserror       = { workspace = true }
-tokio           = { version = "1", features = [ "macros", "rt", "sync", "time" ] }
-tracing         = { workspace = true }
-trait-variant   = { workspace = true, optional = true }
-uuid            = { version = "1.24", features = [ "v7" ] }
-x509-parser     = { workspace = true, optional = true }
+ciborium      = { workspace = true, optional = true }
+derive_more   = { workspace = true, features = [ "debug", "display", "into" ] }
+hotpath       = { workspace = true, optional = true }
+jiff          = { workspace = true, features = [ "serde", "std" ], optional = true }
+postcard      = { workspace = true, features = [ "use-std" ], optional = true }
+quinn         = { version = "0.11", default-features = false, features = [ "runtime-tokio", "rustls-ring" ], optional = true }
+rcgen         = { version = "0.14", default-features = false, features = [ "crypto", "ring" ], optional = true }
+rustls        = { version = "0.23", default-features = false, features = [ "ring", "std" ], optional = true }
+semver        = { version = "1.0", features = [ "serde" ], optional = true }
+serde         = { version = "1.0", features = [ "derive" ], optional = true }
+serde_json    = { workspace = true, features = [ "float_roundtrip" ], optional = true }
+thiserror     = { workspace = true }
+tokio         = { version = "1", features = [ "macros", "rt", "sync", "time" ] }
+tracing       = { workspace = true }
+trait-variant = { workspace = true, optional = true }
+uuid          = { version = "1.24", features = [ "v7" ] }
+x509-parser   = { workspace = true, optional = true }
 
 [dev-dependencies]
 anyhow             = { workspace = true }

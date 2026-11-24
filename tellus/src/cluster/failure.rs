@@ -8,6 +8,8 @@ use crate::{
     sync::{lock, read, write},
     timers,
 };
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     collections::{HashMap, HashSet, VecDeque},
     sync::{Arc, Mutex, RwLock, RwLockReadGuard},
@@ -528,7 +530,7 @@ pub(crate) fn tolerates_silence(factory: &FailureDetectorFactory, silence: Durat
 
 #[cfg(feature = "serde")]
 #[derive(serde::Deserialize)]
-struct UncheckedDeadline(#[serde(with = "humantime_serde")] Duration);
+struct UncheckedDeadline(#[serde(with = "friendly::compact::required")] Duration);
 
 #[cfg(feature = "serde")]
 #[derive(serde::Deserialize)]
@@ -538,13 +540,13 @@ struct UncheckedPhiAccrual {
 
     max_sample_size: usize,
 
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "friendly::compact::required")]
     min_std_deviation: Duration,
 
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "friendly::compact::required")]
     acceptable_pause: Duration,
 
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "friendly::compact::required")]
     warmup_deadline: Duration,
 }
 
@@ -888,7 +890,7 @@ mod tests {
         assert!(serde_json::from_str::<FailureDetectorConfig>(r#"{ "deadlien": "3s" }"#).is_err());
     }
 
-    /// The `try_from` container attribute, the humantime field codecs and the validation bridge
+    /// The `try_from` container attribute, the friendly duration codecs and the validation bridge
     /// are only reachable through serde; this crosses that boundary in both directions.
     #[cfg(feature = "serde")]
     #[test]

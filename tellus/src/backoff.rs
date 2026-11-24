@@ -1,3 +1,5 @@
+#[cfg(feature = "serde")]
+use jiff::fmt::serde::unsigned_duration::friendly;
 use std::time::Duration;
 use thiserror::Error;
 
@@ -79,10 +81,10 @@ pub enum InvalidBackoff {
 #[derive(serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 struct UncheckedBackoff {
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "friendly::compact::required")]
     min: Duration,
 
-    #[serde(with = "humantime_serde")]
+    #[serde(with = "friendly::compact::required")]
     max: Duration,
 }
 
@@ -153,7 +155,7 @@ mod tests {
         assert!(Backoff::new(MIN, MIN).is_ok());
     }
 
-    /// The `try_from` container attribute, the humantime field codecs and the validation bridge
+    /// The `try_from` container attribute, the friendly duration codecs and the validation bridge
     /// are only reachable through serde; this crosses that boundary in both directions.
     #[cfg(feature = "serde")]
     #[test]
