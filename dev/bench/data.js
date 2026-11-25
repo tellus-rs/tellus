@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795603005547,
+  "lastUpdate": 1795603008888,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -45405,6 +45405,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 3579582,
             "range": "± 157481",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "be7d5429b38efa5b9281272931a4760b4a29454f",
+          "message": "Merge pull request #546 from tellus-rs/dependabot/docker_compose/tellus-cluster-demo/docker-compose-minor-796e09bace\n\nbuild(deps): Bump docker from 29.9.3-cli to 29.10.0-cli in /tellus-cluster-demo in the docker-compose-minor group across 1 directory",
+          "timestamp": "2026-11-25T12:28:28+02:00",
+          "tree_id": "5f17e805cbc1b74ab79c13410e340814f6887548",
+          "url": "https://github.com/tellus-rs/tellus/commit/be7d5429b38efa5b9281272931a4760b4a29454f"
+        },
+        "date": 1795603008231,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 27518905,
+            "range": "± 1467557",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27796029,
+            "range": "± 1438765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5497859,
+            "range": "± 350308",
             "unit": "ns/iter"
           }
         ]
