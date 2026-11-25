@@ -4,12 +4,15 @@ use thiserror::Error;
 
 /// The report of a departure: the address of every peer connection [leave] drained, one to a node
 /// not known here included. They are split into those which acknowledged the drain and those which
-/// did not, e.g. since the connection ended first or a stream failed. A third list holds those
+/// did not, e.g. since the connection ended first, a stream failed or a connection was lost during
+/// the drain. A third list holds those
 /// which had not acknowledged it within
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout), and a fourth those which left
 /// the cluster themselves before they acknowledged it. Each list is in address order. A peer
 /// acknowledges once every frame queued for it reached its delivery path, a local mailbox or a
-/// logged dead letter; that does not mean any actor handled the frames.
+/// logged dead letter; that does not mean any actor handled the frames. A peer whose lane handled a
+/// lost connection after the drain began does not count as acknowledged, even if a later
+/// connection carried its acknowledgment.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Departure {
     pub(crate) acknowledged: Vec<SocketAddr>,
@@ -20,13 +23,18 @@ pub struct Departure {
 
 impl Departure {
     /// The peers which acknowledged that every frame queued for them, the departure included,
-    /// reached their delivery path.
+    /// reached their delivery path, on a lane which handled no lost connection after the drain
+    /// began.
     pub fn acknowledged(&self) -> &[SocketAddr] {
         &self.acknowledged
     }
 
     /// The peers whose connection ended, one of whose streams failed, or whose lane gave up
-    /// dialing, before they acknowledged the drain.
+    /// dialing, before they acknowledged the drain. A peer whose lane handled a lost connection
+    /// after the drain began is listed here too, even if a later connection carried its
+    /// acknowledgment. Such a lane which has not ended by the deadline, still dialing or awaiting
+    /// the answer, makes the peer [timed out](Departure::timed_out) instead. Either way a peer
+    /// which is Left when the report is made is [departed](Departure::departed).
     pub fn unacknowledged(&self) -> &[SocketAddr] {
         &self.unacknowledged
     }
@@ -38,7 +46,8 @@ impl Departure {
 
     /// The peers which left the cluster themselves before they acknowledged the drain, the
     /// incarnation the drain went to being Left once the last drain has ended. Whether they
-    /// received what was queued for them is unknown.
+    /// received what was queued for them is unknown, also for a peer whose lane handled a lost
+    /// connection during the drain.
     pub fn departed(&self) -> &[SocketAddr] {
         &self.departed
     }
@@ -154,14 +163,15 @@ where
 /// Sends are refused once the departure is announced. A send racing the announcement on another
 /// thread may still be queued behind it, and it is drained with the rest. An acknowledgment proves
 /// that the peer dispatched every frame to its local mailboxes, or logged it as a dead letter
-/// there. It does not prove that any actor handled them. The whole drain is bounded by one
-/// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout) deadline. A member which is gone
-/// already costs that timeout and learns of the departure from another member's gossip, or, with no
-/// live path at all, from its own failure detection, exactly as it would from a crash. A peer which
-/// leaves at the same time can still acknowledge after this node has seen its departure. Otherwise
-/// the drain toward it is reported as [departed](Departure::departed) if the peer is Left here
-/// once the last drain has ended. While its lane dials or backs off, the drain gives up as soon as
-/// no member is Up at its address.
+/// there. It does not prove that any actor handled them. A peer whose lane handled a lost
+/// connection after the drain began is not acknowledged, whatever a later connection answers. The
+/// whole drain is bounded by one [leave_timeout](crate::cluster::EndpointConfig::leave_timeout)
+/// deadline. A member which is gone already costs that timeout and learns of the departure from
+/// another member's gossip, or, with no live path at all, from its own failure detection, exactly
+/// as it would from a crash. A peer which leaves at the same time can still acknowledge after this
+/// node has seen its departure. Otherwise the drain toward it is reported as
+/// [departed](Departure::departed) if the peer is Left here once the last drain has ended. While
+/// its lane dials or backs off, the drain gives up as soon as no member is Up at its address.
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if this node has neither formed nor joined a cluster, if

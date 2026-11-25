@@ -779,6 +779,7 @@ where
     } = request;
     let streams = data_rx.len();
     let mut drain = Drain::Unacknowledged;
+    let mut lost_while_leaving = false;
     let outbound_rx = iter::once(control_rx)
         .chain(data_rx)
         .map(|outbound_rx| Arc::new(tokio::sync::Mutex::new(outbound_rx)))
@@ -900,6 +901,14 @@ where
                 let _ = reader.await;
 
                 match end {
+                    WriterEnd::Acknowledged if lost_while_leaving => {
+                        warn!(
+                            peer_addr = %addr,
+                            "drain acknowledged, but a connection broke during the departure"
+                        );
+                        break;
+                    }
+
                     WriterEnd::Acknowledged => {
                         drain = Drain::Acknowledged;
                         break;
@@ -907,9 +916,12 @@ where
 
                     WriterEnd::LaneClosed | WriterEnd::Unacknowledged => break,
 
-                    WriterEnd::ConnectionLost => {}
+                    WriterEnd::ConnectionLost => {
+                        lost_while_leaving |= endpoint.leaving();
+                    }
 
                     WriterEnd::Severed(sever) => {
+                        lost_while_leaving |= endpoint.leaving();
                         endpoint.note_severed(addr, ConnectionDirection::Outbound, sever);
                     }
                 }
@@ -2978,7 +2990,7 @@ mod tests {
         let (recorded_tx, mut recorded_rx) = unbounded_channel();
 
         let writer = task::spawn(write_frames(
-            ChannelSender(recorded_tx),
+            ChannelSender::new(recorded_tx),
             Arc::new(tokio::sync::Mutex::new(control_rx)),
             Quota::unbounded(),
             "127.0.0.1:1234".parse().expect("valid address"),
@@ -3080,7 +3092,7 @@ mod tests {
         let (recorded_tx, mut recorded_rx) = unbounded_channel();
 
         let writer = task::spawn(write_frames(
-            ChannelSender(recorded_tx),
+            ChannelSender::new(recorded_tx),
             Arc::new(tokio::sync::Mutex::new(control_rx)),
             Quota::unbounded(),
             "127.0.0.1:1234".parse().expect("valid address"),
@@ -3242,7 +3254,7 @@ mod tests {
                     current: Vec::new(),
                 })
                 .map_err(|_| TransportError::other(io::Error::other("connection closed")))?;
-            Ok(ChannelSender(frames_tx))
+            Ok(ChannelSender::new(frames_tx))
         }
 
         async fn accept_data(&self) -> Result<Option<ChannelReceiver>, TransportError> {
@@ -3250,16 +3262,33 @@ mod tests {
         }
     }
 
-    struct ChannelSender(UnboundedSender<Vec<u8>>);
+    struct ChannelSender {
+        frames: UnboundedSender<Vec<u8>>,
+        failure: WriteFailure,
+    }
+
+    impl ChannelSender {
+        fn new(frames: UnboundedSender<Vec<u8>>) -> ChannelSender {
+            ChannelSender::failing_on(frames, WriteFailure::default())
+        }
+
+        fn failing_on(frames: UnboundedSender<Vec<u8>>, failure: WriteFailure) -> ChannelSender {
+            ChannelSender { frames, failure }
+        }
+    }
 
     impl FrameSender for ChannelSender {
         async fn send(&mut self, frame: &[u8]) -> Result<(), TransportError> {
-            self.0
+            self.frames
                 .send(frame.to_vec())
                 .map_err(|_| TransportError::other(io::Error::other("stream closed")))
         }
 
         async fn send_batch(&mut self, frames: &[Vec<u8>]) -> Result<(), TransportError> {
+            if let Some(release) = self.failure.take() {
+                let _ = release.await;
+                return Err(TransportError::other(io::Error::other("stream failed")));
+            }
             for frame in frames {
                 self.send(frame).await?;
             }
@@ -3268,6 +3297,23 @@ mod tests {
 
         async fn finish(&mut self) -> Result<(), TransportError> {
             Ok(())
+        }
+    }
+
+    /// Once armed, the next batch of a sender holding it waits for the release, then fails.
+    #[derive(Clone, Default)]
+    struct WriteFailure(Arc<Mutex<Option<oneshot::Receiver<()>>>>);
+
+    impl WriteFailure {
+        /// Sending on or dropping the returned sender releases the failing batch.
+        fn arm(&self) -> oneshot::Sender<()> {
+            let (release_tx, release_rx) = oneshot::channel();
+            *lock(&self.0) = Some(release_rx);
+            release_tx
+        }
+
+        fn take(&self) -> Option<oneshot::Receiver<()>> {
+            lock(&self.0).take()
         }
     }
 
@@ -3297,6 +3343,7 @@ mod tests {
         to_joiner: UnboundedSender<Vec<u8>>,
         data_streams: UnboundedReceiver<ChannelReceiver>,
         cluster: ClusterId,
+        control_failure: WriteFailure,
     }
 
     impl Acceptor {
@@ -3304,9 +3351,10 @@ mod tests {
             let (to_joiner, joiner_rx) = unbounded_channel();
             let (joiner_tx, from_joiner) = unbounded_channel();
             let (data_streams_tx, data_streams) = unbounded_channel();
+            let control_failure = WriteFailure::default();
             let connected = ConnectedControl {
                 connection: ScriptedConnection(data_streams_tx),
-                control_tx: ChannelSender(joiner_tx),
+                control_tx: ChannelSender::failing_on(joiner_tx, control_failure.clone()),
                 control_rx: ChannelReceiver {
                     frames: joiner_rx,
                     current: Vec::new(),
@@ -3320,6 +3368,7 @@ mod tests {
                     to_joiner,
                     data_streams,
                     cluster: ClusterId::new(),
+                    control_failure,
                 },
             )
         }
@@ -3948,7 +3997,7 @@ mod tests {
                 .expect("the test holds the seed's ends");
             Ok(ConnectedControl {
                 connection: PanickingReaderConnection,
-                control_tx: ChannelSender(joiner_tx),
+                control_tx: ChannelSender::new(joiner_tx),
                 control_rx: PanickingReceiver(joiner_rx),
             })
         }
@@ -4172,7 +4221,7 @@ mod tests {
             let (to_acceptor, acceptor_rx) = unbounded_channel();
             let (acceptor_tx, from_acceptor) = unbounded_channel();
             let connection = InboundConnection(Mutex::new(Some((
-                ChannelSender(acceptor_tx),
+                ChannelSender::new(acceptor_tx),
                 ChannelReceiver {
                     frames: acceptor_rx,
                     current: Vec::new(),
@@ -5082,7 +5131,7 @@ mod tests {
             let (streams, streams_rx) = unbounded_channel();
             let connection = StreamingConnection {
                 control: Mutex::new(Some((
-                    ChannelSender(acceptor_tx),
+                    ChannelSender::new(acceptor_tx),
                     ChannelReceiver {
                         frames: acceptor_rx,
                         current: Vec::new(),
@@ -5122,7 +5171,7 @@ mod tests {
             let (_streams, streams_rx) = unbounded_channel();
             let connection = StreamingConnection {
                 control: Mutex::new(Some((
-                    ChannelSender(acceptor_tx),
+                    ChannelSender::new(acceptor_tx),
                     ChannelReceiver {
                         frames: acceptor_rx,
                         current: Vec::new(),
@@ -6254,21 +6303,30 @@ mod tests {
     /// The test's end of a leaving endpoint's lane to one Up member, connected and admitted.
     struct LeavingLane {
         endpoint: &'static EndpointInner,
+        member: NodeId,
         acceptor: Acceptor,
         data_streams: Vec<ChannelReceiver>,
     }
 
     impl LeavingLane {
         async fn connected(data_streams: usize) -> LeavingLane {
-            LeavingLane::connected_to(data_streams, true).await
+            LeavingLane::connected_to(data_streams, true).await.0
         }
 
         /// The lane goes to a node not known here, opened by an optimistic send.
         async fn connected_to_unknown(data_streams: usize) -> LeavingLane {
-            LeavingLane::connected_to(data_streams, false).await
+            LeavingLane::connected_to(data_streams, false).await.0
         }
 
-        async fn connected_to(data_streams: usize, member_up: bool) -> LeavingLane {
+        /// Also the lane's later dials, so a test can answer a redial with [LeavingLane::redialed].
+        async fn redialing(data_streams: usize) -> (LeavingLane, UnboundedReceiver<Dial>) {
+            LeavingLane::connected_to(data_streams, true).await
+        }
+
+        async fn connected_to(
+            data_streams: usize,
+            member_up: bool,
+        ) -> (LeavingLane, UnboundedReceiver<Dial>) {
             let (endpoint, lane_dials, _join_requests) = EndpointInner::for_tests_with_data_streams(
                 EndpointConfig::new(addr(1)),
                 data_streams,
@@ -6294,6 +6352,33 @@ mod tests {
                     },
                 )
                 .expect("the lane opens");
+            let (acceptor, opened) =
+                LeavingLane::accepted(endpoint, member, &mut dials, data_streams).await;
+            eventually(|| endpoint.lane_connected(addr(2)) == Some(true)).await;
+            let lane = LeavingLane {
+                endpoint,
+                member,
+                acceptor,
+                data_streams: opened,
+            };
+            (lane, dials)
+        }
+
+        /// Answers the lane's redial with a new connection, admitted like the first one.
+        async fn redialed(&mut self, dials: &mut UnboundedReceiver<Dial>) {
+            let data_streams = self.data_streams.len();
+            let (acceptor, opened) =
+                LeavingLane::accepted(self.endpoint, self.member, dials, data_streams).await;
+            self.acceptor = acceptor;
+            self.data_streams = opened;
+        }
+
+        async fn accepted(
+            endpoint: &EndpointInner,
+            member: NodeId,
+            dials: &mut UnboundedReceiver<Dial>,
+            data_streams: usize,
+        ) -> (Acceptor, Vec<ChannelReceiver>) {
             let dial = timeout(Duration::from_secs(5), dials.recv())
                 .await
                 .expect("the lane dials in time")
@@ -6320,12 +6405,7 @@ mod tests {
                         .expect("the data streams open"),
                 );
             }
-            eventually(|| endpoint.lane_connected(addr(2)) == Some(true)).await;
-            LeavingLane {
-                endpoint,
-                acceptor,
-                data_streams: opened,
-            }
+            (acceptor, opened)
         }
 
         /// The number of data streams the drain marker announces, skipping the frames before it.
@@ -6456,7 +6536,7 @@ mod tests {
         task::spawn(run_accepted(
             StreamingConnection {
                 control: Mutex::new(Some((
-                    ChannelSender(to_leaver),
+                    ChannelSender::new(to_leaver),
                     ChannelReceiver {
                         frames: from_leaver,
                         current: Vec::new(),
@@ -6468,7 +6548,7 @@ mod tests {
         ));
         let connected = ConnectedControl {
             connection: ScriptedConnection(opened_tx),
-            control_tx: ChannelSender(to_member),
+            control_tx: ChannelSender::new(to_member),
             control_rx: ChannelReceiver {
                 frames: from_member,
                 current: Vec::new(),
@@ -6545,6 +6625,64 @@ mod tests {
             .expect("a departure");
         assert_eq!(departure.acknowledged(), [addr(2)]);
         assert!(departure.is_acknowledged());
+    }
+
+    /// A connection severed while awaiting the answer to the drain marker leaves the peer
+    /// unacknowledged, although the redial carries a drain the peer acknowledges.
+    #[tokio::test]
+    async fn a_drain_severed_before_its_answer_is_unacknowledged_after_a_reconnect() {
+        let (mut lane, mut dials) = LeavingLane::redialing(1).await;
+        let endpoint = lane.endpoint;
+        let departure = task::spawn(endpoint.leave());
+
+        assert_eq!(lane.drained().await, 1);
+        endpoint.sever();
+        lane.redialed(&mut dials).await;
+        assert_eq!(lane.drained().await, 1);
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let departure = timeout(Duration::from_secs(5), departure)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(departure.unacknowledged(), [addr(2)]);
+        assert!(departure.acknowledged().is_empty());
+        assert!(!departure.is_acknowledged());
+    }
+
+    /// A writer failing during the drain leaves the peer unacknowledged, although the redial
+    /// carries a drain the peer acknowledges: the failed batch never reached it.
+    #[tokio::test]
+    async fn a_drain_whose_writer_failed_is_unacknowledged_after_a_reconnect() {
+        let (mut lane, mut dials) = LeavingLane::redialing(0).await;
+        let endpoint = lane.endpoint;
+        let release = lane.acceptor.control_failure.arm();
+        endpoint
+            .send(
+                lane.member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane is open");
+        let departure = task::spawn(endpoint.leave());
+
+        eventually(|| endpoint.leaving()).await;
+        drop(release);
+        lane.redialed(&mut dials).await;
+        assert_eq!(lane.drained().await, 0);
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let departure = timeout(Duration::from_secs(5), departure)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(departure.unacknowledged(), [addr(2)]);
+        assert!(departure.acknowledged().is_empty());
+        assert!(!departure.is_acknowledged());
     }
 
     /// A member closing the connection after the drain marker without answering it is reported
