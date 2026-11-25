@@ -6685,6 +6685,61 @@ mod tests {
         assert!(!departure.is_acknowledged());
     }
 
+    /// A connection severed before the departure began does not keep the peer from acknowledging
+    /// the drain on the redial: the acknowledgment does not cover the frames lost with that
+    /// connection.
+    #[tokio::test]
+    async fn a_drain_after_a_connection_severed_before_the_departure_is_acknowledged() {
+        let (mut lane, mut dials) = LeavingLane::redialing(1).await;
+        let endpoint = lane.endpoint;
+        endpoint.sever();
+        lane.redialed(&mut dials).await;
+        let departure = task::spawn(endpoint.leave());
+
+        assert_eq!(lane.drained().await, 1);
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let departure = timeout(Duration::from_secs(5), departure)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        assert!(departure.is_acknowledged());
+    }
+
+    /// A writer failing before the departure began does not keep the peer from acknowledging the
+    /// drain on the redial: the acknowledgment does not cover the batch the writer lost.
+    #[tokio::test]
+    async fn a_drain_after_a_writer_failed_before_the_departure_is_acknowledged() {
+        let (mut lane, mut dials) = LeavingLane::redialing(0).await;
+        let endpoint = lane.endpoint;
+        let release = lane.acceptor.control_failure.arm();
+        endpoint
+            .send(
+                lane.member,
+                Frame::Gossip {
+                    members: Vec::new(),
+                    more: false,
+                },
+            )
+            .expect("the lane is open");
+        drop(release);
+        lane.redialed(&mut dials).await;
+        let departure = task::spawn(endpoint.leave());
+
+        assert_eq!(lane.drained().await, 0);
+        lane.acceptor.send(&Frame::DrainAck);
+
+        let departure = timeout(Duration::from_secs(5), departure)
+            .await
+            .expect("the departure ends in time")
+            .expect("the departure does not panic")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        assert!(departure.is_acknowledged());
+    }
+
     /// A member closing the connection after the drain marker without answering it is reported
     /// unacknowledged, and so is a lane without data streams, whose marker announces none.
     #[tokio::test]
