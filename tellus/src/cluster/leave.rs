@@ -5,8 +5,7 @@ use thiserror::Error;
 /// The report of a departure: the address of every peer connection [leave] drained, one to a node
 /// not known here included. They are split into those which acknowledged the drain and those which
 /// did not, e.g. since the connection ended first, a stream failed or a connection was lost during
-/// the drain. A third list holds those
-/// which had not acknowledged it within
+/// the drain. A third list holds those which had not acknowledged it within
 /// [leave_timeout](crate::cluster::EndpointConfig::leave_timeout), and a fourth those which left
 /// the cluster themselves before they acknowledged it. Each list is in address order. A peer
 /// acknowledges once every frame queued for it reached its delivery path, a local mailbox or a

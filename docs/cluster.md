@@ -404,65 +404,68 @@ ordering only makes the gossip merge convergent.
 
 ### Leaving
 
-`cluster::leave` announces a departure instead of leaving it to be detected: this node
-moves its own entry to Left, pushes that member list to every Up member, stops sending anything
-else, drains its lanes, and severs. The announcement goes to every Up member, a lane still being
-dialed included. Sends are refused right after it, so it cannot grow a queue the way the periodic
-gossip would. A send racing the leave on another thread may still be queued behind it, and it is
-drained with the rest. Each lane's writers write out what is queued, the frame a writer holds
-included, and finish every data stream. Then the control stream carries a `Drained` marker as its
-final frame, naming the number of data streams this node opened on that connection.
-Directly in front of the marker, on the same control stream, this node writes its own
-entry as Left. It does so on every connection which carries a marker, also on one toward a
-member which has left or toward a node not known here, neither of which the announcement
-reaches. The peer answers with a `DrainAck` once exactly that many data streams have ended
-cleanly and every frame they carried was dispatched, provided it still defers the
-departure. This node then closes the connection and counts the peer as acknowledged, unless the
-lane handled a lost connection during the drain (see below). An acknowledgment proves that every frame queued for the peer reached the framework's delivery path
-there, a local mailbox or a logged dead letter. It does not prove that any actor handled them. The
-whole exchange is bounded by `leave_timeout`: one deadline for every lane, not restarted between the
-phases. A lane goes to the incarnation its latest connection reached, else to the newest one a send
-on it was addressed to. It is drained unless that incarnation is Down when the departure begins, or
-older than a Left or Down incarnation at its address without being Left itself. Such a lane is
-neither waited for nor reported, since a node death already turned what was queued for it into dead
-letters or failed asks. A lane toward a node not known here is drained too. A lane waiting out a
-reconnect backoff when the departure begins dials again at once, and a lane keeps dialing until the
-departure has ended, so a peer is reached whatever state its lane was in. Only once no member is Up
-at its address any more does a lane which dials or backs off give up, at once, a connect still
-pending included. A connection closed before the `DrainAck`, a read error and a writer which failed
-or could not finish its stream never count as acknowledged; the marker is not even sent after a
-failed writer. Once a lane has handled a lost or severed connection after this node began draining
-its lanes, a `DrainAck` on a later connection does not count either, since frames the lost
-connection carried may never have reached the peer. What matters is when the lane handles the loss,
-so a connection which broke shortly before the drain began can count as well. An acknowledgment
-says nothing about frames lost with a connection before then. A member which is gone already costs that timeout and then learns the departure from
-another member's gossip, or, with no live path at all, from its own failure detection. Two nodes may
-leave at the same time. Each then usually learns the other's departure and runs its death while its
-own drain towards the other may still be waiting. Either leaver may wait out `leave_timeout` for the
-other, also after it learned the other's departure. The other's `DrainAck` is still taken then,
-while every other frame from that incarnation is dropped, so nothing arrives behind its synthesized
-signals. The call returns a `Departure`, which lists the peers which acknowledged the drain, those
-which did not since the connection ended first, a stream failed or a connection was lost during the
-drain (each logged as a warning) or their lane gave up dialing, and those which had not answered within `leave_timeout`. A fourth list
-holds the peers which left the cluster themselves before they acknowledged: the incarnation the lane
-goes to is Left once the last lane has ended, and whether it got what was queued for it is unknown.
-That includes a peer whose lane handled a lost connection during the drain.
-The peers are classified only then, so the report does not depend on the order in which the drains
-of the lanes end. An acknowledgment takes precedence over a Left, while a Down, a suspicion
-or a closed connection never makes a peer departed. `Departure::is_acknowledged` holds only if every
-peer acknowledged, and `Departure::is_complete` also accepts the departed ones, which is what a node
-leaving together with others can expect at best. Concurrent calls share the one departure and its
-report, which runs in a task of its own. So none severs the connections another is still waiting on,
-and a caller which is canceled only stops waiting. Leaving again after the departure has ended
-returns its report as well. A node downed before it began to leave fails with `LeaveError::Downed`.
-An endpoint which has neither formed nor joined a cluster has nothing to leave. It fails with
-`LeaveError::Unformed` and stays as it was, so it can still form or join one. A join in progress
-does not count as a membership: it may still make this node a member after the refused leave. A
-departure which ends without a report, e.g. since its task panicked, fails safe. A supervisor
-awaiting that task then latches this node Downed and severs every connection. Only after that does
-it publish the failure, so every caller, concurrent or later, gets `LeaveError::Incomplete` and
-never a report claiming an acknowledgment. Leaving is terminal per incarnation exactly as being
-downed is, so the process is expected to exit, and only a restart rejoins.
+`cluster::leave` announces a departure instead of leaving it to be detected: this node moves its own
+entry to Left, pushes that member list to every Up member, stops sending anything else, drains its
+lanes, and severs. The announcement goes to every Up member, a lane still being dialed included.
+Sends are refused right after it, so it cannot grow a queue the way the periodic gossip would. A
+send racing the leave on another thread may still be queued behind it, and it is drained with the
+rest. Each lane's writers write out what is queued, the frame a writer holds included, and finish
+every data stream. Then the control stream carries a `Drained` marker as its final frame, naming the
+number of data streams this node opened on that connection. Directly in front of the marker, on the
+same control stream, this node writes its own entry as Left. It does so on every connection which
+carries a marker, also on one toward a member which has left or toward a node not known here,
+neither of which the announcement reaches. The peer answers with a `DrainAck` once exactly that many
+data streams have ended cleanly and every frame they carried was dispatched, provided it still
+defers the departure. This node then closes the connection and counts the peer as acknowledged,
+unless the lane handled a lost connection during the drain (see below). An acknowledgment proves
+that every frame queued for the peer reached the framework's delivery path there, a local mailbox or
+a logged dead letter. It does not prove that any actor handled them. The whole exchange is bounded
+by `leave_timeout`: one deadline for every lane, not restarted between the phases. A lane goes to
+the incarnation its latest connection reached, else to the newest one a send on it was addressed to.
+It is drained unless that incarnation is Down when the departure begins, or older than a Left or
+Down incarnation at its address without being Left itself. Such a lane is neither waited for nor
+reported, since a node death already turned what was queued for it into dead letters or failed asks.
+A lane toward a node not known here is drained too. A lane waiting out a reconnect backoff when the
+departure begins dials again at once, and a lane keeps dialing until the departure has ended, so a
+peer is reached whatever state its lane was in. Only once no member is Up at its address any more
+does a lane which dials or backs off give up, at once, a connect still pending included. A
+connection closed before the `DrainAck`, a read error and a writer which failed or could not finish
+its stream never count as acknowledged; the marker is not even sent after a failed writer. Once a
+lane has handled a lost or severed connection after this node began draining its lanes, a `DrainAck`
+on a later connection does not count either, since frames the lost connection carried may never have
+reached the peer. What matters is when the lane handles the loss, not when the connection broke. So
+a connection which broke shortly before the drain began can rule out the acknowledgment as well. An
+acknowledgment says nothing about frames lost with a connection whose loss the lane handled before
+the drain began. A member which is gone already costs that timeout and then learns the departure
+from another member's gossip, or, with no live path at all, from its own failure detection. Two
+nodes may leave at the same time. Each then usually learns the other's departure and runs its death
+while its own drain towards the other may still be waiting. Either leaver may wait out
+`leave_timeout` for the other, also after it learned the other's departure. The other's `DrainAck`
+is still taken then, while every other frame from that incarnation is dropped, so nothing arrives
+behind its synthesized signals. The call returns a `Departure`, which lists the peers which
+acknowledged the drain, those which did not since the connection ended first, a stream failed or a
+connection was lost during the drain (each logged as a warning) or their lane gave up dialing, and
+those which had not answered within `leave_timeout`. A fourth list holds the peers which left the
+cluster themselves before they acknowledged: the incarnation the lane goes to is Left once the last
+lane has ended, and whether it got what was queued for it is unknown. That includes a Left peer
+whose lane handled a lost connection during the drain, even if a later connection carried its
+acknowledgment. The peers are classified only then, so the report does not depend on the order in
+which the drains of the lanes end. An acknowledgment takes precedence over a Left, while a Down, a
+suspicion or a closed connection never makes a peer departed. `Departure::is_acknowledged` holds
+only if every peer acknowledged, and `Departure::is_complete` also accepts the departed ones, which
+is what a node leaving together with others can expect at best. Concurrent calls share the one
+departure and its report, which runs in a task of its own. So none severs the connections another is
+still waiting on, and a caller which is canceled only stops waiting. Leaving again after the
+departure has ended returns its report as well. A node downed before it began to leave fails with
+`LeaveError::Downed`. An endpoint which has neither formed nor joined a cluster has nothing to
+leave. It fails with `LeaveError::Unformed` and stays as it was, so it can still form or join one. A
+join in progress does not count as a membership: it may still make this node a member after the
+refused leave. A departure which ends without a report, e.g. since its task panicked, fails safe. A
+supervisor awaiting that task then latches this node Downed and severs every connection. Only after
+that does it publish the failure, so every caller, concurrent or later, gets
+`LeaveError::Incomplete` and never a report claiming an acknowledgment. Leaving is terminal per
+incarnation exactly as being downed is, so the process is expected to exit, and only a restart
+rejoins.
 
 A leaving node admits no new member. From the moment its own entry is Left, this node answers a join
 from a new address, and one which would supersede a member, with `JoinsHeld`. Sends are refused
@@ -1343,19 +1346,19 @@ swap is added.
 - **A leave is acknowledged by the peer's delivery path, not by its actors.** The departure is
   gossiped as Left, however it reaches a member. A peer answers the leaver's `Drained` marker with a
   `DrainAck` once every data stream has ended and its frames were dispatched to a mailbox or a
-  logged dead letter. No actor need have handled them. A `DrainAck` counts only if the lane handled
-  no lost connection after the drain began, so a break shortly before the drain can still count. A peer which does not acknowledge within the
-  leaver's `leave_timeout` appears in the `Departure` as unacknowledged or timed out, or as
-  departed if it is Left once the last lane has ended. A peer which
-  learns the departure before the leaver's connection exists, e.g. right after the cluster
-  converged, waits for that connection up to its own `leave_timeout`. When the leaver never reaches
-  it, its death and its watchers' synthesized signals come that much later. A peer the leaver cannot
-  reach still learns the departure through relayed gossip or, with no live path at all, through
-  failure detection and downing. A peer defers the leaver's death for at most its own
-  `leave_timeout`. Whatever is still unread then, e.g. behind a stalled stream, is lost, and its
-  watchers get synthesized signals instead of real ones. A departure which ends without a report
-  fails safe: this node is downed and severed first, and every caller gets `LeaveError::Incomplete`.
-  Whether the peers received what was queued for them is then unknown.
+  logged dead letter. No actor need have handled them. A `DrainAck` does not count once the lane has
+  handled a lost connection after the drain began, even one which broke before. A peer which does
+  not acknowledge within the leaver's `leave_timeout` appears in the `Departure` as unacknowledged
+  or timed out, or as departed if it is Left once the last lane has ended. A peer which learns the
+  departure before the leaver's connection exists, e.g. right after the cluster converged, waits for
+  that connection up to its own `leave_timeout`. When the leaver never reaches it, its death and its
+  watchers' synthesized signals come that much later. A peer the leaver cannot reach still learns
+  the departure through relayed gossip or, with no live path at all, through failure detection and
+  downing. A peer defers the leaver's death for at most its own `leave_timeout`. Whatever is still
+  unread then, e.g. behind a stalled stream, is lost, and its watchers get synthesized signals
+  instead of real ones. A departure which ends without a report fails safe: this node is downed and
+  severed first, and every caller gets `LeaveError::Incomplete`. Whether the peers received what was
+  queued for them is then unknown.
 - **Bootstrap decides from what discovery shows.** Under `Majority`, two nodes form separate
   clusters only when their views have different lowest addresses, e.g. when discovery shows each of
   them a different subset of the deployment. Take a deployment of N nodes whose discovery resolves
