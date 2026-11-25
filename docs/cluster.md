@@ -417,8 +417,8 @@ entry as Left. It does so on every connection which carries a marker, also on on
 member which has left or toward a node not known here, neither of which the announcement
 reaches. The peer answers with a `DrainAck` once exactly that many data streams have ended
 cleanly and every frame they carried was dispatched, provided it still defers the
-departure. This node then counts the peer as acknowledged and closes the connection. An
-acknowledgment proves that every frame queued for the peer reached the framework's delivery path
+departure. This node then closes the connection and counts the peer as acknowledged, unless the
+lane handled a lost connection during the drain (see below). An acknowledgment proves that every frame queued for the peer reached the framework's delivery path
 there, a local mailbox or a logged dead letter. It does not prove that any actor handled them. The
 whole exchange is bounded by `leave_timeout`: one deadline for every lane, not restarted between the
 phases. A lane goes to the incarnation its latest connection reached, else to the newest one a send
@@ -431,17 +431,22 @@ departure has ended, so a peer is reached whatever state its lane was in. Only o
 at its address any more does a lane which dials or backs off give up, at once, a connect still
 pending included. A connection closed before the `DrainAck`, a read error and a writer which failed
 or could not finish its stream never count as acknowledged; the marker is not even sent after a
-failed writer. A member which is gone already costs that timeout and then learns the departure from
+failed writer. Once a lane has handled a lost or severed connection after this node began draining
+its lanes, a `DrainAck` on a later connection does not count either, since frames the lost
+connection carried may never have reached the peer. What matters is when the lane handles the loss,
+so a connection which broke shortly before the drain began can count as well. An acknowledgment
+says nothing about frames lost with a connection before then. A member which is gone already costs that timeout and then learns the departure from
 another member's gossip, or, with no live path at all, from its own failure detection. Two nodes may
 leave at the same time. Each then usually learns the other's departure and runs its death while its
 own drain towards the other may still be waiting. Either leaver may wait out `leave_timeout` for the
 other, also after it learned the other's departure. The other's `DrainAck` is still taken then,
 while every other frame from that incarnation is dropped, so nothing arrives behind its synthesized
 signals. The call returns a `Departure`, which lists the peers which acknowledged the drain, those
-which did not since the connection ended first or a stream failed (each logged as a warning) or
-their lane gave up dialing, and those which had not answered within `leave_timeout`. A fourth list
+which did not since the connection ended first, a stream failed or a connection was lost during the
+drain (each logged as a warning) or their lane gave up dialing, and those which had not answered within `leave_timeout`. A fourth list
 holds the peers which left the cluster themselves before they acknowledged: the incarnation the lane
 goes to is Left once the last lane has ended, and whether it got what was queued for it is unknown.
+That includes a peer whose lane handled a lost connection during the drain.
 The peers are classified only then, so the report does not depend on the order in which the drains
 of the lanes end. An acknowledgment takes precedence over a Left, while a Down, a suspicion
 or a closed connection never makes a peer departed. `Departure::is_acknowledged` holds only if every
@@ -1338,7 +1343,8 @@ swap is added.
 - **A leave is acknowledged by the peer's delivery path, not by its actors.** The departure is
   gossiped as Left, however it reaches a member. A peer answers the leaver's `Drained` marker with a
   `DrainAck` once every data stream has ended and its frames were dispatched to a mailbox or a
-  logged dead letter. No actor need have handled them. A peer which does not acknowledge within the
+  logged dead letter. No actor need have handled them. A `DrainAck` counts only if the lane handled
+  no lost connection after the drain began, so a break shortly before the drain can still count. A peer which does not acknowledge within the
   leaver's `leave_timeout` appears in the `Departure` as unacknowledged or timed out, or as
   departed if it is Left once the last lane has ended. A peer which
   learns the departure before the leaver's connection exists, e.g. right after the cluster
