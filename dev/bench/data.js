@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795636190734,
+  "lastUpdate": 1795636192456,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -39685,6 +39685,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 106600,
             "range": "± 2161",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c8a73f63e0f18d05e02ba1c3573dc96fd4301078",
+          "message": "Merge pull request #554 from tellus-rs/docs/drain-lost-connection-follow-up\n\ndocs(cluster): clarify which lost connection voids a drain ack",
+          "timestamp": "2026-11-25T20:42:20+01:00",
+          "tree_id": "1e8d80033b8de50c69c869155e9d645f3a645ba6",
+          "url": "https://github.com/tellus-rs/tellus/commit/c8a73f63e0f18d05e02ba1c3573dc96fd4301078"
+        },
+        "date": 1795636192157,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3160648,
+            "range": "± 148087",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3144024,
+            "range": "± 201300",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 856855,
+            "range": "± 5149",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 102512,
+            "range": "± 2531",
             "unit": "ns/iter"
           }
         ]
