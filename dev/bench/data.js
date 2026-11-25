@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795614543908,
+  "lastUpdate": 1795614545495,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -45615,6 +45615,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5497859,
             "range": "± 350308",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "2ea3d9ee080151e089f76745da0699abf1f99590",
+          "message": "Merge pull request #553 from tellus-rs/fix/drain-lost-connection\n\nfix(cluster): a drain is unacknowledged once its connection broke",
+          "timestamp": "2026-11-25T15:41:32+02:00",
+          "tree_id": "991557e799d6f5f4026d35b0aed5313625369b13",
+          "url": "https://github.com/tellus-rs/tellus/commit/2ea3d9ee080151e089f76745da0699abf1f99590"
+        },
+        "date": 1795614545208,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 21896950,
+            "range": "± 1487892",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 21630574,
+            "range": "± 1680865",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 4645842,
+            "range": "± 240432",
             "unit": "ns/iter"
           }
         ]
