@@ -16,8 +16,8 @@ A pod whose address does not parse, or whose named container port is missing or 
 skipped and logged at warn level; a pod without an address yet is skipped silently.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
-lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
-[docs/cluster.md](../docs/cluster.md#membership).
+lowest-address formation rule, see the Bootstrap section of
+[docs/cluster.md](../docs/cluster.md#bootstrap).
 
 tellus-bootstrap-k8s is available on [crates.io](https://crates.io/crates/tellus-bootstrap-k8s):
 
@@ -157,7 +157,7 @@ address with an IPv6 host parses. The variable name is the one
 another loader wants its own.
 
 Size `bootstrap.min_nodes` to the replica count for a fixed size cluster and lower for an elastic
-one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what
+one; the Bootstrap section of [docs/cluster.md](../docs/cluster.md#bootstrap) spells out what
 each choice costs. Whether the pods come from a StatefulSet or a Deployment makes no difference to
 discovery.
 

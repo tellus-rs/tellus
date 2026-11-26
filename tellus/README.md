@@ -50,8 +50,14 @@ as open source by [Apache Pekko](https://pekko.apache.org).
 - **Bounded or unbounded mailboxes**: bounded ones drop messages beyond capacity as dead letters but
   never drop terminated signals, the outputs of piped futures, `reply_to` replies or the messages a
   `Host` buffered for an entity.
+- **Timers**: `ActorContext::start_timer` delivers a message to the actor itself once a delay has
+  elapsed, behind the items queued at that moment; a canceled or replaced timer is never received.
 - **Stashing**: `ActorContext::stash` defers a message, or a terminated signal, until `unstash_all`,
   which hands the stashed items back ahead of the mailbox, in order.
+- **Opt-in per actor type**: timers and stashing are chosen by the associated types `Timers` and
+  `Stash`, so an `Untimed`, `Unstashed` actor runs a loop without timer or stash code.
+- **Hosts**: a `Host` spawns entities, actors identified by a key, on the first message for that key
+  and optionally passivates the ones idle for a while.
 - **Event-sourced persistence** (feature `persistence`): events are appended to a pluggable store
   and only then applied, the state is recovered by replay, and conditional appends fence
   concurrent incarnations.
@@ -385,8 +391,12 @@ evolution, see [docs/persistence.md](../docs/persistence.md).
 The `test-util` feature adds `testing::TestContext`, which provides the `ActorContext` that `init`,
 `receive`, `handle` and `recovered` require, so an actor's logic can be unit tested by calling
 those methods directly, without a running actor system. Everything the actor sends to itself can
-be read back in order. Together with the `persistence` feature, `testing::settle` runs the `Effect`
-returned by `handle` against the entity's state, without a store. See the Testing sections of
+be read back in order. `TestContext::new` is the context of an `Untimed`, `Unstashed` actor,
+`TestContext::timed` that of a `Timed` one and `TestContext::stashed` that of a `Stashed` one. A
+timed context lists the pending timers via `timers`, and `fire_timer` fires one, since no timer
+fires by itself. A stashed context hands back what the actor stashed via `take_stashed` and what it
+unstashed via `take_unstashed`. Together with the `persistence` feature, `testing::settle` runs
+the `Effect` returned by `handle` against the entity's state, without a store. See the Testing sections of
 [docs/actors.md](../docs/actors.md) and [docs/persistence.md](../docs/persistence.md).
 
 ## Examples
@@ -487,9 +497,22 @@ RUST_LOG=tellus=debug cargo run --quiet -p tellus-persistence-postgres \
 cargo run --quiet -p tellus-persistence-postgres --example event_sourced_04_postgres
 ```
 
+## Companion crates
+
+- [tellus-bootstrap-dns](https://crates.io/crates/tellus-bootstrap-dns): DNS seed discovery for
+  cluster bootstrap, from SRV or A/AAAA records.
+- [tellus-bootstrap-k8s](https://crates.io/crates/tellus-bootstrap-k8s): Kubernetes seed discovery
+  for cluster bootstrap, from the pods matching a label selector.
+- [tellus-cluster-inspect](https://crates.io/crates/tellus-cluster-inspect): an axum router
+  answering a snapshot of the node's cluster view and streaming its changes as server-sent events.
+- [tellus-persistence-postgres](https://crates.io/crates/tellus-persistence-postgres): PostgreSQL
+  event and snapshot stores for event-sourced actors.
+
 ## Status and roadmap
 
-tellus is under active development; expect the API to change without notice.
+tellus is under active development; expect the API to change. A breaking change which the
+compiler does not explain, or which needs manual steps, comes with a release note, as laid out in
+[CONTRIBUTING.md](../CONTRIBUTING.md#commits-and-pull-requests).
 
 The open items on the remoting side are listed under the limitations in
 [docs/cluster.md](../docs/cluster.md). What comes next, the cluster singleton and then sharding,

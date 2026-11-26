@@ -11,7 +11,7 @@ let app = Router::new().nest("/inspect", inspect);
 Call `router` inside a Tokio runtime, since it spawns the task recording the node's changes. Call it
 after `cluster::start_endpoint`; before that it fails with `InspectError::EndpointNotStarted`.
 `shutdown` is a future of your own. Once it resolves, that task stops and every `/events` stream
-ends. Hand it the signal on which your server shuts down gracefully, or that shutdown waits for
+ends; a stream opened after that ends at once, without an event. Hand it the signal on which your server shuts down gracefully, or that shutdown waits for
 every client following the stream. A future has one taker, so the server and the router each get one
 of their own. With a `tokio::sync::Notify` in an `Arc` that is a `notified_owned()` each, and
 `notify_waiters()` fires both. Take both before it fires: `notify_waiters()` stores no permit, so a
