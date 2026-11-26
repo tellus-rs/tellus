@@ -118,7 +118,8 @@ termination below). A root whose system is stopped before the root ran skips `in
 ## Configuration
 
 [`ActorConfig`](../tellus/src/actor_config.rs) is passed via `spawn_with_config` or
-`ActorSystem::with_config`:
+`ActorSystem::with_config`, and for an event-sourced actor via `spawn_event_sourced_with_config` or
+`ActorSystem::event_sourced_with_config`:
 
 | Field                  | Default     | Meaning                                                                       |
 | ---------------------- | ----------- | ----------------------------------------------------------------------------- |
@@ -251,7 +252,7 @@ silently.
 ## Timers
 
 Timers are opt-in per actor type: `type Timers = Timed;` in an `impl Actor` or `impl EventSourced`
-gives the actor's `ActorContext<M, Timed>` the two methods below. With `Untimed`, the default of
+gives the actor's `ActorContext<M, Timed, S>` the two methods below. With `Untimed`, the default of
 `ActorContext<M>`, they do not exist, so an actor which has not declared timers cannot start one,
 and it runs the loop without timers (see the run loop below). The two modes are the only
 implementors of the sealed [`TimerMode`](../tellus/src/timers.rs). A function shared by timed and
@@ -262,7 +263,8 @@ below); `&ActorContext<M>` is the untimed, unstashed context only.
 after a delay, e.g. for a deadline, a retry or an idle timeout: `start_timer(key, message, delay)`
 delivers the message once the delay has elapsed. The key, a `&'static str`, names the timer:
 starting a timer under a key in use replaces that timer, and `cancel_timer(key)` cancels the timer
-under the key. The message of a replaced or canceled timer is dropped at once, under
+under the key. A delay whose deadline the clock cannot represent, e.g. `Duration::MAX`, is capped at
+about 30 years. The message of a replaced or canceled timer is dropped at once, under
 `drop_containing_panic`, so a panicking destructor is logged and the actor continues.
 
 The timer's message is delivered like a tell to itself, behind the items queued for the actor when
@@ -303,9 +305,9 @@ one runs the loop which does both from its first iteration. No loop checks a mod
 which has no timer pending still pays for the timed loop.
 
 A restart cancels all timers, fired ones included, since a timer encodes a deadline of the old
-state; termination drops them, right after the messages drained from the mailbox (see stopping and
-termination below). Either way their messages are dropped under `drop_containing_panic`, so a
-panicking destructor is logged and contained.
+state; termination drops them after the messages drained from the mailbox and the stashed items (see
+stopping and termination below). Either way their messages are dropped under
+`drop_containing_panic`, so a panicking destructor is logged and contained.
 
 Timers need Tokio's time driver. `start_timer` creates the sleep, so on a runtime built without the
 driver it panics in the actor's own code, and the actor fails under its supervision as for any
@@ -317,7 +319,8 @@ In a unit test no timer fires by itself (see testing below). `TestContext::timed
 context of a timed actor, and [`TestContext::timers`](../tellus/src/testing.rs) lists the pending
 timers with the time remaining. `TestContext::fire_timer` fires one as the run loop would, whatever
 its delay. `take_incoming` then returns its message behind the items which were queued when it
-fired, unless the actor cancels or replaces the timer first.
+fired, unless the actor cancels or replaces the timer first. `fire_timer` returns `false` for an
+unknown key and for a timer which has fired already.
 
 ## Stashing
 
@@ -473,7 +476,8 @@ sequenceDiagram
     participant C as children
     participant W as watchers
     A->>A: drop state (destructors run)
-    A->>A: drain mailbox, drop queued and timer messages
+    A->>A: drain mailbox, drop queued, stashed and timer messages
+    A->>A: unwatch every watched actor
     A->>C: stop signal (watch channel)
     C->>C: same sequence, recursively
     C-->>A: channel closed (all receivers dropped)
@@ -506,8 +510,9 @@ ask ends as `NoReply` or `Timeout` instead (see [cluster.md](cluster.md)). The d
 drained messages run as part of the sequence, outside the mailbox's lock. A request still queued at
 closure is hence detached at closure and dropped during termination, which resolves its ask as
 `NoReply` instead of pending forever. The ask's deadline can still expire before its reply channel
-closes. The messages of the actor's timers are dropped right after the drained ones, so a `ReplyTo`
-inside one resolves its ask as `NoReply` too.
+closes. The stashed items are dropped after the drained ones and the messages of the actor's timers
+after those, so a `ReplyTo` inside one resolves its ask as `NoReply` too. The actor then unwatches
+every actor it watches, still before the children are stopped.
 
 The root actor has no parent, so `ActorSystem::stop` is that channel from the outside: it sends on
 the very sender which keeps the root alive, shared between the system and the root's watcher
@@ -587,22 +592,25 @@ actor and its entities are addressed through `tell` and `ask` with an envelope. 
 its children, hence stopping it stops them first.
 
 A `HostConfig` sets the buffer described below, 64 messages per entity by default, and the idle
-timeout. Passivation is off unless `HostConfig::with_idle_timeout` sets a timeout, and that method
-refuses zero. With the `serde` feature a `HostConfig` is deserializable like the actor
-configuration. Both fields are optional: an omitted `buffer` is 64, and an omitted `idle_timeout`
-leaves passivation off. Deserialization goes through `with_idle_timeout`, so a zero idle timeout is
-refused there as well, with `InvalidHostConfig::ZeroIdleTimeout`:
+timeout. `HostConfig::new(buffer)` takes the buffer as a `NonZeroUsize`. Passivation is off unless
+`HostConfig::with_idle_timeout` sets a timeout, and that method refuses zero. With the `serde`
+feature a `HostConfig` is deserializable like the actor configuration. Both fields are optional: an
+omitted `buffer` is 64, and an omitted `idle_timeout` leaves passivation off. Deserialization goes
+through `with_idle_timeout`, so a zero idle timeout is refused there as well, with
+`InvalidHostConfig::ZeroIdleTimeout`:
 
 ```yaml
 buffer: 128
 idle_timeout: 5m
 ```
 
-The host is given one function, `spawn`, returning an `ActorRef<Hosted<M>>`. It must spawn a fresh
-child through the context it is handed, on every call, e.g. via `ActorContext::spawn` or
-`ActorContext::spawn_event_sourced`; it must not return an actor it has returned before, nor one
-from outside the host's subtree. One entity per key, stopping the entities with the host and the
-delivery of buffered messages all rest on that, and the signature cannot enforce it.
+`Host::new(config, spawn)` creates the host from a `HostConfig` and one function, `spawn`. It is a
+`Fn(&K, &ActorContext<HostEnvelope<K, M>>) -> ActorRef<Hosted<M>>`, called with the entity's key and
+the host's own context. It must spawn a fresh child through the context it is handed, on every call,
+e.g. via `ActorContext::spawn` or `ActorContext::spawn_event_sourced`; it must not return an actor
+it has returned before, nor one from outside the host's subtree. One entity per key, stopping the
+entities with the host and the delivery of buffered messages all rest on that, and the signature
+cannot enforce it.
 
 An entity's message type is `Hosted<M>`, where `M` is its domain message. The host wraps every
 message routed to it in `Hosted::Message` and asks it to stop with `Hosted::Passivate`, since an
@@ -670,6 +678,9 @@ signaled the watchers and drops them. If the root has already terminated when th
 registered, registration fails and the oneshot is resolved right away, mirroring the race-free
 watch registration. Dropping the `ActorSystem` without awaiting it does not stop the tree; the
 root stops on its own terms.
+
+`terminated()` returns `Result<(), TerminatedError>`. Its only variant, `WatchRoot`, means the
+oneshot was dropped unresolved, which no ordinary termination does.
 
 ## Panicking destructors
 
@@ -764,6 +775,9 @@ Calling an actor directly differs from running it in a few ways:
   without and with timers. Only they have `take_stashed` and `take_unstashed`, which apply the stash
   requests made so far, even after a failed call, whose requests the run loop discards. They never
   hold an `unstash_all`, since a direct call is no drain.
+  `TestContext::stashed_with_mailbox_capacity` and
+  `TestContext::timed_stashed_with_mailbox_capacity` bound the mailbox, and with it the stash, so a
+  test can fill the stash.
 - `spawn` starts a real child actor, hence needs a Tokio runtime, for example `#[tokio::test]`.
   Dropping the `TestContext` asks the children to stop without waiting for them.
 - To test `watch`, simulate the watched actor with a second `TestContext`: watch its `self_ref()`,
