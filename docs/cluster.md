@@ -46,8 +46,9 @@ is refused like a mistyped lookup. Every further reference travels inside messag
 
 Death watch works across nodes through the ordinary `ActorContext::watch`, with the weakened
 contract below. Request-response works across nodes too: `ReplyTo` is serializable like a
-reference, so `ActorRef::ask` and `ActorContext::reply_to` work unchanged against remote actors,
-with the `NoReply` detection weakened as described below.
+reference, so `ActorRef::ask` and `ActorContext::reply_to` work unchanged against remote actors.
+The `NoReply` detection of `ask` is weakened as described below; `reply_to` has no `NoReply` at
+all, so a missing reply goes unreported there, on one node as across nodes.
 
 A node's identity is its advertised address plus an *incarnation*, a UUID minted exactly once per
 process start, so a restarted node is distinguishable from its predecessor and no process can ever
@@ -148,19 +149,21 @@ machinery is needed.
 
 ### Joining
 
-`cluster::join` tries its seed addresses in order with the reconnect backoff between
-rounds, no internal timeout, until one admits the joiner. It fails at once with `NoSeeds` when the
-seeds hold no address but this node's own, since joining never forms. A join rides one dedicated
-connection: the handshake names the joiner with `Join` intent, the seed admits it as Up and answers
-with its member snapshot, which the joiner merges as *one* snapshot once its last chunk has arrived.
-Reading that snapshot is bounded by `heartbeat_interval`; a seed which takes longer counts as a
-failed attempt. A connection lost mid stream hence leaves no fragment of a cluster the joiner never
-joined. Every further frame rides ordinary lanes. Only a node which is itself a member admits a
-join; a node which is not answers `NoCluster`, which is retryable, so a seed list shared by nodes
-that are all still starting forms nothing on its own. A node which a cluster has admitted, but whose
-snapshot is still pending, answers `Joining` instead. That is retryable too, and formation counts it
-as unavailable: the node is pinned to that cluster (see below), so it is no evidence that no cluster
-exists. The joiner's own address is skipped in every position. A cluster is the transitive closure
+`cluster::join` tries its seed addresses in order with the reconnect backoff between rounds, no
+internal timeout, until one admits the joiner. It fails at once with `NoSeeds` when the seeds hold
+no address but this node's own, since joining never forms. A join rides one dedicated connection:
+the handshake names the joiner with `Join` intent, the seed admits it as Up and answers with its
+member snapshot, which the joiner merges as *one* snapshot once its last chunk has arrived. Reading
+that snapshot is bounded by `heartbeat_interval`; a seed which takes longer counts as a failed
+attempt. A connection lost mid stream hence leaves no fragment of a cluster the joiner never joined.
+Every further frame rides ordinary lanes. Only a node which is itself a member admits a join; a node
+which is not answers `NoCluster`, which is retryable, so a seed list shared by nodes that are all
+still starting forms nothing on its own. A node which is not a member but pinned to a cluster (see
+below) answers `Joining` instead, while its member snapshot is pending and between attempts after a
+failed one alike. That is retryable too, and formation counts it as unavailable: the pinned node is
+no evidence that no cluster exists. The joiner's own address is skipped in every position. A member
+joining again refreshes its member snapshot. The seed replaces its inbound connection from that node
+with the join's, so the member's lane to that seed reconnects. A cluster is the transitive closure
 of joins. Independent clusters must not share seeds: a joiner becomes a member of whichever seed
 admits it first, and the two clusters never merge, since every handshake names its cluster (see
 cluster identity below).
@@ -196,15 +199,16 @@ round over every seed, not on that answer alone.
 
 ### Ambiguous joins
 
-An attempt can also fail after its `Join` handshake was sent but before a
-validated answer pins anything. That covers a timeout while exchanging handshakes, a closed
-connection, an undecodable or unexpected first frame and a transport error. It also covers a reply
-which fails the dialer's own checks: an advertised address other than the dialed one, an identity
-which does not cover it, a dead incarnation, another codec or a reply naming no cluster. A join task
-which panics once it has started to send the handshake counts too. The seed may have admitted this
-node in each of these cases, so the endpoint records the address as *ambiguous* and logs a warning.
-A failure after the pin, such as a panic or a member snapshot larger than the joiner accepts, leaves
-the address pinned rather than ambiguous. While any address is ambiguous, `cluster::form` fails with
+An attempt can also fail after its `Join` handshake was sent but before a validated answer pins
+anything. That covers a timeout while exchanging handshakes, a closed connection, an undecodable or
+unexpected first frame and a transport error. It also covers a reply which fails the dialer's own
+checks: an advertised address other than the dialed one, an identity which does not cover it, a dead
+incarnation, another codec or a reply naming no cluster. A join task which panics once its transport
+connection is established counts too, even before the handshake is sent. The seed may have admitted
+this node in each of these cases, so the endpoint records the address as *ambiguous* and logs a
+warning. It records one only while this node is unformed and unpinned. A failure after the
+pin, such as a panic or a member snapshot larger than the joiner accepts, leaves the pin in place
+rather than recording an ambiguity. While any address is ambiguous, `cluster::form` fails with
 `FormError::JoinAmbiguous`, and bootstrap reports that as a declined formation. Joins continue
 through any seed, unlike under a pin, since nothing proves which cluster, if any, admitted this
 node. The record ends once that address answers a join definitively (`NoCluster`, `Joining`,
@@ -238,11 +242,12 @@ node's cluster, and is never admitted.
 
 ### Forming
 
-A cluster comes into being by decision, never as a side effect. `cluster::form` makes
-this node a cluster of one for a deployment which decides for itself. It is refused if this node is
-already a member, has been downed, or has a join attempt, a pinned cluster or an ambiguous join
-outstanding. Otherwise `cluster::bootstrap` decides through a `FormationProvider`, a pluggable trait
-like the `DowningProvider`; its provided implementations are `Majority` (the default),
+A cluster comes into being by decision, never as a side effect. `cluster::form` makes this node a
+cluster of one for a deployment which decides for itself. It is refused if this node is already a
+member or has been downed. It fails with `FormError::JoinInFlight` while a join attempt runs, with
+`FormError::ClusterPinned` while a cluster is pinned and with `FormError::JoinAmbiguous` while a
+join is ambiguous. Otherwise `cluster::bootstrap` decides through a `FormationProvider`, a pluggable
+trait like the `DowningProvider`; its provided implementations are `Majority` (the default),
 `MajorityWithFallback`, `Unanimous` and `Explicit`. The provider sees the *universe*, every resolved
 address united with this node's own, what each attempted address answered and when the round ended.
 An answer is `NoCluster`, `Held` (a cluster holding back joins) or `Unavailable`, which includes a
@@ -279,47 +284,49 @@ cluster probe (see bootstrap below) reports such a double formation in
 
 ### Bootstrap
 
-`cluster::bootstrap` turns the seed addresses from configuration into discovery. A
-`SeedDiscovery` resolves them; the provided ones are `FixedSeeds` in tellus, SRV and A/AAAA records
-in the [`tellus-bootstrap-dns`](../tellus-bootstrap-dns) crate and pods listed by label selector in
-the [`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s) crate. The *universe* is the resolved set
-united with this node's own address. On every resolution, bootstrap attempts to join through every
-resolved address but this node's own, lowest first, in one round, so a node finds an existing
-cluster at once. It pauses for `resolve_interval` after every round, then resolves again. A round
-waits for each attempt at most `join_attempt_timeout` (5 s by default) and counts an attempt which
-outlasts it as unavailable. Without that bound a silent address would hold the round until QUIC
-gives up on it, 30 s, so two silent addresses below a live member would use up a 60 s bootstrap
-timeout. The default leaves room for a QUIC handshake, which takes milliseconds on a LAN, plus the
-`Join` handshake and the member snapshot, each bounded by `heartbeat_interval`. An attempt which
-times out before it has sent its `Join` handshake is abandoned, and the round goes on once it has
-given the join permit back, so it leaves nothing behind. One which has sent its `Join` handshake
-runs to its conclusion, since the seed may count this node already, and the round waits for it, at
-most two `heartbeat_interval`s longer: one for the answer to the handshake, one for the member
-snapshot. Its outcome counts for the round as if it had come in time: an admission makes this node a
-member, a held join forbids forming, a validated answer pins the address, and a failure short of a
-definitive answer is ambiguous, see above. Only the formation decision waits for the view to settle.
-It is taken on a round over a universe which has held at least `min_nodes` addresses unchanged for
-the settle window (`settle`), and only when none of them admitted this node. A round can take a
-while, and a node registering meanwhile is not in its universe. So bootstrap resolves again after
-such a round and decides only if that resolution shows the same universe, still settled. A changed
-universe starts the settle window over, and the next round is taken over it. That adds no retry loop
-of its own: a discovery which keeps changing its set blocks the decision as long as it changes, as
-the settle window always did, while the order of the resolved addresses never matters. Joins go on
-in every round regardless. A settled view holding fewer than `min_nodes` addresses blocks that
+`cluster::bootstrap` turns the seed addresses from configuration into discovery. A `SeedDiscovery`
+resolves them; the provided ones are `FixedSeeds` in tellus, SRV and A/AAAA records in the
+[`tellus-bootstrap-dns`](../tellus-bootstrap-dns) crate and pods listed by label selector in the
+[`tellus-bootstrap-k8s`](../tellus-bootstrap-k8s) crate. The *universe* is the resolved set united
+with this node's own address. On every resolution, bootstrap attempts to join through every resolved
+address but this node's own, lowest first, in one round, so a node finds an existing cluster at
+once. It pauses for `resolve_interval` after every round, then resolves again. A round waits for
+each attempt at most `join_attempt_timeout` (5 s by default) and counts an attempt which outlasts it
+as unavailable. Without that bound a silent address would hold the round until QUIC gives up on it,
+30 s, so two silent addresses below a live member would use up a 60 s bootstrap timeout. The default
+leaves room for a QUIC handshake, which takes milliseconds on a LAN, plus the `Join` handshake and
+the member snapshot, each bounded by `heartbeat_interval`. An attempt which times out before it has
+sent its `Join` handshake is abandoned, and the round goes on once it has given the join permit
+back, so it leaves nothing behind. One which has sent its `Join` handshake runs to its conclusion,
+since the seed may count this node already, and the round waits for it, at most two
+`heartbeat_interval`s longer: one for the answer to the handshake, one for the member snapshot. Its
+outcome counts for the round as if it had come in time: an admission makes this node a member, a
+held join forbids forming, a validated answer pins the address, and a failure short of a definitive
+answer is ambiguous, see above. Only the formation decision waits for the view to settle. It is
+taken on a round over a universe which has held at least `min_nodes` addresses unchanged for the
+settle window (`settle`), and only when none of them admitted this node. A round can take a while,
+and a node registering meanwhile is not in its universe. So bootstrap resolves again after such a
+round and decides only if that resolution shows the same universe, still settled. A changed universe
+starts the settle window over, and the next round is taken over it. That adds no retry loop of its
+own: a discovery which keeps changing its set blocks the decision as long as it changes, as the
+settle window always did, while the order of the resolved addresses never matters. Joins go on in
+every round regardless. A settled view holding fewer than `min_nodes` addresses blocks that
 decision, so it is logged at warn level on every resolution. A round held back by a seed
-(`JoinsHeld`) is only observed and never asked to `form`. Bootstrap returns as soon as this node is
-a member, its own formation included, and at once when it already is. Membership owns failure
-detection and downing from then on. `min_nodes` counts the universe while the formation provider
-counts what its addresses answered. That distinction keeps a restarted node from re-forming inside a
-partition: discovery is unaffected by a partition, reachability is not. `FixedSeeds` should hence
-name every node: a partitioned minority holding most of the seeds can otherwise form a second
-cluster after a restart. Resolve failures are retried and restart the settle window, since nothing
-was observed during them. There is no overall timeout, so the call is bounded by the caller's
-timeout. `Downed` is fatal per process and means the caller should exit, letting the restart mint
-the fresh incarnation. What does this not prevent? Nodes deciding on views with *different lowest
-addresses* can still form separate clusters, which never merge on their own, since the formation
-rule is only as good as the universe it is taken over. The settle window and the `min_nodes` floor
-make that less likely, so size `min_nodes` to the deployment when possible (see Limitations).
+(`JoinsHeld`) is only observed and never asked to `form`. So is a round in which every seed is a
+member of another cluster: bootstrap retries it, while `cluster::join` fails on such a round with
+`JoinError::ForeignCluster`. Bootstrap returns as soon as this node is a member, its own formation
+included, and at once when it already is. Membership owns failure detection and downing from then
+on. `min_nodes` counts the universe while the formation provider counts what its addresses answered.
+That distinction keeps a restarted node from re-forming inside a partition: discovery is unaffected
+by a partition, reachability is not. `FixedSeeds` should hence name every node: a partitioned
+minority holding most of the seeds can otherwise form a second cluster after a restart. Resolve
+failures are retried and restart the settle window, since nothing was observed during them. There is
+no overall timeout, so the call is bounded by the caller's timeout. `Downed` is fatal per process
+and means the caller should exit, letting the restart mint the fresh incarnation. What does this not
+prevent? Nodes deciding on views with *different lowest addresses* can still form separate clusters,
+which never merge on their own, since the formation rule is only as good as the universe it is taken
+over. The settle window and the `min_nodes` floor make that less likely, so size `min_nodes` to the
+deployment when possible (see Limitations).
 
 ### Foreign cluster probe
 
@@ -869,8 +876,9 @@ The first reference cannot travel inside a message, so it is resolved by name in
 `RegisterError::NotLocal` for a reference to an actor of another node.
 `receptionist::lookup_at(&Key::new("worker-pool"), addr)` resolves that name at the Up member
 advertising `addr`, from the registrations that member replicated here (see Receptionist below). No
-frame is sent for a lookup: the answer is this node's copy of the member's registrations. Only a
-join makes a node a member, so an address which is not a member's answers empty.
+frame is sent for a lookup: the answer is this node's copy of the member's registrations. Only
+`cluster::form` or a join makes a node a member, and an address no Up member advertises answers
+empty.
 
 A `Key<M>` carries the message type next to the name, and the type travels as its manifest: `M`
 implements `cluster::Manifest`, whose `MANIFEST` is a stable name chosen by the application, e.g.
@@ -914,20 +922,21 @@ Discovery has these properties:
 
 ## Rolling upgrades
 
-A message type changes while nodes of the old and of the new application run side by side, so
-every payload carries what crossing that boundary needs. Every type crossing nodes implements
+A message type changes while nodes of the old and of the new application run side by side, so every
+payload carries what crossing that boundary needs. Every type crossing nodes implements
 `cluster::Schema`, which `Manifest` requires: a schema version, `VERSION`, sent alongside every
 payload of the type; `decode`, which the receiver calls with the version the payload carries; and
 `encode`, which the sender calls with the `Peer` the payload is for. The defaults encode and decode
-the current shape as `VERSION`, 0 unless overridden, and refuse every other version. tellus
-implements `Schema` for the types with one shape forever: `bool`, `char`, the integer and float
-primitives, `String`, `()`, and `Option` and `Vec` of each of those, plus `ActorRef` and `ReplyTo`.
-A container of an application type is no `Schema`, since its elements' hooks would never run; the
-application wraps it in a type of its own. A field of an application type inside a message is the
-same case: its hooks never run either, so a change inside it bumps the enclosing type's `VERSION`.
-`Result` is no `Schema` either, so a reply of `Result<T, E>` crosses nodes in a type of the
-application, usually an enum. Since `Manifest` requires `Schema`, a published or registered type
-deserializes as well as it serializes.
+the current shape as `VERSION`, 0 unless overridden, and refuse every other version. A `decode`
+override refuses a version it cannot decode the same way, with `UnsupportedSchemaVersion` as the
+source of its `CodecError`. tellus implements `Schema` for the types with one shape forever: `bool`,
+`char`, the integer and float primitives, `String`, `()`, and `Option` and `Vec` of each of those,
+plus `ActorRef` and `ReplyTo`. A container of an application type is no `Schema`, since its
+elements' hooks would never run; the application wraps it in a type of its own. A field of an
+application type inside a message is the same case: its hooks never run either, so a change inside
+it bumps the enclosing type's `VERSION`. `Result` is no `Schema` either, so a reply of
+`Result<T, E>` crosses nodes in a type of the application, usually an enum. Since `Manifest`
+requires `Schema`, a published or registered type deserializes as well as it serializes.
 
 Old code cannot be taught a new shape, so only the new code bridges the two. New code reading an
 old payload is an upcast: `decode` matches the old version, decodes the old shape into its own type
@@ -944,7 +953,11 @@ upcast delivers them without a trace of what the old shape lacks. Encoding the c
 `None` instead would make them dead letters at an old peer during a rollout, so delivering them is
 the better of the two, and the window is one handshake, see Limitations. A downcast which meets a
 value the old shape has no place for, a new variant for instance, fails, which makes the message a
-dead letter at the sender for a tell and `NotEncodable` for an ask.
+dead letter at the sender for a tell and `NotEncodable` for an ask. Besides its application
+version, `Peer` names the node it stands for with `Peer::addr` and `Peer::incarnation`. The `Pong`
+of the cluster demo ([`node.rs`](../tellus-cluster-demo/src/bin/node.rs)) overrides both hooks: it
+encodes version 0 for a peer below application version 2 and decodes version 0 into its current
+shape.
 
 A payload of a version the receiving type does not decode is a dead letter: the warning names the
 type and both versions, an ask fails as `NoReply`, and nothing is decoded with the wrong shape. That
@@ -976,7 +989,10 @@ drops the connection without a refusal, and the dialer retries as after any fail
 attempt: towards an address no Up member advertises up to `max_connect_attempts` times, towards a
 member until the downing provider settles its fate. A reply handshake failing the same checks fails
 the dial like an answer which does not speak this protocol, see The wire model. The widest
-handshake, 205 bytes, is the floor of `max_frame_size`.
+handshake, 205 bytes, is the floor of `max_frame_size`. A handshake advertising a `max_frame_size`
+below the floor fails the same checks (`HandshakeError::FrameSizeTooSmall`), so the acceptor drops
+it without a refusal too. The acceptor logs the handshake error at warn level in each of these
+cases.
 
 ## Receptionist
 
@@ -1171,7 +1187,9 @@ that never comes back.
 
 ## Cluster state
 
-`cluster::cluster_state` subscribes to this node's view of the cluster. It returns a
+`cluster::cluster_state` subscribes to this node's view of the cluster. Like `cluster::lifecycle`
+and `cluster::changes`, it fails with `ClusterStateError::EndpointNotStarted` before the endpoint is
+started, and `cluster::members` with `MembersError::EndpointNotStarted`. It returns a
 `ClusterStateSubscription` whose `current` answers the versioned `ClusterState` as of now, whose
 `changed` resolves once a newer version has been published and whose `wait_for` resolves with the
 first state it reads which satisfies a predicate. Underneath is a `tokio::sync::watch` channel which
@@ -1368,22 +1386,23 @@ swap is added.
   which costs liveness: while the lowest address of the universe does not answer, nothing forms. A
   discovery which keeps resolving nodes that are gone hence never lets a cold start finish.
   `MajorityWithFallback` is the opt-in which restores that liveness at the price of uniqueness: a
-  lowest address which is unreachable rather than gone can form a second cluster, and one which is
-  a member of a cluster already is passed over, so the others form a second cluster beside it.
+  lowest address which is unreachable rather than gone can form a second cluster. One which is a
+  member of a cluster already is passed over too while it is unavailable for `after`, so the others
+  form a second cluster beside it.
 - **Two clusters never merge.** The foreign cluster probe lists the other cluster in
   `ClusterState::foreign_clusters` on both sides, and each side logs it at error level every 5
   min. Recovering is an operator's task: stop every node of the younger cluster, the one with the
   greater ID, since cluster IDs order by formation time, then start them again. A node restarted
   while others of the younger cluster still run can join that cluster again, since bootstrap joins
   through whichever resolved address admits it first.
-- **An ambiguous join postpones formation, within a bound.** A join attempt which fails or panics
-  after it started to send its `Join` handshake, short of a definitive answer, leaves an ambiguity:
-  the seed may have admitted this node. The endpoint refuses to form until that address answers
-  definitively, leaves a settled discovery view or `ambiguous_join_bound` passes. Joins continue
-  through any seed meanwhile. Past the bound this node can form although the seed's cluster still
-  counts it as a member, until that cluster's failure detection and downing remove it. Pinning on
-  the ambiguity instead would hold bootstrap back behind any slow seed, which costs more than the
-  ambiguity does.
+- **An ambiguous join postpones formation, within a bound.** A join attempt which fails after it
+  started to send its `Join` handshake, or panics once its connection is established, short of a
+  definitive answer and before a pin, leaves an ambiguity: the seed may have admitted this node. The
+  endpoint refuses to form until that address answers definitively, leaves a settled discovery view
+  or `ambiguous_join_bound` passes. Joins continue through any seed meanwhile. Past the bound this
+  node can form although the seed's cluster still counts it as a member, until that cluster's
+  failure detection and downing remove it. Pinning on the ambiguity instead would hold bootstrap
+  back behind any slow seed, which costs more than the ambiguity does.
 - **Fences are bounded.** Detailed Left and Down entries are remembered for `down_retention`. After
   that, the greatest incarnation per address remains as a watermark with its state, which refuses
   zombie processes while admitting a newer restart. Watermarks ride connection setup rather than the
