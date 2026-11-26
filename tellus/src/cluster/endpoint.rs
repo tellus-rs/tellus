@@ -234,12 +234,12 @@ pub struct EndpointConfig {
     pub max_connect_attempts: NonZeroU32,
 
     /// How long a join attempt which ended without proof whether its seed admitted this node
-    /// blocks [form] at most. Such an attempt sent its `Join` handshake and then failed before an
-    /// answer pinned the address, short of a definitive refusal, e.g. by a timeout or a lost
-    /// connection, so the seed may count this node already. Forming is refused with
-    /// [FormError::JoinAmbiguous] until that address answers a join definitively, discovery drops
-    /// it from the universe, or this bound passes. Joins through any seed continue meanwhile. Must
-    /// not be zero; defaults to [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
+    /// blocks [form] at most. Such an attempt sent its `Join` handshake and then failed before the
+    /// seed's member snapshot arrived, short of a refusal, e.g. by a timeout or a lost connection,
+    /// so the seed may count this node already. Forming is refused with
+    /// [FormError::JoinAmbiguous] until that address answers a join as no cluster or as joining,
+    /// discovery drops it from the universe, or this bound passes. Joins through any seed continue
+    /// meanwhile. Must not be zero; defaults to [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
     pub ambiguous_join_bound: Duration,
 
     /// How many changes a subscriber of [changes](crate::cluster::changes) may fall behind
@@ -498,8 +498,8 @@ pub enum FormError {
     ClusterPinned(SocketAddr),
 
     /// A join attempt via this address sent its `Join` handshake and ended without proof whether
-    /// the seed admitted this node, so nothing else may be formed until that address answers
-    /// definitively, leaves the bootstrap universe or
+    /// the seed admitted this node, so nothing else may be formed until that address answers as no
+    /// cluster or as joining, leaves the bootstrap universe or
     /// [ambiguous_join_bound](EndpointConfig::ambiguous_join_bound) passes; worth retrying.
     #[error("the join attempt via {0} may have admitted this node")]
     JoinAmbiguous(SocketAddr),
@@ -1046,6 +1046,11 @@ impl EndpointInner {
         })
     }
 
+    pub(crate) fn pin_releases(&self) -> u64 {
+        self.lifecycle
+            .coordinate(|coordinator| coordinator.pin_releases)
+    }
+
     pub(crate) fn pinned_cluster(&self) -> Option<SocketAddr> {
         self.lifecycle
             .coordinate(|coordinator| coordinator.pinned.map(|(addr, _)| addr))
@@ -1077,6 +1082,11 @@ impl EndpointInner {
     ) -> Option<SocketAddr> {
         self.lifecycle
             .coordinate(|coordinator| coordinator.release_pin_if_gone(universe))
+    }
+
+    pub(crate) fn release_disproven_pin(&self) -> Option<SocketAddr> {
+        self.lifecycle
+            .coordinate(Coordinator::release_disproven_pin)
     }
 
     /// Recorded while the attempt still holds the join permit, so no formation slips in before.
@@ -2127,6 +2137,8 @@ struct Coordinator {
     lifecycle: Lifecycle,
     join_in_flight: bool,
     pinned: Option<(SocketAddr, ClusterId)>,
+    pin_disproven: bool,
+    pin_releases: u64,
     committed: Option<ClusterId>,
     ambiguous_joins: BTreeMap<SocketAddr, tokio_time::Instant>,
     departing: bool,
@@ -2155,6 +2167,7 @@ impl Coordinator {
         }
 
         self.pinned = Some((addr, cluster));
+        self.pin_disproven = false;
     }
 
     fn commit(&mut self, cluster: ClusterId) {
@@ -2173,9 +2186,9 @@ impl Coordinator {
         self.committed.or(self.pinned.map(|(_, cluster)| cluster))
     }
 
-    /// `false` if a membership, a down or a pin rules out formation already.
+    /// `false` if a membership or a down rules out formation already.
     fn record_ambiguous_join(&mut self, addr: SocketAddr, until: tokio_time::Instant) -> bool {
-        if self.lifecycle != Lifecycle::Unformed || self.pinned.is_some() {
+        if self.lifecycle != Lifecycle::Unformed {
             return false;
         }
 
@@ -2187,7 +2200,7 @@ impl Coordinator {
     fn finish_join(&mut self, addr: SocketAddr, result: Result<(), ConnectError>) -> Finished {
         self.join_in_flight = false;
         if self.lifecycle == Lifecycle::Downed {
-            self.pinned = None;
+            self.release_pin();
             return Finished {
                 result: Err(ConnectError::SelfDowned),
                 newly_downed: false,
@@ -2195,7 +2208,7 @@ impl Coordinator {
         }
 
         if let Err(error) = &result
-            && error.proves_no_admission()
+            && error.proves_restart()
         {
             self.ambiguous_joins.remove(&addr);
         }
@@ -2203,7 +2216,7 @@ impl Coordinator {
         let mut newly_downed = false;
         let result = match result {
             Ok(()) => {
-                self.pinned = None;
+                self.release_pin();
                 self.ambiguous_joins.clear();
                 self.lifecycle = Lifecycle::Formed;
                 Ok(())
@@ -2218,9 +2231,19 @@ impl Coordinator {
                 reason @ (RefusalReason::NoCluster | RefusalReason::Joining),
             )) => {
                 if self.pinned.is_some_and(|(pinned, _)| pinned == addr) {
-                    self.pinned = None;
+                    self.release_pin();
                 }
                 Err(ConnectError::Refused(reason))
+            }
+
+            Err(
+                error @ (ConnectError::Refused(RefusalReason::ForeignCluster)
+                | ConnectError::ForeignCluster(_)),
+            ) => {
+                if self.pinned.is_some_and(|(pinned, _)| pinned == addr) {
+                    self.pin_disproven = true;
+                }
+                Err(error)
             }
 
             Err(error) => Err(error),
@@ -2238,10 +2261,15 @@ impl Coordinator {
         }
 
         match self.pinned {
-            Some((pinned, _)) if !universe.contains(&pinned) => {
-                self.pinned = None;
-                Some(pinned)
-            }
+            Some((pinned, _)) if !universe.contains(&pinned) => self.release_pin(),
+
+            _ => None,
+        }
+    }
+
+    fn release_disproven_pin(&mut self) -> Option<SocketAddr> {
+        match self.pinned {
+            Some(_) if self.pin_disproven => self.release_pin(),
 
             _ => None,
         }
@@ -2301,9 +2329,15 @@ impl Coordinator {
         }
 
         self.lifecycle = Lifecycle::Downed;
-        self.pinned = None;
+        self.release_pin();
         self.ambiguous_joins.clear();
         true
+    }
+
+    fn release_pin(&mut self) -> Option<SocketAddr> {
+        let (released, _) = self.pinned.take()?;
+        self.pin_releases += 1;
+        Some(released)
     }
 }
 
@@ -4452,20 +4486,17 @@ mod tests {
         ));
     }
 
-    /// An ambiguous join blocks forming; a definitive refusal from that address proves it did not
-    /// admit this node and lifts the block, while a refusal from another address does not.
+    /// An ambiguous join blocks forming; a refusal from that address proving it has restarted
+    /// lifts the block, while a refusal from another address does not.
     #[test]
-    fn a_definitive_refusal_lifts_an_ambiguous_join() {
-        let definitive = [
+    fn a_restart_lifts_an_ambiguous_join() {
+        let restarted = [
             ConnectError::Refused(RefusalReason::NoCluster),
-            ConnectError::Refused(RefusalReason::UnknownMember),
-            ConnectError::Refused(RefusalReason::JoinsHeld),
-            ConnectError::Refused(RefusalReason::ForeignCluster),
-            ConnectError::ForeignCluster(ClusterId::new()),
+            ConnectError::Refused(RefusalReason::Joining),
         ];
         let until = tokio_time::Instant::now() + Duration::from_secs(30);
 
-        for refusal in definitive {
+        for refusal in restarted {
             let mut coordinator = Coordinator::default();
             assert!(coordinator.record_ambiguous_join(addr(1), until));
             assert!(matches!(
@@ -4504,6 +4535,32 @@ mod tests {
         coordinator.finish_join(addr(1), Err(ConnectError::Refused(RefusalReason::Down)));
         assert!(coordinator.ambiguous_joins.is_empty());
         assert!(!coordinator.record_ambiguous_join(addr(1), until));
+    }
+
+    #[test]
+    fn a_refusal_short_of_a_restart_keeps_an_ambiguous_join() {
+        let until = tokio_time::Instant::now() + Duration::from_secs(30);
+        for refusal in [
+            ConnectError::Refused(RefusalReason::UnknownMember),
+            ConnectError::Refused(RefusalReason::JoinsHeld),
+            ConnectError::Refused(RefusalReason::ForeignCluster),
+            ConnectError::Refused(RefusalReason::CodecMismatch),
+            ConnectError::ForeignCluster(ClusterId::new()),
+        ] {
+            let mut coordinator = Coordinator::default();
+            assert!(coordinator.record_ambiguous_join(addr(1), until));
+            coordinator.enter_join();
+            coordinator.pin(addr(2), ClusterId::new());
+            coordinator.finish_join(addr(1), Err(refusal));
+            assert_eq!(
+                coordinator.release_pin_if_gone(&BTreeSet::new()),
+                Some(addr(2))
+            );
+            assert!(matches!(
+                coordinator.form(tokio_time::Instant::now()),
+                Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == addr(1)
+            ));
+        }
     }
 
     /// An ambiguous join blocks forming for its bound at most, and no longer than its address is
@@ -4851,6 +4908,46 @@ mod tests {
             Ok(Lifecycle::Formed)
         ));
         assert_ne!(coordinator.committed, Some(pinned));
+    }
+
+    #[test]
+    fn a_pin_disproven_by_another_cluster_is_released_unless_its_cluster_answers_again() {
+        let pinned = ClusterId::new();
+        let mut coordinator = Coordinator::default();
+        let until = tokio_time::Instant::now() + Duration::from_secs(60);
+        coordinator.pin(addr(1), pinned);
+        coordinator.finish_join(addr(2), Err(ConnectError::ForeignCluster(ClusterId::new())));
+        assert_eq!(coordinator.release_disproven_pin(), None);
+        assert!(coordinator.record_ambiguous_join(addr(2), until));
+
+        coordinator.finish_join(addr(1), Err(ConnectError::ForeignCluster(ClusterId::new())));
+        coordinator.pin(addr(2), pinned);
+        assert_eq!(coordinator.release_disproven_pin(), None);
+        assert_eq!(coordinator.pinned, Some((addr(2), pinned)));
+
+        coordinator.finish_join(
+            addr(2),
+            Err(ConnectError::Refused(RefusalReason::ForeignCluster)),
+        );
+        assert!(coordinator.record_ambiguous_join(addr(3), until));
+        assert!(matches!(
+            coordinator.form(tokio_time::Instant::now()),
+            Err(FormError::ClusterPinned(_))
+        ));
+        assert_eq!(coordinator.release_disproven_pin(), Some(addr(2)));
+        assert_eq!(coordinator.effective_cluster(), None);
+        assert_eq!(
+            coordinator
+                .ambiguous_joins
+                .keys()
+                .copied()
+                .collect::<Vec<_>>(),
+            [addr(2), addr(3)]
+        );
+        assert!(matches!(
+            coordinator.form(tokio_time::Instant::now()),
+            Err(FormError::JoinAmbiguous(_))
+        ));
     }
 
     /// A committed ID outlives the pin it came with and is what a completed join leaves behind.

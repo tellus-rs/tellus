@@ -83,7 +83,8 @@ pub enum Declined {
     Explicit,
 
     /// A join attempt via this address ended without proof whether it admitted this node, so the
-    /// endpoint refuses to form until the address answers definitively, leaves the universe or
+    /// endpoint refuses to form until the address answers as no cluster or as joining, leaves the
+    /// universe or
     /// [ambiguous_join_bound](crate::cluster::EndpointConfig::ambiguous_join_bound) passes.
     /// Reported by bootstrap rather than by a provider.
     Ambiguous {

@@ -1016,14 +1016,15 @@ mod tests {
         let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3)], config);
 
         // A view settles on its second resolution at the earliest: the first round cannot decide.
-        for answer in [
-            ConnectError::Closed,
-            ConnectError::Refused(RefusalReason::NoCluster),
+        for (asked, answer) in [
+            (addr(2), ConnectError::Closed),
+            (addr(3), ConnectError::Refused(RefusalReason::NoCluster)),
+            (addr(2), ConnectError::Refused(RefusalReason::NoCluster)),
         ] {
             let request = next_join(&mut join_requests).await;
-            assert_eq!(request.addr, addr(2));
+            assert_eq!(request.addr, asked);
             assert!(endpoint.enter_join());
-            let result = endpoint.finish_join(addr(2), Err(answer));
+            let result = endpoint.finish_join(asked, Err(answer));
             assert!(request.result_tx.send(result).is_ok());
         }
         let released_at = tokio_time::Instant::now();

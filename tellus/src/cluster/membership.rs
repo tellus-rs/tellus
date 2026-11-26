@@ -154,14 +154,16 @@ pub enum DownError {
 /// this node. There is no internal timeout, so wrap the call in [timeout](tokio::time::timeout)
 /// to bound it. A seed which is a member of no cluster refuses, so a seed list shared by nodes
 /// which are all still starting forms nothing on its own. This node's own address is skipped in
-/// every position. Once a cluster has admitted this node, only that cluster is tried, even if the
-/// attempt failed before its member snapshot arrived. No other seed can be proven to be that same
-/// cluster, and another cluster refuses this node from then on. Joining again when already a
-/// member refreshes the member snapshot, but the seed replaces its inbound connection from this
-/// node with the join's, so this node's lane to that seed reconnects. A seed of another cluster
-/// refuses a member. A seed holds back joins from new addresses while one of its members is
-/// unreachable, and the round is retried until that member is reachable again or downed. A seed
-/// which is leaving holds back joins as well, and the round is retried until that seed is gone.
+/// every position. Once a cluster has admitted this node, only that cluster can admit it, even if
+/// the attempt failed before its member snapshot arrived: every seed is still tried, and one of
+/// another cluster refuses this node by its cluster ID. That holds until the seed which admitted
+/// this node proves it has restarted, answering as no cluster, as joining or as a member of
+/// another cluster. Joining again when already a member refreshes the member snapshot, but the seed
+/// replaces its inbound connection from this node with the join's, so this node's lane to that seed
+/// reconnects. A seed of another cluster refuses a member. A seed holds back joins from new
+/// addresses while one of its members is unreachable, and the round is retried until that member is
+/// reachable again or downed. A seed which is leaving holds back joins as well, and the round is
+/// retried until that seed is gone.
 ///
 /// Only a restarted process recovers from [JoinError::Downed].
 ///
@@ -230,8 +232,8 @@ pub fn down(addr: SocketAddr) -> Result<(), DownError> {
 pub(crate) enum JoinRound {
     Joined,
 
-    /// The cluster at this address may count this node already, so only it may be tried and
-    /// nothing may be formed until the attempt resolves.
+    /// The cluster at this address may count this node already, so only it may admit this node
+    /// and nothing may be formed until the attempt resolves.
     ClusterSeen(SocketAddr, Vec<(SocketAddr, JoinOutcome)>),
 
     /// The cluster at this address holds back joins: one of its members is unreachable, or the
@@ -484,74 +486,22 @@ pub(crate) enum JoinAdmission {
 
 /// One pass over the seeds, this node's own address skipped in every position: a formed node
 /// dialing itself would admit itself and never reach the real seeds. A pinned address is asked
-/// first, and the other seeds only once its answer has released the pin. An attempt outlasting
-/// `attempt_timeout` is abandoned, and the round goes on only once it has given the join permit
-/// back. One abandoned before its `Join` handshake counts as unavailable. One past it runs to its
-/// end, two `heartbeat_interval`s at most, and counts as if it had answered in time.
+/// first, then the other seeds, which only the pinned cluster can admit while the pin lasts. A pin
+/// whose address answered as a member of another cluster is released once the pass is over, and
+/// the round is another pass over the seeds without it. An attempt outlasting `attempt_timeout` is
+/// abandoned, and the round goes on only once it has given the join permit back. One abandoned
+/// before its `Join` handshake counts as unavailable. One past it runs to its end, two
+/// `heartbeat_interval`s at most, and counts as if it had answered in time.
 pub(crate) async fn join_round(
     endpoint: &'static EndpointInner,
     seeds: &[SocketAddr],
     attempt_timeout: Option<Duration>,
 ) -> JoinRound {
-    let pinned = endpoint.pinned_cluster();
-    let seeds = pinned
-        .into_iter()
-        .chain(
-            seeds
-                .iter()
-                .copied()
-                .filter(|seed| *seed != endpoint.node().addr() && Some(*seed) != pinned),
-        )
-        .collect::<Vec<_>>();
-
-    let mut outcomes = Vec::with_capacity(seeds.len());
-    let mut foreign = 0;
-    for seed in seeds {
-        if endpoint.downed() {
-            return JoinRound::Downed;
-        }
-
-        match join_within(endpoint, seed, attempt_timeout).await {
-            Ok(()) => return JoinRound::Joined,
-
-            Err(ConnectError::Refused(RefusalReason::Down) | ConnectError::SelfDowned) => {
-                return JoinRound::Downed;
-            }
-
-            Err(ConnectError::Refused(RefusalReason::NoCluster)) => {
-                outcomes.push((seed, JoinOutcome::NoCluster));
-            }
-
-            Err(ConnectError::Refused(RefusalReason::JoinsHeld)) => {
-                info!(
-                    seed_addr = %seed,
-                    "join held back, a member of the cluster is unreachable or the seed is leaving"
-                );
-                outcomes.push((seed, JoinOutcome::Held));
-                return JoinRound::Held(seed, outcomes);
-            }
-
-            Err(error) => {
-                debug!(seed_addr = %seed, %error, "cannot join via seed");
-                outcomes.push((seed, JoinOutcome::Unavailable));
-                if let Some(pinned) = endpoint.pinned_cluster() {
-                    return JoinRound::ClusterSeen(pinned, outcomes);
-                }
-                if matches!(
-                    error,
-                    ConnectError::Refused(RefusalReason::ForeignCluster)
-                        | ConnectError::ForeignCluster(_)
-                ) {
-                    foreign += 1;
-                }
-            }
+    loop {
+        if let Some(round) = join_pass(endpoint, seeds, attempt_timeout).await {
+            return round;
         }
     }
-
-    if foreign > 0 && foreign == outcomes.len() {
-        return JoinRound::ForeignCluster(outcomes);
-    }
-    JoinRound::NoAdmission(outcomes)
 }
 
 /// The most watermarks a node holds, twice `down_watermarks`.
@@ -985,6 +935,82 @@ struct Scan {
     to_down: Vec<(NodeId, MemberState)>,
     to_flush: Vec<NodeId>,
     self_down: bool,
+}
+
+async fn join_pass(
+    endpoint: &'static EndpointInner,
+    seeds: &[SocketAddr],
+    attempt_timeout: Option<Duration>,
+) -> Option<JoinRound> {
+    let pin_releases = endpoint.pin_releases();
+    let pinned = endpoint.pinned_cluster();
+    let seeds = pinned
+        .into_iter()
+        .chain(
+            seeds
+                .iter()
+                .copied()
+                .filter(|seed| *seed != endpoint.node().addr() && Some(*seed) != pinned),
+        )
+        .collect::<Vec<_>>();
+
+    let mut outcomes = Vec::with_capacity(seeds.len());
+    let mut foreign = 0;
+    for seed in seeds {
+        if endpoint.downed() {
+            return Some(JoinRound::Downed);
+        }
+
+        match join_within(endpoint, seed, attempt_timeout).await {
+            Ok(()) => return Some(JoinRound::Joined),
+
+            Err(ConnectError::Refused(RefusalReason::Down) | ConnectError::SelfDowned) => {
+                return Some(JoinRound::Downed);
+            }
+
+            Err(ConnectError::Refused(RefusalReason::NoCluster)) => {
+                outcomes.push((seed, JoinOutcome::NoCluster));
+            }
+
+            Err(ConnectError::Refused(RefusalReason::JoinsHeld)) => {
+                info!(
+                    seed_addr = %seed,
+                    "join held back, a member of the cluster is unreachable or the seed is leaving"
+                );
+                outcomes.push((seed, JoinOutcome::Held));
+                return Some(JoinRound::Held(seed, outcomes));
+            }
+
+            Err(error) => {
+                debug!(seed_addr = %seed, %error, "cannot join via seed");
+                outcomes.push((seed, JoinOutcome::Unavailable));
+                if matches!(
+                    error,
+                    ConnectError::Refused(RefusalReason::ForeignCluster)
+                        | ConnectError::ForeignCluster(_)
+                ) {
+                    foreign += 1;
+                }
+            }
+        }
+    }
+
+    if let Some(released) = endpoint.release_disproven_pin() {
+        info!(
+            cluster_addr = %released,
+            "released the pinned cluster, its address is a member of another cluster now"
+        );
+    }
+    if let Some(pinned) = endpoint.pinned_cluster() {
+        return Some(JoinRound::ClusterSeen(pinned, outcomes));
+    }
+    if foreign > 0 && endpoint.pin_releases() != pin_releases {
+        return None;
+    }
+    if foreign > 0 && foreign == outcomes.len() {
+        return Some(JoinRound::ForeignCluster(outcomes));
+    }
+    Some(JoinRound::NoAdmission(outcomes))
 }
 
 async fn join_within(

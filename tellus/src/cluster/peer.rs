@@ -145,11 +145,11 @@ pub(crate) enum ConnectError {
 }
 
 impl ConnectError {
-    /// A refusal, and a reply naming another cluster, prove that the peer did not admit a join.
-    pub(crate) fn proves_no_admission(&self) -> bool {
+    /// A peer which is no member of any cluster has restarted since any join it admitted.
+    pub(crate) fn proves_restart(&self) -> bool {
         matches!(
             self,
-            ConnectError::Refused(_) | ConnectError::ForeignCluster(_)
+            ConnectError::Refused(RefusalReason::NoCluster | RefusalReason::Joining)
         )
     }
 
@@ -3444,6 +3444,36 @@ mod tests {
         }
     }
 
+    async fn accept_join(joining: &mut Joining, asked: SocketAddr) -> Acceptor {
+        accept_join_handshake(joining, asked).await.0
+    }
+
+    async fn accept_join_handshake(
+        joining: &mut Joining,
+        asked: SocketAddr,
+    ) -> (Acceptor, HandshakeV2) {
+        let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+            .await
+            .expect("the seed is dialed")
+            .expect("a dial");
+        assert_eq!(dial.addr, asked);
+        let (connected, mut acceptor) = Acceptor::connected();
+        assert!(dial.answer.send(connected).is_ok());
+        let handshake = acceptor.joiner_handshake().await;
+        (acceptor, handshake)
+    }
+
+    async fn pin_through(joining: &mut Joining, pinned: SocketAddr) {
+        let endpoint = joining.endpoint;
+        let round =
+            task::spawn(async move { membership::join_round(endpoint, &[pinned], None).await });
+        accept_join(joining, pinned).await.admit(pinned);
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::ClusterSeen(seen, _) if seen == pinned
+        ));
+    }
+
     /// The first verdict of forming once no join attempt is in flight anymore.
     async fn form_once_settled(endpoint: &'static EndpointInner) -> Result<(), FormError> {
         timeout(Duration::from_secs(5), async {
@@ -3746,12 +3776,10 @@ mod tests {
             task::spawn(
                 async move { membership::join_round(endpoint, &[seed, other], None).await },
             );
-        let dial = joining.dials.recv().await.expect("a dial");
-        let (connected, mut acceptor) = Acceptor::connected();
-        assert!(dial.answer.send(connected).is_ok());
-        acceptor.joiner_handshake().await;
-        acceptor.admit(seed);
-        drop(acceptor);
+        accept_join(&mut joining, seed).await.admit(seed);
+        accept_join(&mut joining, other)
+            .await
+            .refuse(RefusalReason::NoCluster);
         assert!(matches!(
             round.await.expect("the round completes"),
             JoinRound::ClusterSeen(pinned, _) if pinned == seed
@@ -3779,6 +3807,201 @@ mod tests {
                 if outcomes == [(seed, JoinOutcome::NoCluster), (other, JoinOutcome::NoCluster)]
         ));
         assert_eq!(endpoint.pinned_cluster(), None);
+    }
+
+    #[tokio::test]
+    async fn a_pinned_round_joins_through_another_member_of_the_pinned_cluster() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (pinned, foreign, member) = (addr(2), addr(3), addr(4));
+        pin_through(&mut joining, pinned).await;
+        let cluster = endpoint
+            .effective_cluster()
+            .expect("the pin holds a provisional cluster");
+
+        let round = task::spawn(async move {
+            membership::join_round(endpoint, &[pinned, foreign, member], None).await
+        });
+        let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+            .await
+            .expect("the pinned address is dialed")
+            .expect("a dial");
+        assert_eq!(dial.addr, pinned);
+        drop(dial);
+        let (acceptor, handshake) = accept_join_handshake(&mut joining, foreign).await;
+        assert_eq!(handshake.cluster, Some(cluster));
+        acceptor.refuse(RefusalReason::ForeignCluster);
+        let (mut acceptor, handshake) = accept_join_handshake(&mut joining, member).await;
+        assert_eq!(handshake.cluster, Some(cluster));
+        acceptor.cluster = cluster;
+        acceptor.admit(member);
+        acceptor.gossip(
+            vec![
+                Member::new(NodeId::new(pinned), MemberState::Up),
+                Member::new(NodeId::new(member), MemberState::Up),
+            ],
+            false,
+        );
+
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::Joined
+        ));
+        assert_eq!(endpoint.committed_cluster(), Some(cluster));
+        assert_eq!(endpoint.pinned_cluster(), None);
+    }
+
+    #[tokio::test]
+    async fn a_pinned_address_of_another_cluster_is_asked_again_unpinned() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (pinned, other) = (addr(2), addr(3));
+        pin_through(&mut joining, pinned).await;
+        let cluster = endpoint.effective_cluster();
+
+        let round =
+            task::spawn(
+                async move { membership::join_round(endpoint, &[pinned, other], None).await },
+            );
+        let restarted = accept_join(&mut joining, pinned).await;
+        restarted.admit(pinned);
+        let (acceptor, handshake) = accept_join_handshake(&mut joining, other).await;
+        assert_eq!(handshake.cluster, cluster);
+        acceptor.refuse(RefusalReason::NoCluster);
+
+        let (mut restarted_again, handshake) = accept_join_handshake(&mut joining, pinned).await;
+        assert_eq!(handshake.cluster, None);
+        restarted_again.cluster = restarted.cluster;
+        restarted_again.admit(pinned);
+        restarted_again.gossip(
+            vec![Member::new(NodeId::new(pinned), MemberState::Up)],
+            false,
+        );
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::Joined
+        ));
+        assert_eq!(endpoint.committed_cluster(), Some(restarted.cluster));
+    }
+
+    #[tokio::test]
+    async fn a_pin_released_by_another_caller_repeats_the_pass() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (pinned, foreign, other) = (addr(2), addr(3), addr(4));
+        pin_through(&mut joining, pinned).await;
+        let cluster = endpoint.effective_cluster();
+
+        let round = task::spawn(async move {
+            membership::join_round(endpoint, &[pinned, foreign, other], None).await
+        });
+        let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+            .await
+            .expect("the pinned address is dialed")
+            .expect("a dial");
+        assert_eq!(dial.addr, pinned);
+        drop(dial);
+        let (acceptor, handshake) = accept_join_handshake(&mut joining, foreign).await;
+        assert_eq!(handshake.cluster, cluster);
+        let (result_tx, result_rx) = oneshot::channel();
+        endpoint.request_join(JoinRequest {
+            addr: pinned,
+            result_tx,
+            abandon_rx: None,
+        });
+        acceptor.refuse(RefusalReason::ForeignCluster);
+        accept_join(&mut joining, pinned)
+            .await
+            .refuse(RefusalReason::NoCluster);
+        assert!(result_rx.await.expect("the attempt finishes").is_err());
+        assert_eq!(endpoint.pinned_cluster(), None);
+        accept_join(&mut joining, other)
+            .await
+            .refuse(RefusalReason::NoCluster);
+
+        accept_join(&mut joining, pinned)
+            .await
+            .refuse(RefusalReason::NoCluster);
+        let (acceptor, handshake) = accept_join_handshake(&mut joining, foreign).await;
+        assert_eq!(handshake.cluster, None);
+        acceptor.admit(foreign);
+        acceptor.gossip(
+            vec![Member::new(NodeId::new(foreign), MemberState::Up)],
+            false,
+        );
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::Joined
+        ));
+        assert_eq!(endpoint.committed_cluster(), Some(acceptor.cluster));
+    }
+
+    #[tokio::test]
+    async fn a_round_is_foreign_only_once_every_seed_refused_it_unpinned() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (pinned, other) = (addr(2), addr(3));
+        pin_through(&mut joining, pinned).await;
+        let cluster = endpoint.effective_cluster();
+
+        let round =
+            task::spawn(
+                async move { membership::join_round(endpoint, &[pinned, other], None).await },
+            );
+        for (asked, named) in [
+            (pinned, cluster),
+            (other, cluster),
+            (pinned, None),
+            (other, None),
+        ] {
+            let (acceptor, handshake) = accept_join_handshake(&mut joining, asked).await;
+            assert_eq!(handshake.cluster, named);
+            acceptor.refuse(RefusalReason::ForeignCluster);
+        }
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::ForeignCluster(outcomes)
+                if outcomes == [
+                    (pinned, JoinOutcome::Unavailable),
+                    (other, JoinOutcome::Unavailable),
+                ]
+        ));
+        assert_eq!(endpoint.pinned_cluster(), None);
+    }
+
+    #[tokio::test]
+    async fn an_ambiguous_attempt_under_a_pin_outlasts_the_pin() {
+        let mut joining = joining(1);
+        let endpoint = joining.endpoint;
+        let (pinned, other) = (addr(2), addr(3));
+        pin_through(&mut joining, pinned).await;
+
+        let round =
+            task::spawn(
+                async move { membership::join_round(endpoint, &[pinned, other], None).await },
+            );
+        let dial = timeout(Duration::from_secs(5), joining.dials.recv())
+            .await
+            .expect("the pinned address is dialed")
+            .expect("a dial");
+        assert_eq!(dial.addr, pinned);
+        drop(dial);
+        drop(accept_join(&mut joining, other).await);
+        assert!(matches!(
+            round.await.expect("the round completes"),
+            JoinRound::ClusterSeen(seen, _) if seen == pinned
+        ));
+
+        let universe = BTreeSet::from([addr(1), other]);
+        assert_eq!(endpoint.release_pin_if_gone(&universe), Some(pinned));
+        assert_eq!(
+            endpoint.release_ambiguous_joins_if_gone(&universe),
+            [pinned]
+        );
+        assert!(matches!(
+            form_once_settled(endpoint).await,
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == other
+        ));
     }
 
     /// The caller going away after the cluster answered cannot discard what the endpoint learned:
@@ -4860,10 +5083,10 @@ mod tests {
         assert!(endpoint.form_cluster().is_ok());
     }
 
-    /// A definitive refusal from the address of an ambiguous attempt proves that it did not admit
-    /// this node, so forming proceeds.
+    /// A refusal from the address of an ambiguous attempt proving that it has restarted lifts the
+    /// ambiguity, so forming proceeds.
     #[tokio::test]
-    async fn a_definitive_refusal_lifts_an_ambiguous_join() {
+    async fn a_restart_lifts_an_ambiguous_join() {
         let mut joining = joining(1);
         let endpoint = joining.endpoint;
         let seed = addr(2);
@@ -4907,11 +5130,18 @@ mod tests {
         ];
         for error in ambiguous {
             assert!(error.leaves_join_ambiguous(), "{error:?}");
-            assert!(!error.proves_no_admission(), "{error:?}");
+            assert!(!error.proves_restart(), "{error:?}");
+        }
+
+        for error in [
+            ConnectError::Refused(RefusalReason::NoCluster),
+            ConnectError::Refused(RefusalReason::Joining),
+        ] {
+            assert!(!error.leaves_join_ambiguous(), "{error:?}");
+            assert!(error.proves_restart(), "{error:?}");
         }
 
         let definitive = [
-            ConnectError::Refused(RefusalReason::NoCluster),
             ConnectError::Refused(RefusalReason::UnknownMember),
             ConnectError::Refused(RefusalReason::Down),
             ConnectError::Refused(RefusalReason::JoinsHeld),
@@ -4920,7 +5150,7 @@ mod tests {
         ];
         for error in definitive {
             assert!(!error.leaves_join_ambiguous(), "{error:?}");
-            assert!(error.proves_no_admission(), "{error:?}");
+            assert!(!error.proves_restart(), "{error:?}");
         }
 
         for error in [
@@ -5001,6 +5231,10 @@ mod tests {
         assert_eq!(
             endpoint.release_pin_if_gone(&BTreeSet::from([addr(1)])),
             Some(seed)
+        );
+        assert_eq!(
+            endpoint.release_ambiguous_joins_if_gone(&BTreeSet::from([addr(1)])),
+            [seed]
         );
         assert_eq!(endpoint.effective_cluster(), None);
         endpoint.form_cluster().expect("an unpinned endpoint forms");
