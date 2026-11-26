@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795689838716,
+  "lastUpdate": 1795690395989,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27539,6 +27539,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20243641,
             "range": "± 887450",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4e56590b1282056c69cd1c0d72600ec7b5f657f",
+          "message": "Merge pull request #569 from tellus-rs/docs/issue-workflow\n\ndocs: describe how work on an issue is tracked",
+          "timestamp": "2026-11-26T11:45:01+01:00",
+          "tree_id": "fd6ad3729edf30eeafd610428bb7a8410515131d",
+          "url": "https://github.com/tellus-rs/tellus/commit/c4e56590b1282056c69cd1c0d72600ec7b5f657f"
+        },
+        "date": 1795690394100,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9511796,
+            "range": "± 900263",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9548043,
+            "range": "± 803820",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 671041,
+            "range": "± 17765",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 571117,
+            "range": "± 64303",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4753996,
+            "range": "± 102598",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3341693,
+            "range": "± 32410",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 18192304,
+            "range": "± 635776",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 19003946,
+            "range": "± 630413",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 18239092,
+            "range": "± 424018",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 18977872,
+            "range": "± 814425",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 18208784,
+            "range": "± 509791",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 19822316,
+            "range": "± 491734",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 25858180,
+            "range": "± 1112212",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 18259658,
+            "range": "± 482638",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 19748982,
+            "range": "± 607065",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 25893483,
+            "range": "± 954520",
             "unit": "ns/iter"
           }
         ]
