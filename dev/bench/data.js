@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795702012514,
+  "lastUpdate": 1795724272544,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27899,6 +27899,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20975292,
             "range": "± 983651",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cf01f6a33b28cbeb530eca9d4c4e507ad1fbd421",
+          "message": "Merge pull request #573 from tellus-rs/fix/ambiguous-join-bound-keeps-first-deadline\n\nfix(cluster): keep the first deadline of an ambiguous join",
+          "timestamp": "2026-11-26T21:09:52+01:00",
+          "tree_id": "f7c747103a4a987fcefefecac36a32e2da9dcee0",
+          "url": "https://github.com/tellus-rs/tellus/commit/cf01f6a33b28cbeb530eca9d4c4e507ad1fbd421"
+        },
+        "date": 1795724270652,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 8690965,
+            "range": "± 558174",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9261238,
+            "range": "± 1034966",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 624992,
+            "range": "± 8300",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 520460,
+            "range": "± 6072",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4474765,
+            "range": "± 40459",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3210149,
+            "range": "± 43846",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 17938176,
+            "range": "± 446889",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 18638699,
+            "range": "± 493152",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 17749957,
+            "range": "± 376724",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 18731856,
+            "range": "± 549186",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 17470623,
+            "range": "± 418510",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 19299577,
+            "range": "± 452176",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 25215590,
+            "range": "± 937917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17346628,
+            "range": "± 545424",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 19179076,
+            "range": "± 587292",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 25321693,
+            "range": "± 850399",
             "unit": "ns/iter"
           }
         ]
