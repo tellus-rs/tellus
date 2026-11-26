@@ -972,6 +972,7 @@ impl EndpointInner {
                 }
                 _ => {}
             }
+            coordinator.departing = true;
             Ok(self
                 .departure
                 .get_or_init(|| self.spawn_departure())
@@ -1003,7 +1004,7 @@ impl EndpointInner {
     }
 
     /// Observed by [form]; exclusivity itself comes from the single join loop, not from this.
-    /// `false` if this node is downed.
+    /// `false` if this node is downed or leaving.
     pub(crate) fn enter_join(&self) -> bool {
         self.lifecycle.coordinate(Coordinator::enter_join)
     }
@@ -1144,13 +1145,13 @@ impl EndpointInner {
     }
 
     /// Honoring this Down keeps other nodes' synthesized signals true; only a restart rejoins.
-    pub(crate) fn self_down(&self) {
-        if self.leaving() {
-            return;
-        }
-        if self.latch_down() {
+    /// `true` if this node is downed afterward, `false` while its leave holds the latch.
+    pub(crate) fn self_down(&self) -> bool {
+        if self.lifecycle.coordinate(Coordinator::self_down) {
+            self.sever_down();
             error!("this node has been downed, restart the process to rejoin");
         }
+        self.downed()
     }
 
     pub(crate) fn reachability_snapshot_frames(
@@ -2128,11 +2129,12 @@ struct Coordinator {
     pinned: Option<(SocketAddr, ClusterId)>,
     committed: Option<ClusterId>,
     ambiguous_joins: BTreeMap<SocketAddr, tokio_time::Instant>,
+    departing: bool,
 }
 
 impl Coordinator {
     fn enter_join(&mut self) -> bool {
-        if self.lifecycle == Lifecycle::Downed {
+        if self.lifecycle == Lifecycle::Downed || self.departing {
             return false;
         }
 
@@ -2208,7 +2210,7 @@ impl Coordinator {
             }
 
             Err(ConnectError::Refused(RefusalReason::Down)) => {
-                newly_downed = self.down();
+                newly_downed = self.self_down();
                 Err(ConnectError::Refused(RefusalReason::Down))
             }
 
@@ -2287,6 +2289,10 @@ impl Coordinator {
 
             Lifecycle::Downed => unreachable!("checked above"),
         }
+    }
+
+    fn self_down(&mut self) -> bool {
+        !self.departing && self.down()
     }
 
     fn down(&mut self) -> bool {
@@ -2489,19 +2495,22 @@ fn membership_tick(
             Downing::Members(members) => {
                 if members.iter().any(|member| member.node() == endpoint.node) {
                     warn!("self down, this node named by the downing provider");
-                    endpoint.self_down();
-                    return ControlFlow::Break(());
-                }
-                for member in members {
-                    warn!(%member, "node death, downed by the downing provider");
-                    endpoint.node_death(member.node());
+                    if endpoint.self_down() {
+                        return ControlFlow::Break(());
+                    }
+                } else {
+                    for member in members {
+                        warn!(%member, "node death, downed by the downing provider");
+                        endpoint.node_death(member.node());
+                    }
                 }
             }
 
             Downing::SelfDown => {
                 warn!("self down, decided by the downing provider");
-                endpoint.self_down();
-                return ControlFlow::Break(());
+                if endpoint.self_down() {
+                    return ControlFlow::Break(());
+                }
             }
         }
 
@@ -3537,6 +3546,14 @@ mod tests {
         }
     }
 
+    struct SelfDowning;
+
+    impl DowningProvider for SelfDowning {
+        fn down(&mut self, _: &[Member], _: Disconnected<'_>, _: Instant) -> Downing {
+            Downing::SelfDown
+        }
+    }
+
     #[tokio::test(start_paused = true)]
     async fn a_panicking_downing_provider_is_rebuilt() {
         let (polls, built) = (Arc::new(AtomicUsize::new(0)), Arc::new(AtomicUsize::new(0)));
@@ -3684,6 +3701,165 @@ mod tests {
             state_of(&endpoint.state_rx().borrow(), endpoint.node()),
             Some(MemberState::Down)
         );
+    }
+
+    /// A join refused as Down while this node leaves leaves the latch to the leave: the drain goes
+    /// on and is acknowledged, and no further join is entered meanwhile.
+    #[tokio::test]
+    async fn a_join_refused_as_down_while_leaving_keeps_the_drain() {
+        let (endpoint, mut dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        endpoint.send(peer, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+        assert!(endpoint.enter_join());
+
+        let departure = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+
+        assert!(!endpoint.enter_join());
+        assert!(matches!(
+            endpoint.finish_join(addr(2), Err(ConnectError::Refused(RefusalReason::Down))),
+            Err(ConnectError::Refused(RefusalReason::Down))
+        ));
+        assert!(!endpoint.downed());
+        assert_eq!(
+            state_of(&endpoint.state_rx().borrow(), endpoint.node()),
+            Some(MemberState::Left)
+        );
+
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        let departure = departure
+            .await
+            .expect("the leave completes")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        assert!(endpoint.downed());
+    }
+
+    /// A gossiped Down of this node while it leaves is left to the leave, and the rest of the
+    /// merge still takes effect: a departure learned by the same merge is deferred, not flushed.
+    #[tokio::test]
+    async fn a_self_down_merge_while_leaving_applies_every_other_outcome() {
+        let (endpoint, mut dial_requests, _join_requests) =
+            EndpointInner::for_tests(EndpointConfig::new(addr(1)));
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let peer = NodeId::new(addr(2));
+        let leaver = NodeId::new(addr(3));
+        endpoint.update(|membership, _| {
+            membership.add_up(peer);
+            membership.add_up(leaver);
+        });
+        endpoint.send(peer, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+
+        let departure = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        membership::on_gossip(
+            endpoint,
+            &[
+                Member::new(leaver, MemberState::Left),
+                Member::new(endpoint.node(), MemberState::Down),
+            ],
+        );
+
+        assert!(!endpoint.downed());
+        assert!(endpoint.departures().deferrals.contains_key(&leaver));
+        assert_eq!(
+            state_of(&endpoint.state_rx().borrow(), leaver),
+            Some(MemberState::Left)
+        );
+
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        let departure = departure
+            .await
+            .expect("the leave completes")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        assert!(endpoint.downed());
+    }
+
+    /// A provider's self-down on a leaving node is left to the leave, so the membership loop keeps
+    /// ticking for the drain and ends only once the leave has latched this node.
+    #[tokio::test(start_paused = true)]
+    async fn a_self_down_while_leaving_keeps_the_membership_loop_running() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.downing_provider = Arc::new(|| Box::new(SelfDowning));
+        let heartbeat_interval = config.heartbeat_interval;
+        config.leave_timeout = heartbeat_interval * 10;
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        endpoint.send(peer, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+
+        let departure = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let looping = task::spawn(membership_loop(endpoint));
+        sleep(heartbeat_interval * 3).await;
+
+        assert!(!endpoint.downed());
+        assert!(!looping.is_finished());
+
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        departure
+            .await
+            .expect("the leave completes")
+            .expect("a departure");
+        timeout(heartbeat_interval * 2, looping)
+            .await
+            .expect("the loop ends once this node has left")
+            .expect("the loop does not panic");
+    }
+
+    /// A provider verdict naming this node and a peer on a leaving node is a self-down as a whole:
+    /// the peer stays Up and its drain is acknowledged.
+    #[tokio::test(start_paused = true)]
+    async fn a_verdict_naming_this_node_while_leaving_downs_no_peer() {
+        let mut config = EndpointConfig::new(addr(1));
+        config.downing_provider = Arc::new(|| Box::new(DowningThisNode));
+        let heartbeat_interval = config.heartbeat_interval;
+        config.leave_timeout = heartbeat_interval * 10;
+        let (endpoint, mut dial_requests, _join_requests) = EndpointInner::for_tests(config);
+        endpoint.form_cluster().expect("an unformed endpoint forms");
+        let peer = NodeId::new(addr(2));
+        endpoint.update(|membership, _| membership.add_up(peer));
+        endpoint.send(peer, gossip()).expect("a lane opens");
+        let dial = dial_requests.try_recv().expect("the lane is dialed");
+
+        let departure = task::spawn(endpoint.leave());
+        while !endpoint.leaving() {
+            task::yield_now().await;
+        }
+        let looping = task::spawn(membership_loop(endpoint));
+        sleep(heartbeat_interval * 3).await;
+
+        assert!(!endpoint.downed());
+        assert!(!looping.is_finished());
+        assert_eq!(
+            state_of(&endpoint.state_rx().borrow(), peer),
+            Some(MemberState::Up)
+        );
+
+        let _ = dial.done_tx.send(Drain::Acknowledged);
+        let departure = departure
+            .await
+            .expect("the leave completes")
+            .expect("a departure");
+        assert_eq!(departure.acknowledged(), [addr(2)]);
+        timeout(heartbeat_interval * 2, looping)
+            .await
+            .expect("the loop ends once this node has left")
+            .expect("the loop does not panic");
     }
 
     /// A departure which panics downs and severs this node before any caller sees it fail, and

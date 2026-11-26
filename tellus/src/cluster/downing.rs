@@ -18,8 +18,8 @@ pub type DowningProviderFactory = Arc<dyn Fn() -> Box<dyn DowningProvider> + Sen
 /// is [KeepMajority]. A provider sees the whole membership, so it can resolve a partition by
 /// downing this node rather than the members it cannot reach; see docs/cluster.md on what a
 /// partition does to the guarantees either way. A provider which panics is replaced by a fresh one
-/// from its factory. On a node which is leaving, [SelfDown](Downing::SelfDown) only ends the
-/// polling, since the leave is underway.
+/// from its factory. On a node which is leaving, a self-down is left to the leave, which latches
+/// this node once its departure has ended, and the polling goes on until then.
 pub trait DowningProvider
 where
     Self: Send + 'static,

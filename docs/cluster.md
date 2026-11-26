@@ -480,7 +480,9 @@ right after its departure is announced, so no other member would learn of a late
 joiner would be a member in this node's list alone. The joiner retries as after any held join. Such
 a join ends the joiner's round, so the seeds behind this node are asked only once it is gone, at the
 latest after `leave_timeout`. A member joining again is still admitted, since that adds nothing to
-announce.
+announce. A leaving node starts no join itself: from the call to `cluster::leave` on,
+`cluster::join` fails as `JoinError::Downed`. A join already running then ends as it would
+otherwise, except that a refusal as Down severs nothing (see [Self-down](#self-down)).
 
 The departure is part of the gossiped state, so a member recognizes it however it arrives: from the
 leaver itself, or relayed by a third member, which can reach it before the leaver's own announcement
@@ -528,6 +530,12 @@ hence logged as the departure it is rather than at error level. A leaving node t
 back, by gossip or a refusal, leaves that latch to its leave. Neither settles anything locally:
 watchers of remote actors get no signal, asks resolve only by their timeout and actor-origin
 requests not at all, which is why the process is expected to exit.
+
+Until the leave latches, the leaving node goes on as before. A gossiped Down turns its own entry
+Down, and the rest of that gossip applies as usual, the departures and deaths of other members
+included. A downing provider's self-down is left to the leave the same way, and the membership loop
+keeps running, so a deferred departure of another member still ends at its deadline. A join refused
+as Down fails as `JoinError::Downed` and severs nothing, so the drain goes on.
 
 ### Retention
 
@@ -580,9 +588,9 @@ downs a member by address, e.g. for an operator who knows a node is gone for goo
 `cluster::leave` leaves the cluster. `cluster::down` fails with `DownError::NotAMember` when no Up
 member advertises the address, which is worth retrying while gossip converges. It fails with
 `DownError::ThisNode` for this node's own address, since a node ends its own membership with
-`cluster::leave`. A process whose lifetime is one actor system's lifetime calls
-`cluster::leave_on_terminated` in place of `ActorSystem::terminated`: waiting for the tree first is
-what puts the departure behind every terminated signal the tree owes remote watchers. When the actor
+`cluster::leave`. That holds while it is leaving and after it has left, too. A process whose
+lifetime is one actor system's lifetime calls `cluster::leave_on_terminated` in place of
+`ActorSystem::terminated`: waiting for the tree first is what puts the departure behind every terminated signal the tree owes remote watchers. When the actor
 system did not terminate cleanly, it still announces the departure and then fails with
 `LeaveError::Terminated`. On an endpoint which has neither formed nor joined a cluster, it fails
 with `LeaveError::Unformed` once the actor system has terminated.
@@ -1230,7 +1238,8 @@ two Up incarnations at one address or a member Up which the merged gossip declar
 consequences of a death (closing the lane, failing asks, flushing synthesized signals) run outside.
 The last value matters most: a self-down and a leave end the membership loop for good. Both publish
 this node's own entry before that, Down after a self-down and Left after a leave, which a
-loop-driven publication could never show.
+loop-driven publication could never show. A self-down on a leaving node ends nothing, since it is
+left to the leave, and a leave during which this node learned its own Down publishes Down instead.
 
 Two things follow from publishing at the mutation rather than at the tick. A reachability
 statement which arrives from a peer and cuts this node's component dates the member's

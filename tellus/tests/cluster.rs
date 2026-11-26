@@ -522,7 +522,7 @@ fn concurrent_leave_node() -> anyhow::Result<()> {
 /// The leaving node: an echo server which announces its departure once its actor system has
 /// terminated, instead of exiting silently and leaving the cluster to detect the silence. It
 /// checks its own departure report: the seeds it joined through acknowledged the drain, and a
-/// second leave returns the same report.
+/// second leave returns the same report. Downing its own address still answers `ThisNode`.
 fn leave_node() -> anyhow::Result<()> {
     let runtime = Runtime::new()?;
     runtime.block_on(async {
@@ -554,6 +554,10 @@ fn leave_node() -> anyhow::Result<()> {
         let again = cluster::leave().await.context("leaving again")?;
         if again != departure {
             bail!("leaving again reported {again:?} instead of {departure:?}");
+        }
+        match cluster::down(own) {
+            Err(DownError::ThisNode) => {}
+            other => bail!("downing this node's own address after leaving resolved to {other:?}"),
         }
         Ok(())
     })
