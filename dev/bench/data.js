@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795689834803,
+  "lastUpdate": 1795689836792,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -40357,6 +40357,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 136416,
             "range": "± 6768",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f922c382c922aed1b292e2ae9914226e829bb9a7",
+          "message": "Merge pull request #568 from tellus-rs/docs/stash-durability-wording\n\ndocs: say a timed-out append discards the stash requests too",
+          "timestamp": "2026-11-26T11:36:25+01:00",
+          "tree_id": "905b2aa15f14c2a1d788c47ab06e9036c91698f0",
+          "url": "https://github.com/tellus-rs/tellus/commit/f922c382c922aed1b292e2ae9914226e829bb9a7"
+        },
+        "date": 1795689836387,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3214046,
+            "range": "± 147276",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3086083,
+            "range": "± 148886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 851284,
+            "range": "± 2756",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 106928,
+            "range": "± 3025",
             "unit": "ns/iter"
           }
         ]
