@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795686550385,
+  "lastUpdate": 1795686552242,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -39853,6 +39853,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 102512,
             "range": "± 2531",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "42e7bd470eeea1287c9c431e6c33b4c8e0035eea",
+          "message": "Merge pull request #562 from tellus-rs/fix/postgres-fence-at-bigint-max\n\nfix(postgres): answer Conflict to a stale writer at the BIGINT limit",
+          "timestamp": "2026-11-26T10:41:02+01:00",
+          "tree_id": "77f34f5b602d0490f19ee2cff5d3001ce654d447",
+          "url": "https://github.com/tellus-rs/tellus/commit/42e7bd470eeea1287c9c431e6c33b4c8e0035eea"
+        },
+        "date": 1795686551874,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3463516,
+            "range": "± 131457",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3649846,
+            "range": "± 170197",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1084722,
+            "range": "± 8193",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 131623,
+            "range": "± 4793",
             "unit": "ns/iter"
           }
         ]
