@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795697484801,
+  "lastUpdate": 1795697486461,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -47085,6 +47085,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5365966,
             "range": "± 382473",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "912079ca8d90e4cce7473dc969c1ac8a74440716",
+          "message": "Merge pull request #572 from tellus-rs/fix/leaving-node-acts-as-leaving\n\nfix(cluster): leave a leaving node's self-down to its leave",
+          "timestamp": "2026-11-26T13:43:10+01:00",
+          "tree_id": "8dd7ac683f3df2ab43447713f304ac583e56409f",
+          "url": "https://github.com/tellus-rs/tellus/commit/912079ca8d90e4cce7473dc969c1ac8a74440716"
+        },
+        "date": 1795697486154,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 28049170,
+            "range": "± 1896668",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27413366,
+            "range": "± 1611440",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5193263,
+            "range": "± 426680",
             "unit": "ns/iter"
           }
         ]
