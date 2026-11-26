@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795687046844,
+  "lastUpdate": 1795687049575,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -40021,6 +40021,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 131623,
             "range": "± 4793",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "e5732f5b18f35d29525ee2140533928d6d5b95b6",
+          "message": "Merge pull request #566 from tellus-rs/docs/readme-gaps\n\ndocs: fill gaps and fix small errors in the READMEs",
+          "timestamp": "2026-11-26T10:41:35+01:00",
+          "tree_id": "ad12bd75974ddbf3c767b61a1b4f15210c1f3db1",
+          "url": "https://github.com/tellus-rs/tellus/commit/e5732f5b18f35d29525ee2140533928d6d5b95b6"
+        },
+        "date": 1795687048979,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3475241,
+            "range": "± 98364",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3515424,
+            "range": "± 150893",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1395906,
+            "range": "± 10324",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 138176,
+            "range": "± 7443",
             "unit": "ns/iter"
           }
         ]
