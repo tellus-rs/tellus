@@ -30,11 +30,11 @@
 [hotpath-cloud-badge]: https://img.shields.io/endpoint?url=https://hotpath.rs/badge-cloud.json
 [hotpath-cloud-url]: https://hotpath.rs/app/repos/tellus-rs/tellus
 
-An actor framework for Rust, built on [Tokio](https://tokio.rs): typed messages, supervision
-trees, death watch with an ordering guarantee, optional event-sourced persistence and optional
-clustered remoting over QUIC. Inspired by Carl Hewitt's
-[Actor Model](https://en.wikipedia.org/wiki/Actor_model) and strongly influenced by Akka, continued
-as open source by [Apache Pekko](https://pekko.apache.org).
+An actor framework for Rust, built on [Tokio](https://tokio.rs): typed messages, request-response,
+supervision trees, death watch with an ordering guarantee, opt-in timers and stashing, hosts for
+actors identified by a key, optional event-sourced persistence and optional clustered remoting over
+QUIC. Inspired by Carl Hewitt's [Actor Model](https://en.wikipedia.org/wiki/Actor_model) and
+strongly influenced by Akka, continued as open source by [Apache Pekko](https://pekko.apache.org).
 
 tellus is available on [crates.io](https://crates.io/crates/tellus):
 
@@ -79,6 +79,9 @@ cargo add tellus
 
 tellus is under active development and its API is still settling.
 
+The core has typed messaging with request-response, supervision, death watch, timers and stashing,
+both opt-in per actor type, and hosts which spawn entities by key and can passivate idle ones.
+
 Two extensions have landed, each behind a feature: `persistence` adds event-sourced actors, and
 `cluster` makes actor references serializable, so actors on different nodes message and watch each
 other through the same API. Both features are off by default, so tellus stays purely local and free
@@ -87,7 +90,9 @@ gossiped, and a pluggable failure detector plus downing provider down vanished m
 of a downed member's actors get synthesized terminated signals. A node shutting down cleanly
 announces its own departure. Every node publishes its view of the cluster as a versioned value. A
 receptionist answers every actor registered under a name across the cluster, and pub-sub tells every
-subscriber of a topic the publisher's receptionist currently resolves.
+subscriber of a topic the publisher's receptionist currently resolves. Seed discovery through DNS
+or the Kubernetes API ships in the two bootstrap crates, and `tellus-cluster-inspect` serves a
+node's view of the cluster over HTTP.
 
 The open items on the remoting side are listed under the limitations in
 [docs/cluster.md](docs/cluster.md). What comes next, the cluster singleton and then sharding, is
@@ -116,7 +121,8 @@ How tellus works internally, top-down with links into the implementation:
 The [justfile](justfile) defines the usual tasks; `just all` runs check, fmt, lint, test and doc.
 Check and lint run across the feature combinations, test across the ones which run tests
 differently. Check, lint and test need `cargo-hack`, and formatting needs `taplo` for TOML.
-Formatting runs on nightly, since the rustfmt configuration uses unstable options, and so does doc.
+Formatting runs on nightly, since the rustfmt configuration uses unstable options, and so do doc
+and the doctests of `just test`.
 The justfile picks the nightly of the date `rustc --version` reports, which must be installed. The
 `tellus-persistence-postgres` tests run against a container, so `just all` needs Docker. The
 benchmark report, the allocation checks and the demo's status recipes also use `jq`.
@@ -125,8 +131,8 @@ Regression benchmarks (criterion) run with `just bench`: messaging, persistence 
 store, and stashing. On CI the merge result of every pull request is benchmarked against the tip of
 `main` and the comparison posted as a comment. That comparison measures one stack position and is a
 hint, never a verdict; the performance gate is the [stack sweep](.github/stack-sweep/README.md),
-started by the label `sweep` (messaging), `sweep-persistence` (persistence) or `sweep-stash`
-(stashing) on a pull request. Every commit on `main` is tracked over time on the [benchmark
+started by the label `sweep` (messaging), `sweep-persistence` (persistence), `sweep-stash`
+(stashing) or `sweep-cluster` (remoting) on a pull request. Every commit on `main` is tracked over time on the [benchmark
 dashboard][benchmarks-url].
 
 For a local before and after, `just bench-save <baseline>` and `just bench-compare <baseline>` (and

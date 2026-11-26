@@ -60,6 +60,9 @@ on the host, not in a container, and connects to those ports.
   the [terminal observer](../tellus-cluster-demo-tui) renders it.
 - `http://localhost:8091/events` through `http://localhost:8095/events`: the demo's own stream
   beside it: the node's phase and the receptionist's counts for the demo's keys.
+- `http://localhost:8091/health` through `http://localhost:8095/health`: 200, or 503 while the
+  node is Downed or Leaving. The load balancer's health check and the readiness probe on Kubernetes
+  use it to take the node out of rotation, as their health check settings determine.
 - `http://localhost:8081/status`: the verifier's counters, including the load balancer's
   availability and the current chaos action.
 - `http://localhost:8081/violations`: the latest 200 violations the verifier found, empty on a
@@ -103,10 +106,10 @@ Under Docker Compose:
   window it checks that every node is a member, that every node sees all five as Up, none of them as
   unreachable and no broken link between them. It also checks that every node's receptionist
   resolves all five workers and is settled at the version it shows. A node whose verdict judges an
-  older version than its state is asked again, up to five times, since a node reads the verdict
-  before the state. Every node must
-  resolve all five subscribers of the event topic and have received an event from every node within
-  the last three seconds, and every node must have probed and messaged every other one. An address
+  older version than its state is asked again, with at most five requests in all, since a node
+  reads the verdict before the state. Every node must resolve all five subscribers of the event
+  topic and have received an event from every node within the last three seconds, and every node
+  must have probed and messaged every other one. An address
   listed as Up or heard from on the topic which no node advertises is a violation as well. Before
   those it checks for a split brain, two members whose Up sets do not overlap, and checks nothing
   further if it finds one. A load balancer outage longer than `TELLUS_LB_OUTAGE_SECS` is a violation
@@ -208,7 +211,16 @@ The relevant settings are:
   roll. It must stay above the settle window as well, or no mixed cluster is verified, which the
   verifier reports as `upgraded from 1.0.0 to 2.0.0 with 0 of 4 mixed clusters verified`; setting
   it to 10 is the way to see that violation on purpose. `RETRY_SECS` (chaos) is how long a roll
-  step waits before retrying a failed Docker or kubectl call.
+  step waits before retrying a failed Docker or kubectl call. `REQUEST_TIMEOUT_SECS` (chaos,
+  Kubernetes only) bounds the kubectl call which clears the partition labels.
+- `TELLUS_NODES`, `TELLUS_LB` and `TELLUS_CHAOS_STATE` (verifier, required): the comma separated
+  base URLs of the five nodes, the base URL of the load balancer and the path of the chaos agent's
+  state file.
+- The chaos agents' remaining variables name what they act on, and their defaults match the
+  stacks: `NODE_COUNT`, `STATE_FILE`, `OLD_VERSION` and `NEW_VERSION` in both;
+  `CONTAINER_PREFIX`, `IP_PREFIX`, `INTERFACES`, `PUMBA_IMAGE`, `PUMBA_TC_IMAGE`, `VERSION_FILE`
+  and `CHAOS_LABEL` on Compose; `POD_PREFIX`, `SELECTOR`, `STATEFULSET` and `FLUSH_SELECTOR` on
+  Kubernetes.
 - The `endpoint` section spells out the pluggable provider defaults, the adaptive phi accrual
   detector and `KeepMajority` after ten seconds of unreachability, so what the demo shows is what
   a deployment gets, visibly rather than implied. Every other `EndpointConfig` field keeps its

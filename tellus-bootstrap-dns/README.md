@@ -16,8 +16,8 @@ after it for the record's TTL, e.g. a sibling restarting a moment later than thi
 given via `with_resolver` is used as configured.
 
 For how bootstrap joins and when it forms a new cluster, from the settle window to the
-lowest-address formation rule, see the Bootstrap paragraph of the Membership section in
-[docs/cluster.md](../docs/cluster.md#membership).
+lowest-address formation rule, see the Bootstrap section of
+[docs/cluster.md](../docs/cluster.md#bootstrap).
 
 tellus-bootstrap-dns is available on [crates.io](https://crates.io/crates/tellus-bootstrap-dns):
 
@@ -41,7 +41,8 @@ the overall timeout with the number of addresses discovery may resolve which do 
 
 `DnsSeeds::srv`, `DnsSeeds::ip` and `DnsSeeds::new` read the system resolver configuration;
 `DnsSeeds::with_resolver` takes a resolver of your own instead. All of them refuse a blank name and
-a malformed one, such as a label over 63 bytes or an empty label, which could never resolve.
+a malformed one, such as a label over 63 bytes or an empty label, which could never resolve. The
+`ip` query also accepts an IP address literal as its name.
 
 With the `serde` feature the `Query` deciding what to resolve is deserializable, so it can come
 from a config file next to tellus's own configuration, and `DnsSeeds::new` takes it:
@@ -128,7 +129,7 @@ address with an IPv6 host parses. The variable name is the one
 another loader wants its own.
 
 Size `bootstrap.min_nodes` to the replica count for a fixed size cluster and lower for an elastic
-one; the Bootstrap paragraph of [docs/cluster.md](../docs/cluster.md#membership) spells out what
+one; the Bootstrap section of [docs/cluster.md](../docs/cluster.md#bootstrap) spells out what
 each choice costs. Whether the pods come from a StatefulSet or a Deployment makes no difference to
 discovery.
 

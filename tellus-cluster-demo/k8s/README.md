@@ -154,7 +154,8 @@ partition window longer than that period.
   `K8sSeeds` calls and nothing else. Under DNS discovery it is unused.
 - `tellus-chaos`, which the verifier pod runs as, gets `pods: get, list, watch, patch, delete`
   plus `pods/exec: create`. `patch` is what `kubectl label` uses, `watch` what `kubectl wait`
-  needs at startup, and `exec` is how it reaches the conntrack helper. It also gets
+  needs at startup and on every roll step, and `exec` is how it reaches the conntrack helper. It
+  also gets
   `statefulsets: get, list, watch, patch` in the `apps` group: `kubectl set env` and the
   partition patch the StatefulSet, and the agent reads its revisions from it. It has no permission
   on networkpolicies, because it never creates one.

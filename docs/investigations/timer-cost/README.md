@@ -1333,6 +1333,8 @@ candidate's names are normalized with `--rename '_untimed\b='` and `--rename
   A B <regex>` compares their mnemonic histograms. All three read `OBJDUMP` for a cross objdump.
   `fnmnem.py` has since been removed; commit
   [`0a45fa6`](https://github.com/tellus-rs/tellus/blob/0a45fa6e99de2e3ac1f4bdd4fa9747354df5eb31/.github/stack-sweep/fnmnem.py) still has it.
+  Note of 2026-11-26: `fncounts.py` no longer lists flume's functions. Its default selection is
+  `tellus|messaging|persistence`, and `--select <regex>` picks another.
 
 ## Pitfalls
 
