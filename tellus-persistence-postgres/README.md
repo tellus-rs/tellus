@@ -58,8 +58,9 @@ the store's schema and an application's own sqlx migrations can share a database
 earlier recorded it in sqlx's shared table `_sqlx_migrations`. In a database which such a release
 has migrated, `migrate` leaves the old row alone. An application which adds its own sqlx migrator to
 such a database removes that row first. Otherwise its migrator fails with `VersionMissing(1)`,
-unless it sets `ignore_missing`. If one of its own migrations has version 1, it fails with
-`VersionMismatch(1)` either way. This statement removes the row:
+unless it sets `ignore_missing`. If one of its own migrations has version 1 and a checksum other
+than that of the row, it fails with `VersionMismatch(1)`, also with `ignore_missing`, which does not
+skip the checksum check. This statement removes the row:
 
 ```sql
 DELETE FROM _sqlx_migrations
@@ -98,8 +99,12 @@ long as the acquire timeout plus twice the statement timeout, and that sum stays
 both to 3 s, which leaves 1 s of its 10 s `Persistence` timeout for the round trips. sqlx's default
 acquire timeout, 30 s, is above the default `Persistence` timeout.
 
-`migrate` runs under the same statement timeout. While another process migrates the same database,
-`migrate` hence waits for it at most the statement timeout and then fails.
+`migrate` runs under the same statement timeout, which bounds its wait for the advisory lock that
+serializes migrating processes. While another process migrates the same database, `migrate` hence
+waits for it at most the statement timeout and then fails, provided the statement timeout is not
+zero. Acquiring the connection is bounded by the acquire timeout instead, and every further
+statement of `migrate` by the statement timeout on its own, so `migrate` as a whole has no overall
+bound.
 
 One case stays ambiguous: a call which fails after its statement has begun to commit and before the
 answer has arrived. Neither `statement_timeout` nor `transaction_timeout` covers the commit which
@@ -147,6 +152,31 @@ needs no `_tellus_persistence_migrations`. Every change to the schema is listed 
 Appends are a single atomic, conditional statement: an expected next sequence number other than the
 actual one fails with `AppendError::Conflict` and leaves the stream untouched, which
 is tellus's fencing guarantee. An empty append inserts nothing but is still fenced.
+
+## Limits
+
+The columns are narrower than the types they hold. `seq_no` and `next_seq_no` are BIGINT, so
+positions end at `i64::MAX`, not at `u64::MAX` like those of `SeqNo`. An append whose expected next
+sequence number lies beyond `i64::MAX` fails with `AppendError::Conflict`, an empty one included. An
+append which starts in range but whose last event would lie beyond it fails with
+`AppendError::Store(Error::SeqNoOutOfRange)` and stores nothing. A read from beyond `i64::MAX`
+returns an empty page, and a snapshot save there fails with `Error::SeqNoOutOfRange`. A stream whose
+last event is at `i64::MAX` hence takes no further event, and no snapshot after that event. A stale
+append at `i64::MAX` to such a stream fails with `AppendError::Conflict` if it is empty or holds one
+event; a larger one fails with `AppendError::Store(Error::SeqNoOutOfRange)` first.
+
+`schema_version` is INT and holds a `SchemaVersion`, a `u16`. Reading an event or a snapshot whose
+`schema_version` lies outside 0..=65535 fails with `Error::SchemaVersionOutOfRange`, and reading a
+negative sequence number fails with `Error::SeqNoOutOfRange`. Only a row the store has not written
+can hold either.
+
+## Errors
+
+The store fails with its own type `Error`. `Error::Sqlx` wraps a failed database operation, a
+statement exceeding `statement_timeout` and a pool connection not acquired in time included.
+`Error::Migrate` wraps every failure of `migrate`. `Error::SeqNoOutOfRange` and
+`Error::SchemaVersionOutOfRange` are the range failures under [Limits](#limits). An append wraps its
+failures in `AppendError::Store`, except a conflict, which is `AppendError::Conflict`.
 
 ## Examples
 
