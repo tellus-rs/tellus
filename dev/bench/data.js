@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795688351920,
+  "lastUpdate": 1795689834803,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27419,6 +27419,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 26183453,
             "range": "± 1096349",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "f922c382c922aed1b292e2ae9914226e829bb9a7",
+          "message": "Merge pull request #568 from tellus-rs/docs/stash-durability-wording\n\ndocs: say a timed-out append discards the stash requests too",
+          "timestamp": "2026-11-26T11:36:25+01:00",
+          "tree_id": "905b2aa15f14c2a1d788c47ab06e9036c91698f0",
+          "url": "https://github.com/tellus-rs/tellus/commit/f922c382c922aed1b292e2ae9914226e829bb9a7"
+        },
+        "date": 1795689832913,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 7146390,
+            "range": "± 380369",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 7392606,
+            "range": "± 590185",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 537633,
+            "range": "± 10783",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 430151,
+            "range": "± 12755",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 3653173,
+            "range": "± 45886",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 2613285,
+            "range": "± 34994",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 14428751,
+            "range": "± 273737",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 14936720,
+            "range": "± 354472",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 14309531,
+            "range": "± 253601",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 15020797,
+            "range": "± 405535",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 14005856,
+            "range": "± 361273",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 16711662,
+            "range": "± 501114",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 20357146,
+            "range": "± 448477",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 13979261,
+            "range": "± 280917",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 15425064,
+            "range": "± 251854",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 20243641,
+            "range": "± 887450",
             "unit": "ns/iter"
           }
         ]
