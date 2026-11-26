@@ -189,34 +189,50 @@ recorded, leaving both counting this node; further callers queue. An attempt is 
 caller goes away while it waits its turn or for the transport to connect, since nothing has been
 sent by then. From the `Join` handshake on it runs to its conclusion, since the peer may already
 count this node from that moment. Once a seed's handshake, address and identity have been validated,
-that address is *pinned*: it is the only one tried afterward, and nothing may be formed beside it,
-because no other seed can be proven to be that same cluster. The pin is released by a completed
-join, by that address answering `NoCluster` or `Joining`, by this node being downed, or by bootstrap
-seeing the address leave a newly settled discovery view. A round in which the pinned address answers
-`NoCluster` goes on to the other seeds. The process at that address has restarted since, but the
-cluster which admitted this node may live on in the other seeds. Formation is hence decided on a
-round over every seed, not on that answer alone.
+that address is *pinned*: only its cluster may admit this node afterward, and nothing may be formed
+beside it. A round under a pin asks the pinned address first and then the other seeds. A seed of
+another cluster refuses this node by its cluster ID (see cluster identity below), while another
+member of the pinned cluster admits it, so a join completes even when the pinned address has gone
+away for good. The pin then moves to that member's address. The pin is released by a completed join,
+by the pinned address answering `NoCluster` or `Joining`, by this node being downed, or by bootstrap
+seeing the address leave a newly settled discovery view. An answer of `NoCluster` or `Joining`
+proves that the process at the pinned address has restarted, but the cluster which admitted this
+node may live on in the other seeds. A round in which the pinned address answers `NoCluster` hence
+goes on to the other seeds, and formation is decided on a round over every seed, not on that answer
+alone. A pinned address answering as a member of another cluster has restarted too, and has formed
+or joined that cluster since. Its pin is released only at the end of the round's pass over the
+seeds, so the other seeds of that pass can still admit this node into the pinned cluster only.
+Another member of the pinned cluster answering in that pass keeps the pin. Once the pin is released,
+the same round makes another pass over every seed without it. The same holds whenever any pin is
+released while a pass runs, by this round or by another caller, and the pass has collected an answer
+refusing a cluster ID. Neither `cluster::join` nor bootstrap hence decides anything on answers
+refusing a cluster ID which is no longer pinned. The address which answered as a member of another
+cluster may admit this node in that pass. A round which ends pinned is retried by `cluster::join`
+and by bootstrap. A round whose unpinned pass finds every seed a member of another cluster fails
+`cluster::join` with `ForeignCluster`.
 
 ### Ambiguous joins
 
-An attempt can also fail after its `Join` handshake was sent but before a validated answer pins
-anything. That covers a timeout while exchanging handshakes, a closed connection, an undecodable or
-unexpected first frame and a transport error. It also covers a reply which fails the dialer's own
-checks: an advertised address other than the dialed one, an identity which does not cover it, a dead
-incarnation, another codec or a reply naming no cluster. A join task which panics once its transport
-connection is established counts too, even before the handshake is sent. The seed may have admitted
-this node in each of these cases, so the endpoint records the address as *ambiguous* and logs a
-warning. It records one only while this node is unformed and unpinned. A failure after the
-pin, such as a panic or a member snapshot larger than the joiner accepts, leaves the pin in place
-rather than recording an ambiguity. While any address is ambiguous, `cluster::form` fails with
-`FormError::JoinAmbiguous`, and bootstrap reports that as a declined formation. Joins continue
-through any seed, unlike under a pin, since nothing proves which cluster, if any, admitted this
-node. The record ends once that address answers a join definitively (`NoCluster`, `Joining`,
-`UnknownMember`, `Down`, `JoinsHeld`, `ForeignCluster`, `CodecMismatch` or a reply naming another
-cluster), once bootstrap sees it leave a settled discovery view, or once
-`EndpointConfig::ambiguous_join_bound` (see [Configuration](#configuration)) has passed. A
-definitive refusal proves that the seed did not admit this node, so initial formation proceeds
-normally after one.
+An attempt can also fail after its `Join` handshake was sent but before the seed's member snapshot
+has arrived whole. That covers a timeout while exchanging handshakes, a closed connection, an
+undecodable or unexpected first frame and a transport error. It also covers a reply which fails the
+dialer's own checks: an advertised address other than the dialed one, an identity which does not
+cover it, a dead incarnation, another codec or a reply naming no cluster. A join task which panics
+once its transport connection is established counts too, even before the handshake is sent. The seed
+may have admitted this node in each of these cases, so the endpoint records the address as
+*ambiguous* and logs a warning. It records one whenever this node is unformed, pinned or not. A
+failure after the pin, such as a panic or a member snapshot larger than the joiner accepts, leaves
+the pin in place and is recorded as well, and so is a failure at another seed of the pinned cluster.
+While the pin holds it refuses formation by itself. Once the pin is released, the record still
+refuses it, since that seed may count this node. While any address is ambiguous, `cluster::form`
+fails with `FormError::JoinAmbiguous`, and bootstrap reports that as a declined formation. Unless a
+pin holds, any cluster may still admit this node, since nothing proves which cluster, if any,
+admitted it. The record ends once that address answers `NoCluster` or `Joining`, which proves that
+its process has restarted since, once a join completes, once bootstrap sees the address leave a
+settled discovery view, or once `EndpointConfig::ambiguous_join_bound` (see
+[Configuration](#configuration)) has passed. Any other refusal leaves the record in place: a seed
+refusing this node as a member of another cluster, for example, refuses the ID a later pin names,
+not the earlier attempt, which it may still count.
 
 ### Cluster identity
 
@@ -1406,12 +1422,13 @@ swap is added.
   through whichever resolved address admits it first.
 - **An ambiguous join postpones formation, within a bound.** A join attempt which fails after it
   started to send its `Join` handshake, or panics once its connection is established, short of a
-  definitive answer and before a pin, leaves an ambiguity: the seed may have admitted this node. The
-  endpoint refuses to form until that address answers definitively, leaves a settled discovery view
-  or `ambiguous_join_bound` passes. Joins continue through any seed meanwhile. Past the bound this
-  node can form although the seed's cluster still counts it as a member, until that cluster's
-  failure detection and downing remove it. Pinning on the ambiguity instead would hold bootstrap
-  back behind any slow seed, which costs more than the ambiguity does.
+  definitive answer and before the member snapshot has arrived, leaves an ambiguity: the seed may
+  have admitted this node. The endpoint refuses to form until that address answers `NoCluster` or
+  `Joining`, leaves a settled discovery view or `ambiguous_join_bound` passes. Joins continue
+  through any seed meanwhile. Past the bound this node can form although the seed's cluster still
+  counts it as a member, until that cluster's failure detection and downing remove it. Pinning on
+  the ambiguity instead would hold bootstrap back behind any slow seed, which costs more than the
+  ambiguity does.
 - **Fences are bounded.** Detailed Left and Down entries are remembered for `down_retention`. After
   that, the greatest incarnation per address remains as a watermark with its state, which refuses
   zombie processes while admitting a newer restart. Watermarks ride connection setup rather than the
