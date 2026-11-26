@@ -39,7 +39,7 @@ use derive_more::Debug;
 use jiff::fmt::serde::unsigned_duration::friendly;
 use std::{
     cell::Cell,
-    collections::{BTreeMap, BTreeSet, HashMap, HashSet},
+    collections::{BTreeMap, BTreeSet, HashMap, HashSet, btree_map},
     net::SocketAddr,
     num::{NonZeroU32, NonZeroUsize},
     ops::ControlFlow,
@@ -238,8 +238,9 @@ pub struct EndpointConfig {
     /// seed's member snapshot arrived, short of a refusal, e.g. by a timeout or a lost connection,
     /// so the seed may count this node already. Forming is refused with
     /// [FormError::JoinAmbiguous] until that address answers a join as no cluster or as joining,
-    /// discovery drops it from the universe, or this bound passes. Joins through any seed continue
-    /// meanwhile. Must not be zero; defaults to [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
+    /// discovery drops it from the universe, or this bound has passed since the first such attempt
+    /// at that address; a later one does not renew it. Joins through any seed continue meanwhile.
+    /// Must not be zero; defaults to [EndpointConfig::DEFAULT_AMBIGUOUS_JOIN_BOUND].
     pub ambiguous_join_bound: Duration,
 
     /// How many changes a subscriber of [changes](crate::cluster::changes) may fall behind
@@ -500,7 +501,8 @@ pub enum FormError {
     /// A join attempt via this address sent its `Join` handshake and ended without proof whether
     /// the seed admitted this node, so nothing else may be formed until that address answers as no
     /// cluster or as joining, leaves the bootstrap universe or
-    /// [ambiguous_join_bound](EndpointConfig::ambiguous_join_bound) passes; worth retrying.
+    /// [ambiguous_join_bound](EndpointConfig::ambiguous_join_bound) has passed since the first
+    /// ambiguous attempt there; worth retrying.
     #[error("the join attempt via {0} may have admitted this node")]
     JoinAmbiguous(SocketAddr),
 }
@@ -2186,14 +2188,21 @@ impl Coordinator {
         self.committed.or(self.pinned.map(|(_, cluster)| cluster))
     }
 
-    /// `false` if a membership or a down rules out formation already.
+    /// `false` if a membership or a down rules out formation already, or if the address has a
+    /// record already, whose deadline stands even once it has passed.
     fn record_ambiguous_join(&mut self, addr: SocketAddr, until: tokio_time::Instant) -> bool {
         if self.lifecycle != Lifecycle::Unformed {
             return false;
         }
 
-        self.ambiguous_joins.insert(addr, until);
-        true
+        match self.ambiguous_joins.entry(addr) {
+            btree_map::Entry::Occupied(_) => false,
+
+            btree_map::Entry::Vacant(entry) => {
+                entry.insert(until);
+                true
+            }
+        }
     }
 
     /// Downed dominates every raw outcome, since a down may land anywhere inside the attempt.
@@ -2301,13 +2310,13 @@ impl Coordinator {
         if let Some((addr, _)) = self.pinned {
             return Err(FormError::ClusterPinned(addr));
         }
-        self.ambiguous_joins.retain(|_, until| now < *until);
-        if let Some(addr) = self.ambiguous_joins.keys().next() {
+        if let Some((addr, _)) = self.ambiguous_joins.iter().find(|(_, until)| now < **until) {
             return Err(FormError::JoinAmbiguous(*addr));
         }
 
         match self.lifecycle {
             Lifecycle::Unformed => {
+                self.ambiguous_joins.clear();
                 self.committed = Some(ClusterId::new());
                 self.lifecycle = Lifecycle::Formed;
                 Ok(self.lifecycle)
@@ -4598,6 +4607,63 @@ mod tests {
             vec![addr(2)]
         );
         assert!(matches!(coordinator.form(now), Ok(Lifecycle::Formed)));
+    }
+
+    #[test]
+    fn an_ambiguous_join_keeps_the_deadline_of_its_first_attempt() {
+        let now = tokio_time::Instant::now();
+        let bound = Duration::from_secs(30);
+        let second = Duration::from_secs(1);
+        let mut coordinator = Coordinator::default();
+        assert!(coordinator.record_ambiguous_join(addr(1), now + bound));
+        for elapsed in 1..=40 {
+            let at = now + second * elapsed;
+            assert!(!coordinator.record_ambiguous_join(addr(1), at + bound));
+        }
+        assert!(matches!(
+            coordinator.form(now + bound - Duration::from_millis(1)),
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == addr(1)
+        ));
+        assert!(matches!(
+            coordinator.form(now + bound),
+            Ok(Lifecycle::Formed)
+        ));
+
+        let mut coordinator = Coordinator::default();
+        let later = Duration::from_secs(10);
+        assert!(coordinator.record_ambiguous_join(addr(1), now + bound));
+        assert!(coordinator.record_ambiguous_join(addr(2), now + later + bound));
+        assert!(matches!(
+            coordinator.form(now + bound),
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == addr(2)
+        ));
+        assert!(!coordinator.record_ambiguous_join(addr(1), now + bound + second + bound));
+        assert!(matches!(
+            coordinator.form(now + later + bound),
+            Ok(Lifecycle::Formed)
+        ));
+    }
+
+    /// An ambiguous join which a restart has ended starts over with the next ambiguous attempt at
+    /// its address.
+    #[test]
+    fn an_ambiguous_join_ended_by_a_restart_starts_over() {
+        let now = tokio_time::Instant::now();
+        let bound = Duration::from_secs(30);
+        let later = Duration::from_secs(40);
+        let mut coordinator = Coordinator::default();
+        assert!(coordinator.record_ambiguous_join(addr(1), now + bound));
+        coordinator.enter_join();
+        coordinator.finish_join(
+            addr(1),
+            Err(ConnectError::Refused(RefusalReason::NoCluster)),
+        );
+
+        assert!(coordinator.record_ambiguous_join(addr(1), now + later + bound));
+        assert!(matches!(
+            coordinator.form(now + later + bound - Duration::from_millis(1)),
+            Err(FormError::JoinAmbiguous(ambiguous)) if ambiguous == addr(1)
+        ));
     }
 
     /// A sighting of another cluster is published at once, stays while it is confirmed within

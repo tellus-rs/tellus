@@ -999,6 +999,50 @@ mod tests {
         assert!(start.elapsed() >= bound);
     }
 
+    #[tokio::test(start_paused = true)]
+    async fn a_repeatedly_ambiguous_address_postpones_formation_for_one_bound() {
+        const AFTER: Duration = Duration::from_secs(5);
+        let bound = Duration::from_secs(30);
+        let (endpoint, _lane_dials, mut join_requests) = endpoint(addr(2), |addr| {
+            let mut config = EndpointConfig::new(addr);
+            config.ambiguous_join_bound = bound;
+            config
+        });
+        let start = tokio_time::Instant::now();
+        let mut config = config();
+        config.settle = Duration::ZERO;
+        config.formation_provider = Arc::new(|| Box::new(MajorityWithFallback::new(AFTER)));
+        let bootstrap = spawn_run(endpoint, vec![addr(1), addr(2), addr(3)], config);
+
+        let mut first_ambiguous = None;
+        let mut ambiguous_attempts = 0;
+        let mut last_answer = Duration::ZERO;
+        while !bootstrap.is_finished() && start.elapsed() < bound * 3 {
+            let Ok(request) = timeout(RESOLVE_INTERVAL * 5, join_requests.recv()).await else {
+                break;
+            };
+            let request = request.expect("bootstrap requests joins");
+            assert!(!endpoint.formed());
+            last_answer = start.elapsed();
+            let answer = if request.addr == addr(1) {
+                endpoint.record_ambiguous_join(addr(1));
+                first_ambiguous.get_or_insert(tokio_time::Instant::now());
+                ambiguous_attempts += 1;
+                Err(ConnectError::Closed)
+            } else {
+                Err(ConnectError::Refused(RefusalReason::NoCluster))
+            };
+            assert!(request.result_tx.send(answer).is_ok());
+        }
+
+        assert!(endpoint.formed());
+        finished(bootstrap).await;
+        let first_ambiguous = first_ambiguous.expect("the lowest address was asked");
+        assert!(last_answer >= first_ambiguous - start + bound - RESOLVE_INTERVAL);
+        assert!(last_answer <= first_ambiguous - start + bound + RESOLVE_INTERVAL * 2);
+        assert!(ambiguous_attempts > bound.as_secs() / 2);
+    }
+
     /// A pinned address answering `NoCluster` releases the pin, but its answer alone decides no
     /// formation: the other seeds are asked in the same round, and one of them admits this node.
     #[tokio::test(start_paused = true)]

@@ -529,9 +529,10 @@ The core is small but dense with cross-file invariants:
   refuses joins (`RefusalReason::NoCluster`), `form` (`endpoint.rs`) makes it a cluster of one and
   `join` makes it a member through a seed's member snapshot, applied as one snapshot once its last
   chunk arrived; joins are exclusive per endpoint and pin the cluster which answered, a join failing
-  after its `Join` handshake and before the pin, short of a definitive answer, is recorded as
-  ambiguous and refuses `form` (`FormError::JoinAmbiguous`) until that address answers, leaves the
-  universe or `ambiguous_join_bound` passes, and `bootstrap` asks a `FormationProvider`
+  after its `Join` handshake and before the seed's member snapshot arrived whole, pinned or not, is
+  recorded as ambiguous and refuses `form` (`FormError::JoinAmbiguous`) until that address answers
+  `NoCluster` or `Joining`, leaves the universe or `ambiguous_join_bound` has passed since its first
+  ambiguous attempt, and `bootstrap` asks a `FormationProvider`
   (`formation.rs`, default `Majority`: the lowest address of the discovered universe, once a
   majority of it is known to be no cluster; the opt-in `MajorityWithFallback` skips a lowest
   address unavailable for its `after`; a provider answers a `Decision` with a `Declined` reason)
