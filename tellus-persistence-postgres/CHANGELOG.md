@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.1](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.3.0...tellus-persistence-postgres-v0.3.1) - 2026-11-26
+
+### Bug Fixes
+
+- *(postgres)* Answer Conflict to a stale writer at the BIGINT limit ([#562](https://github.com/tellus-rs/tellus/pull/562))
+
+### Documentation
+
+- *(persistence)* Document the BIGINT limit and failure handling ([#567](https://github.com/tellus-rs/tellus/pull/567))
+
+
 ## [0.3.0](https://github.com/tellus-rs/tellus/compare/tellus-persistence-postgres-v0.2.14...tellus-persistence-postgres-v0.3.0) - 2026-11-20
 
 ### Features

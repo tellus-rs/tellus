@@ -1,5 +1,42 @@
 # Changelog
 
+## [0.7.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.6.0...tellus-v0.7.0) - 2026-11-26
+
+### Bug Fixes
+
+- *(cluster)* Keep the first deadline of an ambiguous join ([#573](https://github.com/tellus-rs/tellus/pull/573))
+- *(cluster)* Try every seed while a join is pinned ([#571](https://github.com/tellus-rs/tellus/pull/571))
+- *(cluster)* Leave a leaving node's self-down to its leave ([#572](https://github.com/tellus-rs/tellus/pull/572))
+- *(cluster)* A drain is unacknowledged once its connection broke ([#553](https://github.com/tellus-rs/tellus/pull/553))
+- *(cluster)* A successor at a leaver's address no longer cuts its drain ([#544](https://github.com/tellus-rs/tellus/pull/544))
+- *(cluster)* Judge receptionist settlement by the current cluster state ([#541](https://github.com/tellus-rs/tellus/pull/541))
+- *(cluster)* Announce the departure in front of every drain marker ([#526](https://github.com/tellus-rs/tellus/pull/526))
+
+### Refactor
+
+- *(cluster)* [**breaking**] Rename four error variants ([#520](https://github.com/tellus-rs/tellus/pull/520))
+
+### Documentation
+
+- Say a timed-out append discards the stash requests too ([#568](https://github.com/tellus-rs/tellus/pull/568))
+- Fill gaps and fix small errors in the READMEs ([#566](https://github.com/tellus-rs/tellus/pull/566))
+- *(cluster)* Clarify which lost connection voids a drain ack ([#554](https://github.com/tellus-rs/tellus/pull/554))
+- *(cluster)* Say the fallback passes over a lowest member too ([#532](https://github.com/tellus-rs/tellus/pull/532))
+
+### Performance
+
+- *(cluster)* Move the cluster queues onto our own channel ([#536](https://github.com/tellus-rs/tellus/pull/536))
+- Own mailbox channel with batched receiving ([#529](https://github.com/tellus-rs/tellus/pull/529))
+
+### Styling
+
+- *(cluster)* Tidy up Schema::decode ([#524](https://github.com/tellus-rs/tellus/pull/524))
+
+### Dependencies
+
+- [**breaking**] Replace humantime-serde with jiff ([#551](https://github.com/tellus-rs/tellus/pull/551))
+
+
 ## [0.6.0](https://github.com/tellus-rs/tellus/compare/tellus-v0.5.3...tellus-v0.6.0) - 2026-11-20
 
 ### Features

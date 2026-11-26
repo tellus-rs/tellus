@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.3.0](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-k8s-v0.2.0...tellus-bootstrap-k8s-v0.3.0) - 2026-11-26
+
+### Documentation
+
+- Fill gaps and fix small errors in the READMEs ([#566](https://github.com/tellus-rs/tellus/pull/566))
+
+### Dependencies
+
+- [**breaking**] Replace humantime-serde with jiff ([#551](https://github.com/tellus-rs/tellus/pull/551))
+
+
 ## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-bootstrap-k8s-v0.1.4...tellus-bootstrap-k8s-v0.2.0) - 2026-11-20
 
 ### Features

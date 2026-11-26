@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.2.0...tellus-cluster-inspect-v0.2.1) - 2026-11-26
+
+### Documentation
+
+- Fill gaps and fix small errors in the READMEs ([#566](https://github.com/tellus-rs/tellus/pull/566))
+
+
 ## [0.2.0](https://github.com/tellus-rs/tellus/compare/tellus-cluster-inspect-v0.1.4...tellus-cluster-inspect-v0.2.0) - 2026-11-20
 
 ### Bug Fixes
