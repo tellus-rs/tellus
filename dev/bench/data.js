@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795688350165,
+  "lastUpdate": 1795688351920,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -46455,6 +46455,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 5111646,
             "range": "± 362809",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "61f6cd550278b890db2b95b8881cd2b697fe9f17",
+          "message": "Merge pull request #567 from tellus-rs/docs/persistence-bigint-limit-and-failures\n\ndocs(persistence): document the BIGINT limit and failure handling",
+          "timestamp": "2026-11-26T11:10:55+01:00",
+          "tree_id": "7cc9675f9edbffd4f541fdd90c4cd0830a2caf7f",
+          "url": "https://github.com/tellus-rs/tellus/commit/61f6cd550278b890db2b95b8881cd2b697fe9f17"
+        },
+        "date": 1795688351635,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 28099970,
+            "range": "± 1771039",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 28150530,
+            "range": "± 1523959",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5756503,
+            "range": "± 490493",
             "unit": "ns/iter"
           }
         ]
