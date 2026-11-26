@@ -223,16 +223,22 @@ may have admitted this node in each of these cases, so the endpoint records the 
 *ambiguous* and logs a warning. It records one whenever this node is unformed, pinned or not. A
 failure after the pin, such as a panic or a member snapshot larger than the joiner accepts, leaves
 the pin in place and is recorded as well, and so is a failure at another seed of the pinned cluster.
-While the pin holds it refuses formation by itself. Once the pin is released, the record still
-refuses it, since that seed may count this node. While any address is ambiguous, `cluster::form`
-fails with `FormError::JoinAmbiguous`, and bootstrap reports that as a declined formation. Unless a
+While the pin holds it refuses formation by itself. Once the pin is released, a record which has
+not run out refuses it, since that seed may count this node. While any record refuses formation,
+`cluster::form` fails with `FormError::JoinAmbiguous`, and bootstrap reports that as a declined
+formation. Unless a
 pin holds, any cluster may still admit this node, since nothing proves which cluster, if any,
 admitted it. The record ends once that address answers `NoCluster` or `Joining`, which proves that
 its process has restarted since, once a join completes, once bootstrap sees the address leave a
-settled discovery view, or once `EndpointConfig::ambiguous_join_bound` (see
-[Configuration](#configuration)) has passed. Any other refusal leaves the record in place: a seed
-refusing this node as a member of another cluster, for example, refuses the ID a later pin names,
-not the earlier attempt, which it may still count.
+settled discovery view, or once this node has formed or been downed. Any other refusal leaves the
+record in place: a seed refusing this node as a member of another cluster, for example, refuses the
+ID a later pin names, not the earlier attempt, which it may still count. A record stops refusing
+formation once `EndpointConfig::ambiguous_join_bound` (see [Configuration](#configuration)) has
+passed since the first ambiguous attempt at its address. A later ambiguous attempt there renews
+nothing, even once that deadline has passed. An address failing every attempt the same way hence
+holds formation back for one bound, however often bootstrap asks it meanwhile. Only a record which
+has ended starts over with the next ambiguous attempt. A record taken under a pin counts from its
+first attempt too, so it may have run out by the time the pin is released.
 
 ### Cluster identity
 
@@ -261,28 +267,28 @@ node's cluster, and is never admitted.
 A cluster comes into being by decision, never as a side effect. `cluster::form` makes this node a
 cluster of one for a deployment which decides for itself. It is refused if this node is already a
 member or has been downed. It fails with `FormError::JoinInFlight` while a join attempt runs, with
-`FormError::ClusterPinned` while a cluster is pinned and with `FormError::JoinAmbiguous` while a
-join is ambiguous. Otherwise `cluster::bootstrap` decides through a `FormationProvider`, a pluggable
-trait like the `DowningProvider`; its provided implementations are `Majority` (the default),
-`MajorityWithFallback`, `Unanimous` and `Explicit`. The provider sees the *universe*, every resolved
-address united with this node's own, what each attempted address answered and when the round ended.
-An answer is `NoCluster`, `Held` (a cluster holding back joins) or `Unavailable`, which includes a
-seed answering `Joining`. Bootstrap passes every round which did not admit this node to `observe`,
-including the rounds which must not form. It asks `form` only on a round over a settled view which
-no seed admitted. `form` answers `Decision::Form` or `Decision::Decline` with a reason: `NotLowest`,
-`NoMajority`, `Explicit` or `Other` for a custom provider, while bootstrap adds `Ambiguous` for a
-formation the endpoint refused. A decline is logged at warn level when its reason or its universe
-differs from the previous decline, at debug level otherwise, so a node waiting for others says why
-once. `Majority` forms once a strict majority of the universe, this node included, is known to be no
-cluster, and only at the lowest address of the universe. The lowest-address condition ensures that
-only one node forms for a shared universe. The majority stops a partitioned minority from re-forming
-if the universe holds every node. Both conditions are on the universe rather than on who answered,
-so a node which cannot reach the lowest address forms nothing. Formation liveness is hence a
-requirement on discovery, which must stop resolving nodes that are gone. A reduced view must still
-satisfy `min_nodes` for the next-lowest address to inherit the role. `Unanimous` forms only once
-every address of the universe is known to be no cluster, again at the lowest, so any one unreachable
-address blocks a cold start. `Explicit` never forms: the deployment calls `cluster::form` on one
-node, and bootstrap only ever joins.
+`FormError::ClusterPinned` while a cluster is pinned and with `FormError::JoinAmbiguous` while an
+ambiguous join refuses formation. Otherwise `cluster::bootstrap` decides through a
+`FormationProvider`, a pluggable trait like the `DowningProvider`; its provided implementations are
+`Majority` (the default), `MajorityWithFallback`, `Unanimous` and `Explicit`. The provider sees the
+*universe*, every resolved address united with this node's own, what each attempted address answered
+and when the round ended. An answer is `NoCluster`, `Held` (a cluster holding back joins) or
+`Unavailable`, which includes a seed answering `Joining`. Bootstrap passes every round which did not
+admit this node to `observe`, including the rounds which must not form. It asks `form` only on a
+round over a settled view which no seed admitted. `form` answers `Decision::Form` or
+`Decision::Decline` with a reason: `NotLowest`, `NoMajority`, `Explicit` or `Other` for a custom
+provider, while bootstrap adds `Ambiguous` for a formation the endpoint refused. A decline is logged
+at warn level when its reason or its universe differs from the previous decline, at debug level
+otherwise, so a node waiting for others says why once. `Majority` forms once a strict majority of
+the universe, this node included, is known to be no cluster, and only at the lowest address of the
+universe. The lowest-address condition ensures that only one node forms for a shared universe. The
+majority stops a partitioned minority from re-forming if the universe holds every node. Both
+conditions are on the universe rather than on who answered, so a node which cannot reach the lowest
+address forms nothing. Formation liveness is hence a requirement on discovery, which must stop
+resolving nodes that are gone. A reduced view must still satisfy `min_nodes` for the next-lowest
+address to inherit the role. `Unanimous` forms only once every address of the universe is known to
+be no cluster, again at the lowest, so any one unreachable address blocks a cold start. `Explicit`
+never forms: the deployment calls `cluster::form` on one node, and bootstrap only ever joins.
 
 `MajorityWithFallback` is the opt-in for a discovery which cannot be trusted to drop nodes that are
 gone (`formation_provider: { majority_with_fallback: { after: 60s } }`). It keeps the strict
@@ -1424,11 +1430,11 @@ swap is added.
   started to send its `Join` handshake, or panics once its connection is established, short of a
   definitive answer and before the member snapshot has arrived, leaves an ambiguity: the seed may
   have admitted this node. The endpoint refuses to form until that address answers `NoCluster` or
-  `Joining`, leaves a settled discovery view or `ambiguous_join_bound` passes. Joins continue
-  through any seed meanwhile. Past the bound this node can form although the seed's cluster still
-  counts it as a member, until that cluster's failure detection and downing remove it. Pinning on
-  the ambiguity instead would hold bootstrap back behind any slow seed, which costs more than the
-  ambiguity does.
+  `Joining`, leaves a settled discovery view or `ambiguous_join_bound` has passed since the first
+  ambiguous attempt at that address. Joins continue through any seed meanwhile. Past the bound this
+  node can form although the seed's cluster still counts it as a member, until that cluster's
+  failure detection and downing remove it. Pinning on the ambiguity instead would hold bootstrap
+  back behind any slow seed, which costs more than the ambiguity does.
 - **Fences are bounded.** Detailed Left and Down entries are remembered for `down_retention`. After
   that, the greatest incarnation per address remains as a watermark with its state, which refuses
   zombie processes while admitting a newer restart. Watermarks ride connection setup rather than the
