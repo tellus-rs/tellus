@@ -106,8 +106,8 @@ pub enum JoinError {
     #[error("no seed addresses")]
     NoSeeds,
 
-    /// This node's incarnation has been downed or has left; only a restarted process, with a
-    /// fresh incarnation, can join again.
+    /// This node's incarnation has been downed, has left or is leaving; only a restarted process,
+    /// with a fresh incarnation, can join again.
     #[error("this node has been downed")]
     Downed,
 
@@ -167,8 +167,8 @@ pub enum DownError {
 ///
 /// # Errors
 /// Fails if the endpoint is not started, if the seeds name nothing but this node's own address,
-/// or if this node has been downed or has left. Fails as well if every seed tried in a round is a
-/// member of another cluster than this node's.
+/// or if this node has been downed, has left or is leaving. Fails as well if every seed tried in a
+/// round is a member of another cluster than this node's.
 pub async fn join(seeds: &[SocketAddr]) -> Result<(), JoinError> {
     let endpoint = endpoint::get().ok_or(JoinError::EndpointNotStarted)?;
     if seeds.iter().all(|seed| *seed == endpoint.node().addr()) {
@@ -211,14 +211,14 @@ pub fn members() -> Result<Vec<Member>, MembersError> {
 /// address is this node's own, which [leave](fn@crate::cluster::leave) is for.
 pub fn down(addr: SocketAddr) -> Result<(), DownError> {
     let endpoint = endpoint::get().ok_or(DownError::EndpointNotStarted)?;
+    if addr == endpoint.node().addr() {
+        return Err(DownError::ThisNode);
+    }
 
     let node = endpoint
         .membership()
         .up_member_at(addr)
         .ok_or(DownError::NotAMember(addr))?;
-    if node == endpoint.node() {
-        return Err(DownError::ThisNode);
-    }
 
     warn!(peer = %node, "node death, downed manually");
     endpoint.node_death(node);
@@ -620,11 +620,10 @@ pub(crate) fn on_gossip(endpoint: &'static EndpointInner, members: &[Member]) {
         })
         .result;
 
-    if merge.self_down {
+    if merge.self_down && endpoint.self_down() {
         for peer in merge.to_flush {
             endpoint.flush_fenced(peer);
         }
-        endpoint.self_down();
         return;
     }
 
@@ -651,7 +650,10 @@ pub(crate) fn on_gossip(endpoint: &'static EndpointInner, members: &[Member]) {
         }
     }
     for peer in merge.to_flush {
-        if !deferred.contains_key(&peer) && !merge.downed.iter().any(|(node, _)| *node == peer) {
+        if !deferred.contains_key(&peer)
+            && !merge.downed.iter().any(|(node, _)| *node == peer)
+            && !peer.covers(endpoint.node())
+        {
             endpoint.flush_fenced(peer);
         }
     }
