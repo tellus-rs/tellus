@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795636194159,
+  "lastUpdate": 1795686550385,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -27059,6 +27059,126 @@ window.BENCHMARK_DATA = {
             "name": "timers/restart_each/16",
             "value": 20450229,
             "range": "± 923864",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "42e7bd470eeea1287c9c431e6c33b4c8e0035eea",
+          "message": "Merge pull request #562 from tellus-rs/fix/postgres-fence-at-bigint-max\n\nfix(postgres): answer Conflict to a stale writer at the BIGINT limit",
+          "timestamp": "2026-11-26T10:41:02+01:00",
+          "tree_id": "77f34f5b602d0490f19ee2cff5d3001ce654d447",
+          "url": "https://github.com/tellus-rs/tellus/commit/42e7bd470eeea1287c9c431e6c33b4c8e0035eea"
+        },
+        "date": 1795686548359,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "flood/unbounded",
+            "value": 9114443,
+            "range": "± 698582",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "flood/bounded",
+            "value": 9461956,
+            "range": "± 1051464",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/1",
+            "value": 650158,
+            "range": "± 5016",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "ping_pong/pairs/4",
+            "value": 547589,
+            "range": "± 5961",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/4",
+            "value": 4759884,
+            "range": "± 64113",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "fan_out/workers/16",
+            "value": 3335302,
+            "range": "± 279358",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/4",
+            "value": 18105040,
+            "range": "± 593308",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/4",
+            "value": 18750657,
+            "range": "± 520919",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/never/16",
+            "value": 17777659,
+            "range": "± 701272",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "queued/every/16",
+            "value": 18723734,
+            "range": "± 482406",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/4",
+            "value": 18050224,
+            "range": "± 566231",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/4",
+            "value": 19478899,
+            "range": "± 676708",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/4",
+            "value": 25528907,
+            "range": "± 722830",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/none/16",
+            "value": 17645957,
+            "range": "± 486240",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/armed_idle/16",
+            "value": 19374152,
+            "range": "± 1086194",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "timers/restart_each/16",
+            "value": 25851502,
+            "range": "± 723794",
             "unit": "ns/iter"
           }
         ]
