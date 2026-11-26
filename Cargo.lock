@@ -4435,7 +4435,7 @@ checksum = "7b2093cf4c8eb1e67749a6762251bc9cd836b6fc171623bd0a9d324d37af2417"
 
 [[package]]
 name = "tellus"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4465,7 +4465,7 @@ dependencies = [
 
 [[package]]
 name = "tellus-bootstrap-dns"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "futures-util",
@@ -4482,7 +4482,7 @@ dependencies = [
 
 [[package]]
 name = "tellus-bootstrap-k8s"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "axum",
@@ -4539,7 +4539,7 @@ dependencies = [
 
 [[package]]
 name = "tellus-cluster-inspect"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "axum",
@@ -4569,7 +4569,7 @@ dependencies = [
 
 [[package]]
 name = "tellus-persistence-postgres"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "composed",
