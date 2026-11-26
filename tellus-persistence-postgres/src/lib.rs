@@ -120,18 +120,18 @@ impl EventStore for PostgresStore {
 
         // The row count cannot reveal the conflict of an empty append!
         if events.is_empty() {
-            let query = "SELECT COALESCE(MAX(seq_no) + 1, 0) \
+            let query = "SELECT COALESCE(MAX(seq_no), -1) \
                          FROM tellus_events \
                          WHERE entity_type = $1 \
                          AND entity_id = $2";
-            let actual = sqlx::query_scalar::<_, i64>(query)
+            let last = sqlx::query_scalar::<_, i64>(query)
                 .bind(id.entity_type())
                 .bind(id.entity_id())
                 .fetch_one(&self.pool)
                 .await
                 .map_err(Error::Sqlx)?;
 
-            return if actual == next_seq_no {
+            return if last == next_seq_no - 1 {
                 Ok(())
             } else {
                 Err(AppendError::Conflict)
@@ -159,10 +159,10 @@ impl EventStore for PostgresStore {
                      SELECT $1, $2, seq_no, manifest, schema_version, payload \
                      FROM UNNEST($3::BIGINT[], $4::TEXT[], $5::INT[], $6::BYTEA[]) \
                      AS unnested(seq_no, manifest, schema_version, payload) \
-                     WHERE (SELECT COALESCE(MAX(seq_no) + 1, 0) \
+                     WHERE (SELECT COALESCE(MAX(seq_no), -1) \
                             FROM tellus_events \
                             WHERE entity_type = $1 \
-                            AND entity_id = $2) = $7";
+                            AND entity_id = $2) = $7 - 1";
         let inserted = sqlx::query(query)
             .bind(id.entity_type())
             .bind(id.entity_id())

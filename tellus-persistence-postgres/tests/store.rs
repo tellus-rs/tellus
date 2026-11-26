@@ -93,6 +93,42 @@ async fn a_position_beyond_bigint_is_a_conflict_and_an_empty_page() {
     }
 }
 
+/// A stream whose last event is at the BIGINT limit fences a stale writer at that position with a
+/// conflict, with or without events, rather than overflowing the next position.
+#[tokio::test]
+async fn a_stale_writer_at_the_bigint_limit_is_a_conflict() {
+    let (pool, _container) = database().await;
+    let store = PostgresStore::new(pool.clone());
+    store.migrate().await.expect("the migrations run");
+    let id = PersistenceId::new("edges", unique_entity_id()).expect("the segments are valid");
+    sqlx::query(
+        "INSERT INTO tellus_events \
+         (entity_type, entity_id, seq_no, manifest, schema_version, payload) \
+         VALUES ($1, $2, $3, 'edge', 1, '\\x01'::bytea)",
+    )
+    .bind(id.entity_type())
+    .bind(id.entity_id())
+    .bind(i64::MAX)
+    .execute(&pool)
+    .await
+    .expect("an event at the BIGINT limit is stored");
+    let event = EncodedEvent {
+        manifest: "edge".into(),
+        schema_version: SchemaVersion::new(1),
+        payload: vec![1],
+    };
+
+    let stale = SeqNo::new(i64::MAX as u64);
+    for events in [Vec::new(), vec![event]] {
+        let len = events.len();
+        let appended = store.append(&id, stale, events).await;
+        assert!(
+            matches!(appended, Err(AppendError::Conflict)),
+            "an append of {len} events at {stale} must fail with Conflict, got {appended:?}"
+        );
+    }
+}
+
 /// Applying the embedded migrations to an already migrated schema succeeds, so an application can
 /// run them at every start.
 #[tokio::test]
