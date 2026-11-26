@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795724272544,
+  "lastUpdate": 1795724274204,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -41029,6 +41029,54 @@ window.BENCHMARK_DATA = {
             "name": "recover/snapshot",
             "value": 154090,
             "range": "± 29046",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "cf01f6a33b28cbeb530eca9d4c4e507ad1fbd421",
+          "message": "Merge pull request #573 from tellus-rs/fix/ambiguous-join-bound-keeps-first-deadline\n\nfix(cluster): keep the first deadline of an ambiguous join",
+          "timestamp": "2026-11-26T21:09:52+01:00",
+          "tree_id": "f7c747103a4a987fcefefecac36a32e2da9dcee0",
+          "url": "https://github.com/tellus-rs/tellus/commit/cf01f6a33b28cbeb530eca9d4c4e507ad1fbd421"
+        },
+        "date": 1795724273933,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "persist/no_snapshots",
+            "value": 3681358,
+            "range": "± 110108",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "persist/snapshots",
+            "value": 3836232,
+            "range": "± 169356",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/replay",
+            "value": 1041898,
+            "range": "± 11288",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "recover/snapshot",
+            "value": 130501,
+            "range": "± 3429",
             "unit": "ns/iter"
           }
         ]
