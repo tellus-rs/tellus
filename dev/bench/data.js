@@ -1,5 +1,5 @@
 window.BENCHMARK_DATA = {
-  "lastUpdate": 1795690397686,
+  "lastUpdate": 1795690399341,
   "repoUrl": "https://github.com/tellus-rs/tellus",
   "entries": {
     "Core": [
@@ -46875,6 +46875,48 @@ window.BENCHMARK_DATA = {
             "name": "event_sourced/batch_8",
             "value": 4638542,
             "range": "± 221176",
+            "unit": "ns/iter"
+          }
+        ]
+      },
+      {
+        "commit": {
+          "author": {
+            "email": "git@heikoseeberger.de",
+            "name": "Heiko Seeberger",
+            "username": "hseeberger"
+          },
+          "committer": {
+            "email": "noreply@github.com",
+            "name": "GitHub",
+            "username": "web-flow"
+          },
+          "distinct": true,
+          "id": "c4e56590b1282056c69cd1c0d72600ec7b5f657f",
+          "message": "Merge pull request #569 from tellus-rs/docs/issue-workflow\n\ndocs: describe how work on an issue is tracked",
+          "timestamp": "2026-11-26T11:45:01+01:00",
+          "tree_id": "fd6ad3729edf30eeafd610428bb7a8410515131d",
+          "url": "https://github.com/tellus-rs/tellus/commit/c4e56590b1282056c69cd1c0d72600ec7b5f657f"
+        },
+        "date": 1795690399051,
+        "tool": "cargo",
+        "benches": [
+          {
+            "name": "actor/batch_8/4",
+            "value": 29245256,
+            "range": "± 1820536",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "actor/batch_8/16",
+            "value": 27338344,
+            "range": "± 1720449",
+            "unit": "ns/iter"
+          },
+          {
+            "name": "event_sourced/batch_8",
+            "value": 5365966,
+            "range": "± 382473",
             "unit": "ns/iter"
           }
         ]
