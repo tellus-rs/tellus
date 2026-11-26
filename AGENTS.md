@@ -220,6 +220,10 @@ Releases:
 
 CI enforces that a PR consists of exactly one commit; squash before pushing.
 
+Work on an issue follows "Working on an issue" in `CONTRIBUTING.md`: priority in the tellus project
+first, then the issue status. `gh` has no flag for the issue status yet; set it with the GraphQL
+mutation `setIssueStatus`, taking the status ID from the repository's `planningStatuses`.
+
 Further workflows: the `Breaking Bump Check` job in `ci.yml` runs
 [breaking-bump](https://github.com/hseeberger/breaking-bump) on every PR to `main`, failing when a
 dependency bump changes the public API of a crate without a breaking marker (`!` or a `BREAKING

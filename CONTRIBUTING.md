@@ -19,6 +19,22 @@ issue, say so on the issue and agree on the approach with us. Pull requests from
 or from accounts which open pull requests across many unrelated projects without engaging, are
 closed without review.
 
+## Working on an issue
+
+Issues are tracked in the [tellus project](https://github.com/orgs/tellus-rs/projects/1), which adds
+every new issue automatically. An issue has a priority in the project before work on it starts. Its
+status is GitHub's own issue status, and the project's Status field mirrors it.
+
+Whoever takes an issue assigns themselves, which moves it to Todo, and sets it to In progress when
+the work starts; linking a draft pull request does the same. The pull request names the issue in its
+description: `Closes #<n>` if it resolves the issue, `Part of #<n>` otherwise. A pull request which
+closes the issue moves it to In review once it is ready, and to Done once it is merged. `Part of`
+does not link the pull request to the issue, so its status does not move. Once such a pull request
+is merged, a comment on the issue says what remains.
+
+Setting a priority or a status needs triage access, so for an outside contribution a maintainer
+does it.
+
 ## Building and testing
 
 The [README](README.md#development) lists the tools you need: `just`, `cargo-hack`, `taplo`, `jq`,
