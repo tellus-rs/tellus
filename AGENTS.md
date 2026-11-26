@@ -27,10 +27,10 @@ Tasks are defined in the [justfile](justfile):
   tellus-cluster-demo-tui`. Adding a feature therefore extends check and lint by itself; only a
   new implication pair needs a hand edit. Test is hand-picked and deliberately short: check and
   lint already compile every combination, so a feature set earns a test run only if it runs tests
-  differently. `cluster` is the only feature the code branches on (`ReplyTo` in
-  `request_response.rs` has one implementation with it and one without); every other feature just
-  adds items and tests. That leaves two runs of `-p tellus`, no features (the published default,
-  and the only run exercising the non-cluster `ReplyTo`) and
+  differently. Two features change code rather than only adding items and tests: `cluster` selects
+  one of the two implementations of `ReplyTo` in `request_response.rs`, and `__internal` changes
+  `note_severed` in `cluster/endpoint.rs`, a no-op without it. That leaves two runs of `-p tellus`,
+  no features (the published default, and the only run exercising the non-cluster `ReplyTo`) and
   `persistence-tests,persistence-in-memory,cluster-dev,serde,test-util,__internal` (every feature
   that has tests, with `cluster-dev` in place of `cluster` and `__internal` since the remoting test
   needs both,
@@ -50,7 +50,8 @@ Tasks are defined in the [justfile](justfile):
   feature-unifies `tellus` with their features enabled, so only scoped runs exercise the
   reduced-feature configurations, and only a scoped run builds a backend crate against the feature
   set it actually declares (`cargo hack` keeps that property: it is invoked per crate, never with
-  `--workspace`). `just doc` runs workspace-wide with all features and `--cfg docsrs`. Every
+  `--workspace`). `just doc` documents the default workspace members, every crate but
+  `tellus-comparison`, with all features and `--cfg docsrs`. Every
   exported fallible function and trait method carries a `# Errors` section, enforced by
   `clippy::missing_errors_doc` in the library crates (which misses async trait methods, so those
   are kept by hand), worded as conditions (`Fails if ...`, `Implementations fail if ...`) directly
@@ -60,7 +61,9 @@ Tasks are defined in the [justfile](justfile):
   rust-analyzer. Only a binary may pick the Kubernetes version through a `v1_*` feature, so
   `tellus-bootstrap-k8s` enables `latest` in its dev-dependency alone, which is what covers every
   `--all-targets` run, while `tellus-cluster-demo`, being a binary, names `v1_37` itself. All
-  three must name the same version; a mismatch fails the build loudly.
+  three must name the same version; a mismatch fails the build loudly. The one exception is
+  `release-plz.yml`, which sets it to 1.36 for release-plz, since the released crate serving as the
+  semver baseline may predate the version of `.cargo/config.toml`.
 - `just fmt`: formats Rust (nightly rustfmt, the justfile derives the matching nightly from the
   installed stable) and TOML (taplo). Plain `cargo fmt` is not enough; the rustfmt config uses
   unstable options. `just fmt-check` checks both without writing, and CI runs it.
@@ -78,10 +81,9 @@ Tasks are defined in the [justfile](justfile):
   test-util`, and `test_context_persistence.rs` and `how_to_unit_test_event_sourced.rs` also
   `persistence`; each target declares these as `required-features` in `tellus/Cargo.toml`. `timers.rs` holds one scheduler-sensitive test,
   `stale_timers_do_not_delay_a_stop`, which is `#[ignore]`d and runs only with `-- --ignored`.
-- Examples: `cargo run --quiet -p tellus --example getting_started_01_hello` and so on; the getting
-  started tutorial lives in `tellus/examples/tutorials/getting_started/`, one example per step.
-  The remoting examples need `--features cluster-dev`, e.g. `cargo run --quiet -p tellus --features
-  cluster-dev --example remote_scatter_gather` (or `cluster`).
+- Examples: `cargo run --quiet -p tellus --example getting_started_01_hello` and so on. The
+  "Examples" section of [tellus/README.md](tellus/README.md#examples) indexes them, with the
+  features each one needs.
 - Cluster demo: `just start-cluster-demo-compose` starts the forever running five-node chaos
   cluster (`tellus-cluster-demo`) in Docker Compose and `stop-cluster-demo-compose` stops it and
   drops its volumes; `start-cluster-demo-k8s [dns|k8s]` and `stop-cluster-demo-k8s` do the same in
@@ -182,13 +184,21 @@ Benchmarks:
   with `max_streams_per_peer` set to `streams` (default 16) on every node; not part of CI.
 - `just bench-comparison` plus `check-comparison` / `lint-comparison`: the `tellus-comparison`
   crate benchmarking tellus against kameo and ractor. It is deliberately excluded from `just all` and
-  from per-PR CI so its dependencies stay out of tellus's build; touching it means running its own
-  check and lint recipes.
+  from `ci.yml` so its dependencies stay out of tellus's build; touching it means running its own
+  check and lint recipes. `comparison.yml` runs both for a PR to `main` touching the crate or the
+  workflow, and on a `tellus-v*` tag or a manual run it benchmarks, renders the report with `just
+  bench-comparison-report <tag>` and publishes it to gh-pages under `comparison/`.
+- `just bench-report`: the Markdown comparison table `bench.yml` posts on a PR, built from the
+  criterion change estimates in `target/criterion`, flagging a row as regressed against
+  `bench_regression_threshold`.
 
 Releases:
 
 - release-plz opens or updates a release PR whenever `main` has unreleased changes; merging it
-  publishes the crates and tags them (`tellus-vX.Y.Z`, `tellus-persistence-postgres-vX.Y.Z`).
+  publishes the crates and tags each one as `<crate>-vX.Y.Z` (`tellus-vX.Y.Z`,
+  `tellus-persistence-postgres-vX.Y.Z`, and likewise the bootstrap crates and
+  `tellus-cluster-inspect`). The changelog template in `release-plz.toml` marks every entry with its
+  commit, and `scripts/pr-links.sh` postprocesses it, linking each entry to its PR.
 - A change needing more than its commit subject adds a release note, a Markdown file opening with a
   `###` heading, to the crate's `release-notes/` directory (rules in `CONTRIBUTING.md`). After
   release-plz has published, `release-plz.yml` runs `.github/release/release_notes.py` for every
@@ -209,6 +219,14 @@ Releases:
   as a hint for that review.
 
 CI enforces that a PR consists of exactly one commit; squash before pushing.
+
+Further workflows: the `Breaking Bump Check` job in `ci.yml` runs
+[breaking-bump](https://github.com/hseeberger/breaking-bump) on every PR to `main`, failing when a
+dependency bump changes the public API of a crate without a breaking marker (`!` or a `BREAKING
+CHANGE:` footer); `just breaking-bump` runs the same check locally. For a Dependabot PR lacking the
+marker, the `Breaking Bump Mark` job adds it. `audit.yml` runs cargo-audit daily and on PRs changing
+a `Cargo.toml`, a `Cargo.lock` or `.cargo/audit.toml`, and `dependabot-automerge.yml` approves and
+auto-merges Dependabot's semver-patch updates.
 
 ## Conventions
 
@@ -409,12 +427,15 @@ Item order within a file:
   `tellus/tests/persistence.rs` encodes these guarantees.
 - `docs/cluster.md`: the same for the feature-gated `cluster` module, in particular which core
   guarantees carry over the network and which weaken; keep it consistent with `tellus/src/cluster`.
-- `mentor/`: generated code-review artifacts, not source code.
+- `docs/roadmap.md`: the layers built on clustered remoting, those shipped and those ahead, and what
+  each depends on.
+- `docs/investigations/`: closed performance investigations, `actor-id-alignment/` and
+  `timer-cost/` (the cost of timers for actors which never start one, with its rejected variants as
+  patches).
 
 ## Architecture
 
-The core is small (~2300 lines in `tellus/src`, plus ~2600 for persistence) but dense with
-cross-file invariants:
+The core is small but dense with cross-file invariants:
 
 - An actor is a state machine: `Actor::receive` (`actor.rs`) is a synchronous function from owned
   state and an `Incoming` (message or terminated signal) to `Control::Continue(next_state)` or
@@ -466,6 +487,12 @@ cross-file invariants:
 - `actor_system.rs`: `spawn_root` spawns the root through the same `spawn` path as any child and
   registers a watcher directly in the root's watcher registry; the watcher's handler resolves
   `terminated()` and owns the sender keeping the root running.
+- `host.rs`: `Host`, an ordinary actor whose messages are `HostEnvelope`s (key plus message),
+  spawning an entity per key on its first message and, with an idle timeout in its `HostConfig`,
+  passivating idle entities with `Hosted::Passivate` while buffering what is routed to them.
+- `backoff.rs` (`Backoff`, the validated bounds of an exponential backoff, used by supervision and
+  the cluster), `actor_id.rs` (`ActorId`, a UUIDv7) and `schema_version.rs` (`SchemaVersion`, the
+  version written or sent alongside a payload and checked on read).
 - Clustered remoting (`cluster/`, `cluster` feature) hangs off one place: `ActorRef` holds a `Sink`
   enum whose second variant is a remote sink, so `tell`, `watch` and `unwatch` stay one API. The
   module's public shape is flat for what every node calls (`start_endpoint`, `form`, `join`,
@@ -478,13 +505,16 @@ cross-file invariants:
   it: `cluster::receptionist` (`lookup`, `lookup_at`,
   `subscribe`, `settled`) and `cluster::pubsub` (`Topic`, `subscribe`, `publish`, which tells the
   local subscribers the receptionist resolves and serializes once per remote node, one
-  `Multicast` frame per node and data stream). `ActorRef` is serializable via a process-wide
-  endpoint singleton (`endpoint.rs`) plus a lazy registry (`registry.rs`) evicting through the
-  core's watcher mechanism. All frames towards a node ride one lane, split into a control queue and
-  a bounded pool of data queues over the transport's streams (`max_streams_per_peer`), each frame
-  picking its queue by hashing the actor it is delivered to, so FIFO holds per recipient; system
-  frames (watch, terminated, gossip) bypass the outbound capacity but not the order, mirroring
-  `mailbox.rs`. A terminated signal names its watcher, which is what puts it on the same queue as
+  `Multicast` frame per node and data stream). `ActorRef` is serializable (`wire.rs`, which resolves
+  a reference to a local actor back to the local one) via a process-wide endpoint singleton
+  (`endpoint.rs`) plus a lazy registry (`registry.rs`) evicting through the core's watcher
+  mechanism; a remote reference sends through a `RemoteSink` (`sink.rs`), which encodes the message
+  for the peer and admits the frame to its lane. All frames towards a node ride one lane
+  (`lanes.rs`, one per address), split into a control queue and a bounded pool of data queues over
+  the transport's streams (`max_streams_per_peer`), each frame picking its queue by hashing the
+  actor it is delivered to, so FIFO holds per recipient; system frames (watch, terminated, gossip)
+  bypass the outbound capacity but not the order, mirroring `mailbox.rs`. A terminated signal names
+  its watcher, which is what puts it on the same queue as
   the messages it must stay behind. Request-response crosses nodes via a nonce-keyed pending-replies
   table (`reply.rs`): serializing a `ReplyTo` moves its sink into the table, the far side gets a
   proxy whose `Reply` frame names the actor it is delivered to and hence rides that actor's queue,
@@ -506,24 +536,28 @@ cross-file invariants:
   `leave` (`leave.rs`) announces a departure by moving this node's own entry to Left, pushing it to
   every Up member, draining every lane within one `leave_timeout` deadline (the lane finishes its
   data streams, sends a `Drained` frame naming their number as its last control frame and counts as
-  acknowledged only once the peer answers with `DrainAck`), severing and returning a `Departure`
-  report (`leave_on_terminated` folds that into the `ActorSystem::terminated` wait, so the departure
-  is queued behind the tree's terminated signals), while a member learning the Left, from the leaver
+  acknowledged only once the peer answers with `DrainAck` and the lane has handled no lost
+  connection during the drain), severing and returning a `Departure` report
+  (`leave_on_terminated` folds that into the `ActorSystem::terminated` wait, so the departure is
+  queued behind the tree's terminated signals), while a member learning the Left, from the leaver
   or relayed, defers the node death until its inbound connection from the leaver has closed and
   every reader of it has finished, or its own `leave_timeout` passed (`Departures` in `endpoint.rs`;
   `read_streams` in `peer.rs` answers `Drained` once that many data streams have ended cleanly; a
-  downing ends the wait), the member list (a per-incarnation `Up < Left < Down` lattice, so gossip
-  merge is a convergent CRDT union) rides `Gossip` frames which double as heartbeats (empty towards
-  a peer already holding the current list version, full on a change, a reconnect and every 10th
-  tick), non-members are refused at the handshake (retryably while gossip converges), and a detailed
-  Left or Down entry is swept after `down_retention` while its address keeps a capped incarnation
-  watermark with its state, which rides connection setup (chunked into frames within
+  successor admitted at the leaver's address meanwhile gets a reader of its own and leaves the
+  leaver's drain in place; a downing ends the wait), the member list (a per-incarnation
+  `Up < Left < Down` lattice, so gossip merge is a convergent CRDT union) rides `Gossip` frames
+  which double as heartbeats (empty towards a peer already holding the current list version, full on
+  a change, a reconnect and every 10th tick), non-members are refused at the handshake (retryably
+  while gossip converges), and a detailed Left or Down entry is swept after `down_retention` while
+  its address keeps a capped incarnation watermark with its state, which rides connection setup
+  (chunked into frames within
   `max_frame_size`) rather than the heartbeat, so gossip stays the size of the cluster. Every
-  cluster has an ID (`ClusterId`, minted by `form`, committed by a join only once the seed's
-  snapshot is complete, provisional with the pin until then); every handshake carries it and a peer
-  of another cluster is refused as `ForeignCluster`. A member holds back joins from new addresses
-  (`RefusalReason::JoinsHeld`, retryable) while an Up member is outside its reachability component;
-  a join superseding an Up incarnation at its own address is still admitted. A leaving member holds
+  cluster has an ID (`ClusterId` in `node.rs`, beside `Incarnation`, minted by `form`, committed
+  by a join only once the seed's snapshot is complete, provisional with the pin until then); every
+  handshake carries it and a peer of another cluster is refused as `ForeignCluster`. A member holds
+  back joins from new addresses (`RefusalReason::JoinsHeld`, retryable) while an Up member is
+  outside its reachability component; a join superseding an Up incarnation at its own address is
+  still admitted. A leaving member holds
   back every join which would add a member. An address no Up member
   advertises which fails a check retrying cannot change is refused for a backoff from 10 s doubling
   to 10 min, lifted by an inbound handshake, an admitted join or a gossiped Up member there. Failure
@@ -535,7 +569,8 @@ cross-file invariants:
   contract true by construction. No provider downs either end of a broken link, a direct edge
   reported unreachable between two members inside the component (`reachability.rs`);
   `ClusterState::broken_links` lists it and the `member directly unreachable` warning repeats every
-  minute, naming `cluster::down`. Remote watch is two-tier: a real termination keeps the local
+  minute, naming `cluster::down`. Remote watch (`cluster/watch.rs`, the watchers of remote
+  actors and the watches peers hold on local ones) is two-tier: a real termination keeps the local
   guarantees, a synthesized signal only promises that nothing from that node is delivered again.
   Under mutual TLS the admission (`peer.rs`) binds a peer's advertised address to its certificate's
   `tellus://<ip:port>` URI SANs, or without one its advertised IP to the IP SANs, both directions.
