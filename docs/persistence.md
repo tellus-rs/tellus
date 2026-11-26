@@ -52,8 +52,8 @@ The [`EventSourced`](../tellus/src/persistence/event_sourced.rs) trait follows
   durable and applied, the only safe place for outward-facing actions.
 - `apply` folds one event into the state. `snapshot` optionally offers a snapshot after an effect
   with events, once its events have been applied and its continuations have run. It sees only the
-  state, so a policy such as every 100 events counts in the state. An error from it, or a failed save,
-  is logged and never fails the actor.
+  state, so a policy such as every 100 events counts in the state. An error or a panic in it or in
+  encoding its snapshot, or a failed save, is logged and never fails the actor.
 
 Spawning uses dedicated entry points carrying the [`Persistence`](../tellus/src/persistence.rs)
 wiring, an event store plus optional snapshot store, codec and store timeout (see [Store
@@ -72,8 +72,13 @@ same stream. It is unrelated to `ActorId`, which is fresh per spawn and distingu
 over time many `ActorId`s serve one `PersistenceId`.
 
 `PersistenceId::new` fails unless both segments are non-empty, at most 255 bytes long and free of
-slashes and NULs. The text form joins them as `entity_type/entity_id`; `Display` writes it and
-`FromStr` parses it back.
+slashes and NULs. Its error, `InvalidPersistenceId`, is `EmptySegment`, `SegmentTooLong`,
+`SlashInSegment` or `NulInSegment`, each naming the `PersistenceIdSegment` it refers to.
+`entity_type()` and `entity_id()` return the segments. The text form joins them as
+`entity_type/entity_id`; `Display` writes it and `FromStr` parses it back, failing with
+`MissingSeparator` on a string without a slash. With the `serde` feature, a `PersistenceId`
+serializes as its text form and deserializes through `FromStr`, so a deserialized one is validated
+like any other.
 
 ## Recovery
 
@@ -102,10 +107,14 @@ With `type Stash = Stashed`, an event-sourced actor stashes through `handle` as 
 through `receive` (see [actors.md](actors.md#stashing)): a command stashed while the actor waits,
 e.g. for a piped future, is received again after `unstash_all`, ahead of the mailbox. Both calls are
 requests, gated on durability like the other effects. They take effect once the command's events are
-durable, or once `recovered` has returned, and a failed append discards them with the events. A
-failure once the events are durable, in `apply` or in a continuation, keeps them. The stash is
-runtime state like a timer, neither persisted nor recreated by replay, but unlike a timer it
-survives a restart: the recovered state receives the stashed commands first, after `recovered`.
+durable, or once `recovered` has returned. They are discarded whenever the command fails before its
+events are observed durable: a failed or panicking `handle`, a failure to encode an event, a
+sequence number overflow, or an append which fails, panics or exceeds the store timeout. That holds
+even if the store has committed the events, which a restart then replays. A failure once the actor
+has observed a successful append, or when the command produces no events, in `apply` or in a
+continuation, keeps them. The stash is runtime state like a timer, neither persisted nor recreated
+by replay, but unlike a timer it survives a restart: the recovered state receives the stashed
+commands first, after `recovered`.
 
 A `Timed` event-sourced actor starts its timers (see [actors.md](actors.md#timers)) in `recovered`
 and `handle`; `init` has no context. A timer is runtime state, neither persisted nor recreated by
@@ -165,12 +174,12 @@ retry logic besides supervision.
 Failures during recovery divide in two. A failure of `init`, `init_from_snapshot`, event decoding or
 `apply`, or a stored event whose sequence number is not the next one expected, is deterministic: a
 restart fails identically, and so it escalates through the restart limit to a stop. An undecodable
-snapshot is the one exception, discarded in favor of full replay (see schema evolution below). A
-failure of `recovered`, or a failure or panic of a store itself while loading the snapshot or
-reading events, the store timeout included, is an ordinary startup failure, e.g. a struggling
-dependency, which a restart with backoff may well fix. A failed snapshot load is deliberately not
-traded for full replay, so a snapshot store failure surfaces through supervision instead of silently
-turning every recovery into a full replay.
+snapshot, one whose decoding panics included, is the one exception, discarded in favor of full
+replay (see schema evolution below). A failure of `recovered`, or a failure or panic of a store
+itself while loading the snapshot or reading events, the store timeout included, is an ordinary
+startup failure, e.g. a struggling dependency, which a restart with backoff may well fix. A failed
+snapshot load is deliberately not traded for full replay, so a snapshot store failure surfaces
+through supervision instead of silently turning every recovery into a full replay.
 
 A failure to save a snapshot, the store timeout included, is logged and never fails the actor:
 losing a snapshot only makes the next recovery replay more events. `NoSnapshots`, the snapshot store
@@ -180,10 +189,12 @@ of a `Persistence` without one, drops an offered snapshot with a warning.
 
 Every store call is bounded by the timeout of its `Persistence`, which is
 `Persistence::DEFAULT_TIMEOUT`, 10 s, unless `Persistence::with_timeout` sets another. That refuses
-zero. The timeout bounds each call on its own: the snapshot load and every page read of a recovery,
-and the append and the snapshot save of a settlement. A load or read which exceeds it fails
-recovery like a store failure, and an append which exceeds it fails the actor like a failed append.
-A snapshot save which exceeds it is logged like a failed save, and settlement completes.
+zero. A timeout the clock cannot represent from the start of a store call, e.g. `Duration::MAX`, is
+capped there at about 30 years. The timeout bounds each call on its own: the snapshot load and every
+page read of a recovery, and the append and the snapshot save of a settlement. A load or read which
+exceeds it fails recovery like a store failure, and an append which exceeds it fails the actor like
+a failed append. A snapshot save which exceeds it is logged like a failed save, and settlement
+completes.
 
 The timeout gives up on a call by dropping its future. That ends nothing the call has started
 outside the process: a statement sent to a database server runs on there, and an append which the
@@ -238,7 +249,9 @@ and one it resumes after.
 The last position is `u64::MAX`, and `SeqNo::succ` and `SeqNo::advanced_by` answer `None` beyond it.
 A command whose events would advance a stream beyond it fails the actor under its supervision, and
 nothing is appended. Replay fails recovery at a stored event at the last position, since no position
-is left to resume at. `InMemoryStore` refuses such an append with `SeqNoOverflow`.
+is left to resume at. `InMemoryStore` refuses such an append with `SeqNoOverflow`. A store may end
+positions earlier: the PostgreSQL store keeps them in BIGINT columns, so they end at `i64::MAX` (see
+the [limits](../tellus-persistence-postgres/README.md#limits) of its README).
 
 ## Schema evolution
 
@@ -388,9 +401,11 @@ assert!(matches!(
 
 `settle` leaves out everything about the store: encoding, appending, snapshots and sequence
 numbers. Those are covered by the contract suite every store passes, and by the tests of
-`tellus` itself, which run the guarantees above over an in-memory store. A test which spawns the
-entity, sends a command with `tell` and then reads the store has to wait for the settlement, since
-`tell` returns before the command is handled; it mostly tests those guarantees again.
+`tellus` itself, which run the guarantees above over an in-memory store. `InMemoryStore::events`
+and `InMemoryStore::snapshot` return what that store holds for a `PersistenceId`. A test which
+spawns the entity, sends a command with `tell` and then reads the store has to wait for the
+settlement, since `tell` returns before the command is handled; it mostly tests those guarantees
+again.
 
 ## Guarantees and limitations
 
