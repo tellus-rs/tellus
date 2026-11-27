@@ -185,15 +185,15 @@ mod tests {
     use crate::{
         ActorId, ActorRef, AskError, ReplyTo, SchemaVersion,
         cluster::{
-            codec::{Codec, CodecError},
+            codec::CodecError,
             endpoint::{self, EndpointConfig, EndpointInner},
             frame::Frame,
             node::NodeId,
-            schema::{Peer, Schema},
+            schema::Schema,
             sink::{RemoteSendError, RemoteSink, admit_frame},
         },
     };
-    use serde::{Deserialize, Serialize};
+    use serde::{Deserialize, Serialize, Serializer, ser};
     use std::{
         borrow::Cow,
         num::NonZeroUsize,
@@ -284,18 +284,27 @@ mod tests {
         }
     }
 
-    #[derive(Serialize, Deserialize)]
-    struct Unencodable(ReplyTo<u64>);
+    #[derive(Deserialize)]
+    struct Unencodable {
+        _reply_to: ReplyTo<u64>,
+    }
 
-    impl Schema for Unencodable {
-        fn encode(&self, _: Codec, _: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
-            Err(CodecError::make_encoding("this request cannot be encoded"))
+    impl Serialize for Unencodable {
+        fn serialize<S>(&self, _: S) -> Result<S::Ok, S::Error>
+        where
+            S: Serializer,
+        {
+            Err(ser::Error::custom("this request cannot be encoded"))
         }
     }
 
+    impl Schema for Unencodable {}
+
     impl From<ReplyTo<u64>> for Unencodable {
         fn from(reply_to: ReplyTo<u64>) -> Self {
-            Self(reply_to)
+            Self {
+                _reply_to: reply_to,
+            }
         }
     }
 

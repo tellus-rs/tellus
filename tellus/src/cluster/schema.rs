@@ -52,8 +52,7 @@ where
     /// the current one, typically through a view borrowing the fields of the old shape.
     ///
     /// # Errors
-    /// Implementations fail if the value cannot be encoded in the codec's format, or in the shape
-    /// the peer decodes.
+    /// Implementations fail if the codec fails to encode the value.
     fn encode(&self, codec: Codec, peer: &Peer) -> Result<(SchemaVersion, Vec<u8>), CodecError> {
         let _ = peer;
         let payload = codec.encode(self)?;

@@ -75,20 +75,19 @@ pub enum CodecError {
 }
 
 impl CodecError {
-    /// Wrap any error as an encoding failure.
-    pub fn make_encoding<E>(error: E) -> Self
-    where
-        E: Into<Box<dyn Error + Send + Sync>>,
-    {
-        Self::Encode(error.into())
-    }
-
     /// Wrap any error as a decoding failure.
     pub fn make_decoding<E>(error: E) -> Self
     where
         E: Into<Box<dyn Error + Send + Sync>>,
     {
         Self::Decode(error.into())
+    }
+
+    pub(crate) fn make_encoding<E>(error: E) -> Self
+    where
+        E: Into<Box<dyn Error + Send + Sync>>,
+    {
+        Self::Encode(error.into())
     }
 }
 
