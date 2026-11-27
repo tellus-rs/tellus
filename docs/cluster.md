@@ -981,13 +981,16 @@ message enqueued ahead of the first connection sees, since a payload is encoded 
 messages lossy, between two new nodes too: they go out in the oldest shape, and the receiver's
 upcast delivers them without a trace of what the old shape lacks. Encoding the current shape for
 `None` instead would make them dead letters at an old peer during a rollout, so delivering them is
-the better of the two, and the window is one handshake, see Limitations. A downcast which meets a
-value the old shape has no place for, a new variant for instance, fails, which makes the message a
-dead letter at the sender for a tell and `NotEncodable` for an ask. Besides its application
-version, `Peer` names the node it stands for with `Peer::addr` and `Peer::incarnation`. The `Pong`
-of the cluster demo ([`node.rs`](../tellus-cluster-demo/src/bin/node.rs)) overrides both hooks: it
-encodes version 0 for a peer below application version 2 and decodes version 0 into its current
-shape.
+the better of the two, and the window is one handshake, see Limitations. A downcast maps a value
+the old shape has no place for, a new variant for instance, onto that shape as the application
+decides: to an old variant or a default, or by omitting the data the old shape cannot represent. It
+encodes the result with `Codec::encode` and fails only where that fails. A tell which fails to
+encode is a dead letter at the sender, and the request of an ask fails the ask as `NotEncodable`. A
+reply which fails to encode is logged as a dead letter, and its proxy attempts `ReplyDropped`.
+Besides its application version, `Peer` names the node it stands for with `Peer::addr` and
+`Peer::incarnation`. The `Pong` of the cluster demo
+([`node.rs`](../tellus-cluster-demo/src/bin/node.rs)) overrides both hooks: it encodes version 0
+for a peer below application version 2 and decodes version 0 into its current shape.
 
 A payload of a version the receiving type does not decode is a dead letter: the warning names the
 type and both versions, an ask fails as `NoReply`, and nothing is decoded with the wrong shape. That
