@@ -13,6 +13,8 @@ use std::{
     task::{Context, Poll, Waker},
 };
 
+const RETAINED_CAPACITY: usize = 1024;
+
 pub(crate) struct Sender<T> {
     shared: Arc<Shared<T>>,
 }
@@ -137,6 +139,12 @@ impl<T> Receiver<T> {
             Some(waker) => waker.clone_from(cx.waker()),
             None => state.waker = Some(cx.waker().clone()),
         }
+        // Under the refill's lock, else an item sent in between is freed with the queue's buffer!
+        let queue = detached_oversized(&mut state.queue);
+        drop(state);
+        // The batch as well, since `refill` swaps the buffers!
+        let batch = detached_oversized(&mut self.batch);
+        drop((queue, batch));
         Poll::Pending
     }
 
@@ -194,6 +202,10 @@ fn refill<T>(batch: &mut VecDeque<T>, batch_len: &AtomicUsize, state: &mut State
     batch_len.store(batch.len(), Ordering::Relaxed);
 }
 
+fn detached_oversized<T>(buffer: &mut VecDeque<T>) -> Option<VecDeque<T>> {
+    (buffer.capacity() > RETAINED_CAPACITY).then(|| mem::take(buffer))
+}
+
 struct Shared<T> {
     state: Mutex<State<T>>,
     closed: AtomicBool,
@@ -214,9 +226,10 @@ struct State<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::channel::make_channel;
+    use crate::channel::{RETAINED_CAPACITY, Receiver, Sender, make_channel};
     use std::{
         sync::{Arc, Barrier},
+        task::{Context, Waker},
         thread,
         time::Duration,
     };
@@ -257,6 +270,37 @@ mod tests {
         assert_eq!(tx.shared.lock().queue.capacity(), 0);
         assert!(tx.is_closed());
         assert_eq!(tx.send(4), Err(4));
+    }
+
+    #[test]
+    fn a_parked_receiver_trims_both_buffers() {
+        let (tx, mut rx) = make_channel();
+        let (batch_capacity, queue_capacity) =
+            two_bursts_drained(&tx, &mut rx, 4 * RETAINED_CAPACITY);
+        assert!(batch_capacity > RETAINED_CAPACITY);
+        assert!(queue_capacity > RETAINED_CAPACITY);
+
+        assert!(
+            rx.poll_recv(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        assert!(rx.batch.capacity() <= RETAINED_CAPACITY);
+        assert!(tx.shared.lock().queue.capacity() <= RETAINED_CAPACITY);
+    }
+
+    #[test]
+    fn a_parked_receiver_keeps_buffers_within_the_cap() {
+        let (tx, mut rx) = make_channel();
+        let (batch_capacity, queue_capacity) = two_bursts_drained(&tx, &mut rx, RETAINED_CAPACITY);
+        assert!(batch_capacity > 0);
+        assert!(queue_capacity > 0);
+
+        assert!(
+            rx.poll_recv(&mut Context::from_waker(Waker::noop()))
+                .is_pending()
+        );
+        assert_eq!(rx.batch.capacity(), batch_capacity);
+        assert_eq!(tx.shared.lock().queue.capacity(), queue_capacity);
     }
 
     #[test]
@@ -362,5 +406,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    fn two_bursts_drained(
+        tx: &Sender<usize>,
+        rx: &mut Receiver<usize>,
+        burst: usize,
+    ) -> (usize, usize) {
+        for item in 0..burst {
+            assert!(tx.send(item).is_ok());
+        }
+        assert_eq!(rx.try_recv(), Some(0));
+        for item in burst..2 * burst {
+            assert!(tx.send(item).is_ok());
+        }
+        for item in 1..2 * burst {
+            assert_eq!(rx.try_recv(), Some(item));
+        }
+        (rx.batch.capacity(), tx.shared.lock().queue.capacity())
     }
 }

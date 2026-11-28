@@ -401,7 +401,10 @@ they were sent.
 The channel ([`channel.rs`](../tellus/src/channel.rs)) is a queue behind one lock with a single
 waker slot. A sender appends under the lock and wakes the receiver only after releasing it. Once
 the receiver's own batch has run empty, it swaps the whole queue for that empty batch under the
-lock, so a backlog costs one lock acquisition per batch instead of one per item.
+lock, so a backlog costs one lock acquisition per batch instead of one per item. If the queue was
+empty as well, the receiver parks. Before that, it frees each buffer with room for more than 1024
+items. The memory of a burst is hence not kept for the actor's lifetime, but a later burst beyond
+1024 items allocates again.
 
 The underlying channel is always unbounded; a bounded mailbox is enforced by a lock-free reservation
 counter ([`quota.rs`](../tellus/src/quota.rs)) in front of it: a message reserves capacity before it
